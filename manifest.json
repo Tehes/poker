@@ -1,6 +1,6 @@
 {
-    "short_name": "--yourSiteName--",
-    "name": "--yourSiteName--",
+    "short_name": "Poker",
+    "name": "Poker",
     "icons": [
         {
             "src": "icons/180x180.png",
