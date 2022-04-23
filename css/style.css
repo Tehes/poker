@@ -1,0 +1,47 @@
+:root {
+  --achromatic: 0, 0%; /* neutral color */
+  --bg-color: hsl(var(--achromatic), 100%);
+  --font-color: hsl(var(--achromatic), 20%);
+}
+
+* {
+    box-sizing: border-box;
+    touch-action: manipulation;
+    /* disable double tap to zoom */
+}
+
+html {
+    -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+     margin:0;
+	 padding:0;
+}
+
+body {
+    background-color: var(--bg-color);
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    margin:0;
+	padding:0;
+	color: var(--font-color);
+	font-size: 100%;
+}
+
+/*
+-------------------------------------------------------------------
+YOUR SECTIONS
+-------------------------------------------------------------------
+*/
+
+/*
+-------------------------------------------------------------------
+MEDIA QUERIES
+-------------------------------------------------------------------
+*/
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--bg-color: hsl(var(--achromatic), 10%);
+		--font-color: hsl(var(--achromatic), 80%);
+	}
+}

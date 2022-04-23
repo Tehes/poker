@@ -1,0 +1,15 @@
+{
+    "short_name": "--yourSiteName--",
+    "name": "--yourSiteName--",
+    "icons": [
+        {
+            "src": "icons/180x180.png",
+            "type": "image/png",
+            "sizes": "180x180"
+        }
+    ],
+    "start_url": "index.html",
+    "background_color": "#eee",
+    "display": "standalone",
+    "theme_color": "#eee"
+}
