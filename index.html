@@ -35,17 +35,18 @@
 				Pot: 1200 || Tino's turn
 			</section>
 			<section id="community-cards">
-				<!-- Diamonds, Hearts, Clubs, Spades -->
+				<!-- Suits: Diamonds, Hearts, Clubs, Spades -->
 				<div class="cardslot"><img src="cards/3D.svg"></div>
 				<div class="cardslot"><img src="cards/AS.svg"></div>
 				<div class="cardslot"><img src="cards/7H.svg"></div>
-				<div class="cardslot"><img src="cards/JC.svg"></div>
+				<div class="cardslot"></div>
 				<div class="cardslot"></div>
 			</section>
 			<section class="actions">
 				<button type="button" name="button">Fold</button>
 				<button type="button" name="button">Check</button>
-				<input type="range" id="amount" name="amount" min="0" max="1000" step="10">
+				<input type="range" id="amount" name="amount" value = "0" min="0" max="1000" step="10" oninput="this.nextElementSibling.value = this.value">
+				<output>0</output>
 			</section>
 		</div>
 	</main>

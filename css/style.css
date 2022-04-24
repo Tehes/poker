@@ -1,5 +1,5 @@
 :root {
-    --achromatic: 0, 0%;    /* neutral color */
+    --achromatic: 0, 0%;
     --bg-color: hsl(220, 40%, 40%);
     --font-color: hsl(var(--achromatic), 90%);
 }
@@ -38,11 +38,42 @@ button {
     font-size: 1.5vmin;
     font-family: 'Secular One', sans-serif;
     border-radius: 1vmin;
+    cursor: pointer;
 }
 
 input[type=range] {
     width: 40vmin;
     margin: 2vmin;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 25px;
+    background:  hsl(var(--achromatic), 100%);
+    outline: none;
+    border-radius: 15px;
+}
+
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 45px;
+  height: 45px;
+  background: url('../icons/chip.svg'), #fff;
+  cursor: pointer;
+  border-radius: 50%;
+  filter: invert(0.95);
+}
+
+input[type=range]::-moz-range-thumb {
+  width: 45px;
+  height: 45px;
+  background: url('../icons/chip.svg'),  #fff;
+  cursor: pointer;
+  filter: invert(0.95);
+}
+
+output {
+    text-align: center;
+    min-width: 6vmin;
 }
 
 /*
@@ -94,7 +125,6 @@ main {
 TABLE-MIDDLE
 -------------------------------------------------------------------
 */
-
 #table-middle {
     display: flex;
     flex-direction: column;
@@ -103,9 +133,7 @@ TABLE-MIDDLE
     gap: 4vmin;
 }
 
-#table-middle.infos {
-
-}
+#table-middle.infos {}
 
 #community-cards {
     display: flex;
@@ -116,7 +144,7 @@ TABLE-MIDDLE
     flex: 0 0 auto;
 }
 
-.cardslot{
+.cardslot {
     width: 18vmin;
     height: 25.2vmin;
     border-radius: 1vmin;
