@@ -6,6 +6,7 @@
     --font-color: hsl(210, 14%, 95%);
     --red-suit: hsl(0, 100%, 50%);
     --black-suit: hsl(var(--achromatic), 0%);
+	--shadow: rgba(0, 0, 0, 0.24) 0px 3px 8px;
 }
 
 * {
@@ -49,6 +50,7 @@ button {
     font-family: 'Secular One', sans-serif;
     border-radius: 1vmin;
     cursor: pointer;
+	box-shadow: var(--shadow);
 }
 
 input[type=range] {
@@ -60,6 +62,7 @@ input[type=range] {
     background: var(--blue-lighter);
     outline: none;
     border-radius: 15px;
+	box-shadow: var(--shadow);
 }
 
 input[type=range]::-webkit-slider-thumb {
@@ -70,6 +73,7 @@ input[type=range]::-webkit-slider-thumb {
   background: url('../icons/chip.svg'), var(--blue-lighter);
   cursor: pointer;
   border-radius: 50%;
+  box-shadow: var(--shadow);
 }
 
 input[type=range]::-moz-range-thumb {
@@ -78,6 +82,7 @@ input[type=range]::-moz-range-thumb {
   background: url('../icons/chip.svg'),  var(--blue-lighter);
   cursor: pointer;
   border-radius: 50%;
+  box-shadow: var(--shadow);
 }
 
 output {
@@ -186,6 +191,7 @@ h3 {
     color: var(--blue-darker);
     margin-bottom: 1vmin;
     text-align: center;
+	box-shadow: var(--shadow);
 }
 
 .hole-cards img {
