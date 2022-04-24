@@ -1,10 +1,9 @@
 :root {
     --achromatic: 0, 0%;
-    --bg-color: hsl(220, 40%, 30%);
-    --bg-darker: hsl(220, 40%, 20%);
-    --bg-lighter: hsl(220, 20%, 60%);
+    --blue: hsl(220, 40%, 30%);
+    --blue-darker: hsl(220, 40%, 20%);
+    --blue-lighter: hsl(220, 20%, 60%);
     --font-color: hsl(210, 14%, 95%);
-    --button-color: hsl(44, 100%, 61%);
     --red-suit: hsl(0, 100%, 50%);
     --black-suit: hsl(var(--achromatic), 0%);
 }
@@ -21,8 +20,14 @@ html {
     padding: 0;
 }
 
+h1, h2, h3 {
+    font-weight: normal;
+    margin: 0;
+    padding: 0;
+}
+
 body {
-    background-color: var(--bg-color);
+    background-color: var(--blue);
     user-select: none;
     -webkit-user-select: none;
     -webkit-touch-callout: none;
@@ -34,8 +39,8 @@ body {
 }
 
 button {
-    background-color: var(--bg-lighter);
-    color: var(--bg-darker);
+    background-color: var(--blue-lighter);
+    color: var(--blue-darker);
     width: 10vmin;
     border: none;
     padding: 1.5vmin;
@@ -52,7 +57,7 @@ input[type=range] {
     -webkit-appearance: none;
     appearance: none;
     height: 25px;
-    background: var(--bg-lighter);
+    background: var(--blue-lighter);
     outline: none;
     border-radius: 15px;
 }
@@ -62,7 +67,7 @@ input[type=range]::-webkit-slider-thumb {
   appearance: none;
   width: 45px;
   height: 45px;
-  background: url('../icons/chip.svg'), var(--bg-lighter);
+  background: url('../icons/chip.svg'), var(--blue-lighter);
   cursor: pointer;
   border-radius: 50%;
 }
@@ -70,9 +75,9 @@ input[type=range]::-webkit-slider-thumb {
 input[type=range]::-moz-range-thumb {
   width: 45px;
   height: 45px;
-  background: url('../icons/chip.svg'),  var(--bg-lighter);
+  background: url('../icons/chip.svg'),  var(--blue-lighter);
   cursor: pointer;
-  filter: invert(0.95);
+  border-radius: 50%;
 }
 
 output {
@@ -155,7 +160,7 @@ TABLE-MIDDLE
 }
 
 .cardslot:empty {
-    background-color: var(--bg-darker);
+    background-color: var(--blue-darker);
 }
 
 .cardslot img {
@@ -170,12 +175,32 @@ TABLE-MIDDLE
 
 /*
 -------------------------------------------------------------------
+PLAYER
+-------------------------------------------------------------------
+*/
+
+h3 {
+    border-radius: 30px;
+    background-color: var(--blue-lighter);
+    padding: 0.5vmin 2vmin;
+    color: var(--blue-darker);
+    margin-bottom: 1vmin;
+    text-align: center;
+}
+
+.hole-cards img {
+    width: 10vmin;
+    margin: 0.5vmin;
+}
+
+/*
+-------------------------------------------------------------------
 MEDIA QUERIES
 -------------------------------------------------------------------
 */
 @media (prefers-color-scheme: dark) {
     :root {
-        --bg-color: hsl(var(--achromatic), 10%);
+        --blue: hsl(var(--achromatic), 10%);
         --font-color: hsl(var(--achromatic), 80%);
     }
 }
