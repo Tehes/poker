@@ -1,7 +1,12 @@
 :root {
     --achromatic: 0, 0%;
-    --bg-color: hsl(220, 40%, 40%);
-    --font-color: hsl(var(--achromatic), 90%);
+    --bg-color: hsl(220, 40%, 30%);
+    --bg-darker: hsl(220, 40%, 20%);
+    --bg-lighter: hsl(220, 20%, 60%);
+    --font-color: hsl(210, 14%, 95%);
+    --button-color: hsl(44, 100%, 61%);
+    --red-suit: hsl(0, 100%, 50%);
+    --black-suit: hsl(var(--achromatic), 0%);
 }
 
 * {
@@ -29,8 +34,8 @@ body {
 }
 
 button {
-    background-color: hsl(var(--achromatic), 90%);
-    color: hsl(var(--achromatic), 20%);
+    background-color: var(--bg-lighter);
+    color: var(--bg-darker);
     width: 10vmin;
     border: none;
     padding: 1.5vmin;
@@ -47,7 +52,7 @@ input[type=range] {
     -webkit-appearance: none;
     appearance: none;
     height: 25px;
-    background:  hsl(var(--achromatic), 100%);
+    background: var(--bg-lighter);
     outline: none;
     border-radius: 15px;
 }
@@ -57,16 +62,15 @@ input[type=range]::-webkit-slider-thumb {
   appearance: none;
   width: 45px;
   height: 45px;
-  background: url('../icons/chip.svg'), #fff;
+  background: url('../icons/chip.svg'), var(--bg-lighter);
   cursor: pointer;
   border-radius: 50%;
-  filter: invert(0.95);
 }
 
 input[type=range]::-moz-range-thumb {
   width: 45px;
   height: 45px;
-  background: url('../icons/chip.svg'),  #fff;
+  background: url('../icons/chip.svg'),  var(--bg-lighter);
   cursor: pointer;
   filter: invert(0.95);
 }
@@ -151,7 +155,7 @@ TABLE-MIDDLE
 }
 
 .cardslot:empty {
-    border: 0.3vmin dashed hsl(var(--achromatic), 90%);
+    background-color: var(--bg-darker);
 }
 
 .cardslot img {
