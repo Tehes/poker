@@ -99,6 +99,7 @@ input[type=range]::-moz-range-thumb {
 output {
     text-align: center;
     min-width: 6vmin;
+	color: var(--yellow);
 }
 
 /*
@@ -234,8 +235,12 @@ h3 {
 	height: 12vmin;
 }
 
-.details {
+.chips {
 	text-align: center;
+}
+
+.chips .round {
+	color: var(--yellow);
 }
 
 .hole-cards .dealer {
