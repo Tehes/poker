@@ -2,7 +2,8 @@
     --achromatic: 0, 0%;
     --blue: hsl(220, 40%, 30%);
     --blue-darker: hsl(220, 40%, 20%);
-    --blue-lighter: hsl(220, 20%, 60%);
+	--blue-lighter: hsl(220, 40%, 40%);
+    --blue-lightest: hsl(220, 20%, 60%);
     --font-color: hsl(210, 14%, 95%);
     --red-suit: hsl(0, 100%, 50%);
     --black-suit: hsl(var(--achromatic), 0%);
@@ -28,7 +29,7 @@ h1, h2, h3 {
 }
 
 body {
-    background-color: var(--blue);
+    background: radial-gradient(var(--blue-lighter) 0%, var(--blue) 50%);
     user-select: none;
     -webkit-user-select: none;
     -webkit-touch-callout: none;
@@ -40,7 +41,7 @@ body {
 }
 
 button {
-    background-color: var(--blue-lighter);
+    background-color: var(--blue-lightest);
     color: var(--blue-darker);
     width: 10vmin;
     border: none;
@@ -59,7 +60,7 @@ input[type=range] {
     -webkit-appearance: none;
     appearance: none;
     height: 25px;
-    background: var(--blue-lighter);
+    background: var(--blue-lightest);
     outline: none;
     border-radius: 15px;
 	box-shadow: var(--shadow);
@@ -70,7 +71,7 @@ input[type=range]::-webkit-slider-thumb {
   appearance: none;
   width: 45px;
   height: 45px;
-  background: url('../icons/chip.svg'), var(--blue-lighter);
+  background: url('../icons/chip.svg'), var(--blue-lightest);
   cursor: pointer;
   border-radius: 50%;
   box-shadow: var(--shadow);
@@ -79,7 +80,7 @@ input[type=range]::-webkit-slider-thumb {
 input[type=range]::-moz-range-thumb {
   width: 45px;
   height: 45px;
-  background: url('../icons/chip.svg'),  var(--blue-lighter);
+  background: url('../icons/chip.svg'),  var(--blue-lightest);
   cursor: pointer;
   border-radius: 50%;
   box-shadow: var(--shadow);
@@ -186,7 +187,7 @@ PLAYER
 
 h3 {
     border-radius: 30px;
-    background-color: var(--blue-lighter);
+    background-color: var(--blue-lightest);
     padding: 0.5vmin 2vmin;
     color: var(--blue-darker);
     margin-bottom: 1vmin;
