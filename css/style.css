@@ -7,7 +7,11 @@
     --font-color: hsl(210, 14%, 95%);
     --red-suit: hsl(0, 100%, 50%);
     --black-suit: hsl(var(--achromatic), 0%);
-	--shadow: rgba(0, 0, 0, 0.24) 0px 3px 8px;
+	--shadow: rgba(0, 0, 0, 0.4) 0px 3px 8px;
+	--shadow-pressed: rgba(0, 0, 0, 0.6) 0px 2px 8px;
+	--shadow-light: rgba(0, 0, 0, 0.2) 0px 3px 8px;
+	--yellow: hsl(40, 90%, 60%);
+	--yellow-active: hsl(40, 100%, 50%);
 }
 
 * {
@@ -41,7 +45,7 @@ body {
 }
 
 button {
-    background-color: var(--blue-lightest);
+    background-color: var(--yellow);
     color: var(--blue-darker);
     width: 10vmin;
     border: none;
@@ -54,13 +58,19 @@ button {
 	box-shadow: var(--shadow);
 }
 
+button:active {
+	box-shadow: var(--shadow-pressed);
+	background-color: var(--yellow-active);
+	transform: translateY(1px);
+}
+
 input[type=range] {
     width: 40vmin;
     margin: 2vmin;
     -webkit-appearance: none;
     appearance: none;
     height: 25px;
-    background: var(--blue-lightest);
+    background: var(--yellow);
     outline: none;
     border-radius: 15px;
 	box-shadow: var(--shadow);
@@ -71,7 +81,7 @@ input[type=range]::-webkit-slider-thumb {
   appearance: none;
   width: 45px;
   height: 45px;
-  background: url('../icons/chip.svg'), var(--blue-lightest);
+  background: url('../icons/chip.svg'), var(--yellow);
   cursor: pointer;
   border-radius: 50%;
   box-shadow: var(--shadow);
@@ -80,7 +90,7 @@ input[type=range]::-webkit-slider-thumb {
 input[type=range]::-moz-range-thumb {
   width: 45px;
   height: 45px;
-  background: url('../icons/chip.svg'),  var(--blue-lightest);
+  background: url('../icons/chip.svg'),  var(--yellow);
   cursor: pointer;
   border-radius: 50%;
   box-shadow: var(--shadow);
@@ -192,12 +202,20 @@ h3 {
     color: var(--blue-darker);
     margin-bottom: 1vmin;
     text-align: center;
-	box-shadow: var(--shadow);
+	box-shadow: var(--shadow-light);
 }
 
 .hole-cards img {
     width: 10vmin;
     margin: 0.5vmin;
+}
+
+.hole-cards img:nth-of-type(1) {
+	transform: rotate(-2deg);
+}
+
+.hole-cards img:nth-of-type(2) {
+	transform: rotate(3deg);
 }
 
 .details {
