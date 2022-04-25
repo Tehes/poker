@@ -155,7 +155,7 @@ TABLE-MIDDLE
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 4vmin;
+    gap: 3vmin;
 }
 
 #table-middle.infos {}
@@ -205,6 +205,10 @@ h3 {
 	box-shadow: var(--shadow-light);
 }
 
+.hole-cards {
+	position: relative;
+}
+
 .hole-cards img {
     width: 10vmin;
     margin: 0.5vmin;
@@ -218,8 +222,29 @@ h3 {
 	transform: rotate(3deg);
 }
 
+.hole-cards .qr {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%,-50%);
+	box-shadow: var(--shadow);
+	padding: 0.5vmin;
+	background-color: #fff;
+	width: 12vmin;
+	height: 12vmin;
+}
+
 .details {
 	text-align: center;
+}
+
+.hole-cards .dealer {
+	width: 45px;
+	border-radius: 50%;
+	background-color: var(--yellow);
+	position: absolute;
+	right: 0px;
+	bottom:0px;
 }
 
 /*
