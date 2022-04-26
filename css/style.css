@@ -118,6 +118,11 @@ main {
     grid-row-gap: 0px;
 }
 
+main .seat {
+    width: 22vmin;
+    min-width: 110px;
+}
+
 .div1 {
     grid-area: 1 / 1 / 2 / 2;
 }
@@ -199,11 +204,13 @@ PLAYER
 h3 {
     border-radius: 30px;
     background-color: var(--blue-lightest);
-    padding: 0.5vmin 2vmin;
+    padding: 1vmin 2vmin;
     color: var(--blue-darker);
     margin-bottom: 1vmin;
     text-align: center;
 	box-shadow: var(--shadow-light);
+    font-size: 1.1em;
+    line-height: 1.1;
 }
 
 .hole-cards {
@@ -217,10 +224,14 @@ h3 {
 
 .hole-cards img:nth-of-type(1) {
 	transform: rotate(-2deg);
+    min-width: 80px;
 }
 
 .hole-cards img:nth-of-type(2) {
 	transform: rotate(3deg);
+    position: absolute;
+    min-width: 80px;
+    right: 0;
 }
 
 .hole-cards .qr {
