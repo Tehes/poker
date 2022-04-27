@@ -42,6 +42,7 @@ body {
     color: var(--font-color);
     font-size: 100%;
     font-family: 'Secular One', sans-serif;
+    background-repeat: no-repeat;
 }
 
 button {
@@ -99,6 +100,7 @@ output {
     text-align: center;
     min-width: 6vmin;
 	color: var(--yellow);
+    font-size: 1.2em;
 }
 
 /*
@@ -152,9 +154,23 @@ main .seat {
 
 /*
 -------------------------------------------------------------------
+SINGLE VIEW
+-------------------------------------------------------------------
+*/
+
+#single {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    height: 100vh;
+}
+
+/*
+-------------------------------------------------------------------
 TABLE-MIDDLE
 -------------------------------------------------------------------
 */
+
 #table-middle {
     display: flex;
     flex-direction: column;
@@ -224,6 +240,11 @@ h3 {
     margin: 0.5vmin;
 }
 
+.hole-cards .big {
+    width: 47vmin;
+    margin: 4vmin;
+}
+
 .hole-cards img:nth-of-type(1) {
 	transform: rotate(-2deg);
     min-width: 80px;
@@ -247,6 +268,7 @@ h3 {
 	width: 12vmin;
 	min-width: 80px;
 	z-index: 1000;
+    border-radius: 5%;
 }
 
 .chips {
