@@ -24,65 +24,75 @@
 
 <body>
 	<main>
-		<div class="seat div1">
+		<div class="seat">
 			<div class="hole-cards">
 				<img src="cards/1B.svg">
 				<img src="cards/1B.svg">
-				<img class="qr" src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://tehes.github.io/poker/hole-cards.html?cards=AH-KC">
+				<img class="qr hidden" src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://tehes.github.io/poker/hole-cards.html?cards=AH-KC">
 			</div>
-			<h3>Player Name</h3>
+			<h3 contenteditable="true"></h3>
 			<div class="chips"><span class="total">2000</span> | <span class="bet">0</span></div>
 		</div>
-		<div class="seat div2">
+		<div class="seat">
 			<div class="hole-cards">
 				<img src="cards/1B.svg">
 				<img src="cards/1B.svg">
-				<img class="dealer" src="icons/dealer.svg">
+				<img class="qr hidden" src="">
+				<img class="rotate" src="icons/rotate.svg" onclick="this.parentElement.parentElement.style = 'transform: rotate(180deg)';">
+				<img class="dealer hidden" src="icons/dealer.svg">
 			</div>
-			<h3>Player Name</h3>
+			<h3 contenteditable="true"></h3>
 			<div class="chips"><span class="total">2000</span> | <span class="bet">0</span></div>
 		</div>
-		<div class="seat div3">
+		<div class="seat">
 			<div class="hole-cards">
 				<img src="cards/1B.svg">
 				<img src="cards/1B.svg">
+				<img class="qr hidden" src="">
+				<img class="dealer hidden" src="icons/dealer.svg">
 			</div>
-			<h3>Player Name</h3>
-			<div class="chips"><span class="total">2000</span> | <span class="bet">10</span></div>
-		</div>
-		<div class="seat div4">
-			<div class="hole-cards">
-				<img src="cards/1B.svg">
-				<img src="cards/1B.svg">
-			</div>
-			<h3>Player Name</h3>
+			<h3 contenteditable="true"></h3>
 			<div class="chips"><span class="total">2000</span> | <span class="bet">0</span></div>
 		</div>
-		<div class="seat div5">
+		<div class="seat">
 			<div class="hole-cards">
-				<img src="cards/TH.svg">
-				<img src="cards/KD.svg">
+				<img src="cards/1B.svg">
+				<img src="cards/1B.svg">
+				<img class="qr hidden" src="">
+				<img class="dealer hidden" src="icons/dealer.svg">
 			</div>
-			<h3>Player Name</h3>
+			<h3 contenteditable="true"></h3>
 			<div class="chips"><span class="total">2000</span> | <span class="bet">0</span></div>
 		</div>
-		<div class="seat div6">
+		<div class="seat">
 			<div class="hole-cards">
 				<img src="cards/1B.svg">
 				<img src="cards/1B.svg">
+				<img class="qr hidden" src="">
+				<img class="dealer hidden" src="icons/dealer.svg">
 			</div>
-			<h3>Player Name</h3>
-			<div class="chips"><span class="total">2000</span> | <span class="bet">20</span></div>
+			<h3 contenteditable="true"></h3>
+			<div class="chips"><span class="total">2000</span> | <span class="bet">0</span></div>
+		</div>
+		<div class="seat">
+			<div class="hole-cards">
+				<img src="cards/1B.svg">
+				<img src="cards/1B.svg">
+				<img class="qr hidden" src="">
+				<img class="dealer hidden" src="icons/dealer.svg">
+			</div>
+			<h3 contenteditable="true"></h3>
+			<div class="chips"><span class="total">2000</span> | <span class="bet">0</span></div>
 		</div>
 		<div id="table-middle">
 			<section class="infos">
-				Pot: 1200 | Tino's turn
+				Pot: 0 | Game has not started yet
 			</section>
 			<section id="community-cards">
 				<!-- Suits: Diamonds, Hearts, Clubs, Spades -->
-				<div class="cardslot"><img src="cards/3D.svg"></div>
-				<div class="cardslot"><img src="cards/AS.svg"></div>
-				<div class="cardslot"><img src="cards/7H.svg"></div>
+				<div class="cardslot"><!-- <img src="cards/3D.svg"> --></div>
+				<div class="cardslot"><!-- <img src="cards/AS.svg"> --></div>
+				<div class="cardslot"><!-- <img src="cards/7H.svg"> --></div>
 				<div class="cardslot"></div>
 				<div class="cardslot"></div>
 			</section>
@@ -94,6 +104,9 @@
 			</section>
 		</div>
 	</main>
+	<aside>
+		<button type="button" name="button">Start</button>
+	</aside>
 	<script type="module" src="./js/app.js"></script>
 </body>
 

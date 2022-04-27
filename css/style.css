@@ -103,6 +103,10 @@ output {
     font-size: 1.2em;
 }
 
+.hidden {
+    display: none;
+}
+
 /*
 -------------------------------------------------------------------
 GRID
@@ -122,29 +126,30 @@ main {
 main .seat {
     width: 22vmin;
     min-width: 110px;
+    transition: all 0.5s;
 }
 
-.div1 {
+.seat:nth-of-type(1) {
     grid-area: 1 / 1 / 2 / 2;
 }
 
-.div2 {
+.seat:nth-of-type(2) {
     grid-area: 1 / 2 / 2 / 3;
 }
 
-.div3 {
+.seat:nth-of-type(3) {
     grid-area: 1 / 3 / 2 / 4;
 }
 
-.div4 {
+.seat:nth-of-type(4) {
     grid-area: 3 / 1 / 4 / 2;
 }
 
-.div5 {
+.seat:nth-of-type(5) {
     grid-area: 3 / 2 / 4 / 3;
 }
 
-.div6 {
+.seat:nth-of-type(6) {
     grid-area: 3 / 3 / 4 / 4;
 }
 
@@ -231,6 +236,14 @@ h3 {
     line-height: 1.1;
 }
 
+h3:empty::before {
+    content: "Enter Name";
+}
+
+h3:focus::before {
+    content: "";
+}
+
 .hole-cards {
 	position: relative;
 }
@@ -263,11 +276,27 @@ h3 {
 	left: 50%;
 	transform: translate(-50%,-50%);
 	box-shadow: var(--shadow);
-	padding: 0.5vmin;
+	padding: 5px;
 	background-color: #fff;
 	width: 12vmin;
+    aspect-ratio: 1/1;
 	min-width: 80px;
 	z-index: 1000;
+    border-radius: 5%;
+}
+
+.hole-cards .rotate {
+    position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%,-50%);
+	box-shadow: var(--shadow);
+	padding: 5px;
+	background-color: #fff;
+	width: 8vmin;
+    aspect-ratio: 1/1;
+	min-width: 65px;
+	z-index: 2000;
     border-radius: 5%;
 }
 
@@ -286,6 +315,19 @@ h3 {
 	position: absolute;
 	right: 0px;
 	bottom:0px;
+}
+
+/*
+-------------------------------------------------------------------
+MODAL
+-------------------------------------------------------------------
+*/
+
+aside {
+    position: absolute;
+    top:50%;
+    left:50%;
+    transform: translate(-50%,-50%);
 }
 
 /*
