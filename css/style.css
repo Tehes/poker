@@ -234,6 +234,7 @@ h3 {
 	box-shadow: var(--shadow-light);
     font-size: 1.1em;
     line-height: 1.1;
+	-webkit-user-select: auto;
 }
 
 h3:empty::before {
