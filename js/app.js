@@ -9,29 +9,30 @@ var startButton = document.querySelector("aside button");
 var rotateIcons = document.querySelectorAll(".seat .rotate");
 var nameBadges = document.querySelectorAll("h3");
 var qrCodes = document.querySelectorAll(".qr");
+var holeCards = document.querySelectorAll("img:not([class])");
 
 // Clubs, Diamonds, Hearts, Spades
 // 2,3,4,5,6,7,8,9,T,J,Q,K,A
 var cards = [
-	"2C","2D","2H","2S",
-	"3C","3D","3H","3S",
-	"4C","4D","4H","4S",
-	"5C","5D","5H","5S",
-	"6C","6D","6H","6S",
-	"7C","7D","7H","7S",
-	"8C","8D","8H","8S",
-	"9C","9D","9H","9S",
-	"TC","TD","TH","TS",
-	"JC","JD","JH","JS",
-	"QC","QD","QH","QS",
-	"KC","KD","KH","KS",
-	"AC","AD","AH","AS",
+	"2C", "2D", "2H", "2S",
+	"3C", "3D", "3H", "3S",
+	"4C", "4D", "4H", "4S",
+	"5C", "5D", "5H", "5S",
+	"6C", "6D", "6H", "6S",
+	"7C", "7D", "7H", "7S",
+	"8C", "8D", "8H", "8S",
+	"9C", "9D", "9H", "9S",
+	"TC", "TD", "TH", "TS",
+	"JC", "JD", "JH", "JS",
+	"QC", "QD", "QH", "QS",
+	"KC", "KD", "KH", "KS",
+	"AC", "AD", "AH", "AS",
 ];
 
 /* --------------------------------------------------------------------------------------------------
 functions
 ---------------------------------------------------------------------------------------------------*/
-Array.prototype.shuffle = function() {
+Array.prototype.shuffle = function () {
 	var i = this.length;
 	while (i) {
 		var j = Math.floor(Math.random() * i);
@@ -56,7 +57,11 @@ function startGame(event) {
 
 function startRound() {
 	cards.shuffle();
-	
+
+	for (let i = 0; i < holeCards.length; i++) {
+		holeCards[i].src = "cards/"+ cards[i] + ".svg";
+	}
+
 
 	for (var qr of qrCodes) {
 		qr.classList.remove("hidden");
@@ -65,15 +70,15 @@ function startRound() {
 
 function rotateSeat(event) {
 	var seat = event.target.parentElement.parentElement;
-	seat.dataset.rotation = parseInt(seat.dataset.rotation)+90;
-	seat.style.transform = "rotate("+ seat.dataset.rotation +"deg)";
+	seat.dataset.rotation = parseInt(seat.dataset.rotation) + 90;
+	seat.style.transform = "rotate(" + seat.dataset.rotation + "deg)";
 }
 
 
 function init() {
-    document.addEventListener("touchstart", function() {}, false);
+	document.addEventListener("touchstart", function () { }, false);
 	startButton.addEventListener("click", startGame, false);
-	
+
 	for (var rotateIcon of rotateIcons) {
 		rotateIcon.addEventListener("click", rotateSeat, false);
 	}
@@ -83,7 +88,7 @@ function init() {
 public members, exposed with return statement
 ---------------------------------------------------------------------------------------------------*/
 window.app = {
-    init
+	init
 };
 
 app.init();
