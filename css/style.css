@@ -318,6 +318,15 @@ h3:focus::before {
 	bottom:0px;
 }
 
+.hole-cards .close {
+	width: 45px;
+	border-radius: 50%;
+	background-color: #fff;
+	position: absolute;
+	right: 0px;
+	top: 0px;
+}
+
 /*
 -------------------------------------------------------------------
 MODAL
