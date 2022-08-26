@@ -91,7 +91,7 @@ function createPlayers() {
 			qr: {
 				show: function(card1,card2,name,chips) {
 					player.querySelector(".qr").classList.remove("hidden");
-					player.querySelector(".qr").src = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://tehes.github.io/poker/hole-cards.html?cards="+card1+"-"+card2+"-"+name+"-"+chips;
+					player.querySelector(".qr").src = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data="+window.location.href+"hole-cards.html?cards="+card1+"-"+card2+"-"+name+"-"+chips;
 				},
 				hide: function() {
 					player.querySelector(".qr").classList.add("hidden");
