@@ -49,7 +49,7 @@ Array.prototype.shuffle = function () {
 
 function startGame(event) {
 	createPlayers();
-	
+
 	if (players.length > 1) {
 		for (const rotateIcon of rotateIcons) {
 			rotateIcon.classList.add("hidden");
@@ -67,21 +67,21 @@ function startGame(event) {
 	}
 	else {
 		for (const name of nameBadges) {
-			if(name.textContent === "") {
+			if (name.textContent === "") {
 				name.parentElement.classList.remove("hidden");
 			}
-		notification.textContent = "Not enough players";
-		players = [];
+			notification.textContent = "Not enough players";
+			players = [];
 		}
 	}
 }
 
 function createPlayers() {
 	for (const name of nameBadges) {
-			if(name.textContent === "") {
-				name.parentElement.classList.add("hidden");
-			}
+		if (name.textContent === "") {
+			name.parentElement.classList.add("hidden");
 		}
+	}
 
 	const activePlayers = document.querySelectorAll(".seat:not(.hidden)");
 	for (const player of activePlayers) {
@@ -89,21 +89,21 @@ function createPlayers() {
 			name: player.querySelector("h3").textContent,
 			seat: player,
 			qr: {
-				show: function(card1,card2,name,chips) {
+				show: function (card1, card2, name, chips) {
 					player.querySelector(".qr").classList.remove("hidden");
-					player.querySelector(".qr").src = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data="+window.location.href+"hole-cards.html?cards="+card1+"-"+card2+"-"+name+"-"+chips;
+					player.querySelector(".qr").src = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" + window.location.href + "hole-cards.html?cards=" + card1 + "-" + card2 + "-" + name + "-" + chips;
 				},
-				hide: function() {
+				hide: function () {
 					player.querySelector(".qr").classList.add("hidden");
 				}
 			},
 			cards: player.querySelectorAll(".card"),
 			dealer: false,
 			dealerButton: {
-				show: function() {
+				show: function () {
 					player.querySelector(".dealer").classList.remove("hidden");
 				},
-				hide: function() {
+				hide: function () {
 					player.querySelector(".dealer").classList.add("hidden");
 				}
 			},
@@ -128,7 +128,7 @@ function dealCards() {
 	for (const player of players) {
 		player.cards[0].dataset.value = cards[0];
 		player.cards[1].dataset.value = cards[1];
-		player.qr.show(cards[0],cards[1],player.name,player.totalChips);
+		player.qr.show(cards[0], cards[1], player.name, player.totalChips);
 		cardGraveyard.push(cards.shift());
 		cardGraveyard.push(cards.shift());
 	}
