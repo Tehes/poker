@@ -5,15 +5,15 @@ Imports
 /* --------------------------------------------------------------------------------------------------
 Variables
 ---------------------------------------------------------------------------------------------------*/
-var startButton = document.querySelector("aside button");
-var rotateIcons = document.querySelectorAll(".seat .rotate");
-var nameBadges = document.querySelectorAll("h3");
-var closeButtons = document.querySelectorAll(".close");
-var notification = document.querySelector("#notification");
+const startButton = document.querySelector("aside button");
+const rotateIcons = document.querySelectorAll(".seat .rotate");
+const nameBadges = document.querySelectorAll("h3");
+const closeButtons = document.querySelectorAll(".close");
+const notification = document.querySelector("#notification");
 
 // Clubs, Diamonds, Hearts, Spades
 // 2,3,4,5,6,7,8,9,T,J,Q,K,A
-var cards = [
+let cards = [
 	"2C", "2D", "2H", "2S",
 	"3C", "3D", "3H", "3S",
 	"4C", "4D", "4H", "4S",
@@ -29,18 +29,18 @@ var cards = [
 	"AC", "AD", "AH", "AS",
 ];
 
-var cardGraveyard = [];
+let cardGraveyard = [];
 
-var players = [];
+let players = [];
 
 /* --------------------------------------------------------------------------------------------------
 functions
 ---------------------------------------------------------------------------------------------------*/
 Array.prototype.shuffle = function () {
-	var i = this.length;
+	let i = this.length;
 	while (i) {
-		var j = Math.floor(Math.random() * i);
-		var t = this[--i];
+		let j = Math.floor(Math.random() * i);
+		let t = this[--i];
 		this[i] = this[j];
 		this[j] = t;
 	}
@@ -51,17 +51,17 @@ function startGame(event) {
 	createPlayers();
 	
 	if (players.length > 1) {
-		for (var rotateIcon of rotateIcons) {
+		for (const rotateIcon of rotateIcons) {
 			rotateIcon.classList.add("hidden");
 		}
-		for (var closeButton of closeButtons) {
+		for (const closeButton of closeButtons) {
 			closeButton.classList.add("hidden");
 		}
-		for (var name of nameBadges) {
+		for (const name of nameBadges) {
 			name.contentEditable = "false";
 		}
 		event.target.classList.add("hidden");
-		notification.textContent = "Game has begun. "
+		notification.textContent = "Game has begun. ";
 		setDealer();
 		dealCards();
 	}
@@ -70,7 +70,7 @@ function startGame(event) {
 			if(name.textContent === "") {
 				name.parentElement.classList.remove("hidden");
 			}
-		notification.textContent = "Not enough players"
+		notification.textContent = "Not enough players";
 		players = [];
 		}
 	}
@@ -83,9 +83,9 @@ function createPlayers() {
 			}
 		}
 
-	var activePlayers = document.querySelectorAll(".seat:not(.hidden)");
+	const activePlayers = document.querySelectorAll(".seat:not(.hidden)");
 	for (const player of activePlayers) {
-		var playerObject = {
+		const playerObject = {
 			name: player.querySelector("h3").textContent,
 			seat: player,
 			qr: {
@@ -115,7 +115,7 @@ function createPlayers() {
 }
 
 function setDealer() {
-	var randomPlayerIndex = Math.floor(Math.random() * players.length);
+	const randomPlayerIndex = Math.floor(Math.random() * players.length);
 	players[randomPlayerIndex].dealer = true;
 	players[randomPlayerIndex].dealerButton.show();
 }
@@ -135,13 +135,13 @@ function dealCards() {
 }
 
 function rotateSeat(event) {
-	var seat = event.target.parentElement.parentElement;
+	const seat = event.target.parentElement.parentElement;
 	seat.dataset.rotation = parseInt(seat.dataset.rotation) + 90;
 	seat.style.transform = "rotate(" + seat.dataset.rotation + "deg)";
 }
 
 function deletePlayer(event) {
-	var seat = event.target.parentElement.parentElement;
+	const seat = event.target.parentElement.parentElement;
 	seat.classList.add("hidden");
 }
 
@@ -150,10 +150,10 @@ function init() {
 	document.addEventListener("touchstart", function () { }, false);
 	startButton.addEventListener("click", startGame, false);
 
-	for (var rotateIcon of rotateIcons) {
+	for (const rotateIcon of rotateIcons) {
 		rotateIcon.addEventListener("click", rotateSeat, false);
 	}
-	for (var closeButton of closeButtons) {
+	for (const closeButton of closeButtons) {
 		closeButton.addEventListener("click", deletePlayer, false);
 	}
 }
