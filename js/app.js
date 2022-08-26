@@ -109,7 +109,7 @@ function createPlayers() {
 			},
 			totalChips: player.querySelector(".chips .total").textContent,
 			betChips: player.querySelector(".chips .bet").textContent,
-		}
+		};
 		players.push(playerObject);
 	}
 }
