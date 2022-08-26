@@ -8,9 +8,8 @@ Variables
 var startButton = document.querySelector("aside button");
 var rotateIcons = document.querySelectorAll(".seat .rotate");
 var nameBadges = document.querySelectorAll("h3");
-var qrCodes = document.querySelectorAll(".qr");
-var holeCards = document.querySelectorAll("img:not([class])");
 var closeButtons = document.querySelectorAll(".close");
+var notification = document.querySelector("#notification");
 
 // Clubs, Diamonds, Hearts, Spades
 // 2,3,4,5,6,7,8,9,T,J,Q,K,A
@@ -49,19 +48,32 @@ Array.prototype.shuffle = function () {
 };
 
 function startGame(event) {
-	for (var rotateIcon of rotateIcons) {
-		rotateIcon.classList.add("hidden");
-	}
-	for (var closeButton of closeButtons) {
-		closeButton.classList.add("hidden");
-	}
-	for (var name of nameBadges) {
-		name.contentEditable = "false";
-	}
-	event.target.classList.add("hidden");
 	createPlayers();
-	setDealer();
-	dealCards();
+	
+	if (players.length > 1) {
+		for (var rotateIcon of rotateIcons) {
+			rotateIcon.classList.add("hidden");
+		}
+		for (var closeButton of closeButtons) {
+			closeButton.classList.add("hidden");
+		}
+		for (var name of nameBadges) {
+			name.contentEditable = "false";
+		}
+		event.target.classList.add("hidden");
+		notification.textContent = "Game has begun. "
+		setDealer();
+		dealCards();
+	}
+	else {
+		for (const name of nameBadges) {
+			if(name.textContent === "") {
+				name.parentElement.classList.remove("hidden");
+			}
+		notification.textContent = "Not enough players"
+		players = [];
+		}
+	}
 }
 
 function createPlayers() {
@@ -77,9 +89,9 @@ function createPlayers() {
 			name: player.querySelector("h3").textContent,
 			seat: player,
 			qr: {
-				show: function(card1,card2) {
+				show: function(card1,card2,name,chips) {
 					player.querySelector(".qr").classList.remove("hidden");
-					player.querySelector(".qr").src = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://tehes.github.io/poker/hole-cards.html?cards="+card1+"-"+card2;
+					player.querySelector(".qr").src = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://tehes.github.io/poker/hole-cards.html?cards="+card1+"-"+card2+"-"+name+"-"+chips;
 				},
 				hide: function() {
 					player.querySelector(".qr").classList.add("hidden");
@@ -103,7 +115,7 @@ function createPlayers() {
 }
 
 function setDealer() {
-	var randomPlayerIndex = Math.floor(Math.random() * players.length) + 1;
+	var randomPlayerIndex = Math.floor(Math.random() * players.length);
 	players[randomPlayerIndex].dealer = true;
 	players[randomPlayerIndex].dealerButton.show();
 }
@@ -116,7 +128,7 @@ function dealCards() {
 	for (const player of players) {
 		player.cards[0].dataset.value = cards[0];
 		player.cards[1].dataset.value = cards[1];
-		player.qr.show(cards[0],cards[1]);
+		player.qr.show(cards[0],cards[1],player.name,player.totalChips);
 		cardGraveyard.push(cards.shift());
 		cardGraveyard.push(cards.shift());
 	}
