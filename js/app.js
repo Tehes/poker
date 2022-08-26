@@ -30,6 +30,8 @@ var cards = [
 	"AC", "AD", "AH", "AS",
 ];
 
+var cardGraveyard = [];
+
 var players = [];
 
 /* --------------------------------------------------------------------------------------------------
@@ -57,22 +59,67 @@ function startGame(event) {
 		name.contentEditable = "false";
 	}
 	event.target.classList.add("hidden");
+	createPlayers();
+	setDealer();
+	dealCards();
+}
+
+function createPlayers() {
+	for (const name of nameBadges) {
+			if(name.textContent === "") {
+				name.parentElement.classList.add("hidden");
+			}
+		}
 
 	var activePlayers = document.querySelectorAll(".seat:not(.hidden)");
 	for (const player of activePlayers) {
 		var playerObject = {
 			name: player.querySelector("h3").textContent,
 			seat: player,
-			qr: player.querySelector(".qr"),
+			qr: {
+				show: function(card1,card2) {
+					player.querySelector(".qr").classList.remove("hidden");
+					player.querySelector(".qr").src = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://tehes.github.io/poker/hole-cards.html?cards="+card1+"-"+card2;
+				},
+				hide: function() {
+					player.querySelector(".qr").classList.add("hidden");
+				}
+			},
 			cards: player.querySelectorAll(".card"),
-			dealerButton: player.querySelector(".dealer"),
+			dealer: false,
+			dealerButton: {
+				show: function() {
+					player.querySelector(".dealer").classList.remove("hidden");
+				},
+				hide: function() {
+					player.querySelector(".dealer").classList.add("hidden");
+				}
+			},
 			totalChips: player.querySelector(".chips .total").textContent,
 			betChips: player.querySelector(".chips .bet").textContent,
 		}
 		players.push(playerObject);
 	}
-	
-	console.log(players[0]);
+}
+
+function setDealer() {
+	var randomPlayerIndex = Math.floor(Math.random() * players.length) + 1;
+	players[randomPlayerIndex].dealer = true;
+	players[randomPlayerIndex].dealerButton.show();
+}
+
+function dealCards() {
+	cards = cards.concat(cardGraveyard);
+	cardGraveyard = [];
+	cards.shuffle();
+
+	for (const player of players) {
+		player.cards[0].dataset.value = cards[0];
+		player.cards[1].dataset.value = cards[1];
+		player.qr.show(cards[0],cards[1]);
+		cardGraveyard.push(cards.shift());
+		cardGraveyard.push(cards.shift());
+	}
 }
 
 function rotateSeat(event) {
@@ -102,8 +149,8 @@ function init() {
 /* --------------------------------------------------------------------------------------------------
 public members, exposed with return statement
 ---------------------------------------------------------------------------------------------------*/
-window.app = {
-	init
+window.poker = {
+	init, players, cards, cardGraveyard
 };
 
-app.init();
+poker.init();
