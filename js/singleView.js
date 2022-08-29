@@ -17,7 +17,7 @@ function init() {
     var queryString = window.location.search;
     var urlParams = new URLSearchParams(queryString);
 
-    var params= urlParams.get('cards').split('-');
+    var params= urlParams.get('params').split('-');
 
     var slots = document.querySelectorAll("img");
     slots[0].src = "cards/"+params[0]+".svg";

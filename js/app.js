@@ -92,9 +92,9 @@ function createPlayers() {
 			name: player.querySelector("h3").textContent,
 			seat: player,
 			qr: {
-				show: function (card1, card2, name, chips) {
+				show: function (card1, card2, name) {
 					player.querySelector(".qr").classList.remove("hidden");
-					player.querySelector(".qr").src = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" + window.location.href + "hole-cards.html?cards=" + card1 + "-" + card2 + "-" + name + "-" + chips;
+					player.querySelector(".qr").src = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" + window.location.href + "hole-cards.html?params=" + card1 + "-" + card2 + "-" + playerObject.name + "-" + playerObject.chips;
 				},
 				hide: function () {
 					player.querySelector(".qr").classList.add("hidden");
@@ -153,7 +153,7 @@ function dealCards() {
 	for (const player of players) {
 		player.cards[0].dataset.value = cards[0];
 		player.cards[1].dataset.value = cards[1];
-		player.qr.show(cards[0], cards[1], player.name, player.totalChips);
+		player.qr.show(cards[0], cards[1]);
 		cardGraveyard.push(cards.shift());
 		cardGraveyard.push(cards.shift());
 	}
