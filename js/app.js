@@ -125,9 +125,20 @@ function createPlayers() {
 }
 
 function setDealer() {
-	const randomPlayerIndex = Math.floor(Math.random() * players.length);
-	players[randomPlayerIndex].dealer = true;
-	players[randomPlayerIndex].dealerButton.show();
+	const isNotDealer = (currentValue) => currentValue.dealer === false;
+	if (players.every(isNotDealer)) {
+		const randomPlayerIndex = Math.floor(Math.random() * players.length);
+		players[randomPlayerIndex].dealer = true;
+		players[randomPlayerIndex].dealerButton.show();
+	}
+	else {
+		const isDealer = (element) => element.dealer === true;
+		const dealerIndex = players.findIndex(isDealer);
+		players[dealerIndex].dealer = false;
+		players[dealerIndex].dealerButton.hide();
+		players[dealerIndex].dealer = true;
+		players[dealerIndex].dealerButton.show();
+	}
 
 	while (players[0].dealer === false) {
 		players.unshift(players.pop());
