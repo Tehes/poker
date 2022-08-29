@@ -64,7 +64,6 @@ function startGame(event) {
 			name.contentEditable = "false";
 		}
 		event.target.classList.add("hidden");
-		notification.textContent = "Game has begun. ";
 		setDealer();
 		setBlinds();
 		dealCards();
@@ -133,12 +132,17 @@ function setDealer() {
 	while (players[0].dealer === false) {
 		players.unshift(players.pop());
 	}
+
+	notification.textContent = players[0].name + " is Dealer. ";
 }
 
 function setBlinds() {
 	const i = (players.length > 2) ? 1 : 0;
 	players[i].placeBet(smallBlind);
 	players[i+1].placeBet(bigBlind);
+
+	notification.textContent += players[i].name + " is small Blind. ";
+	notification.textContent += players[i+1].name + " is big Blind";
 }
 
 function dealCards() {
