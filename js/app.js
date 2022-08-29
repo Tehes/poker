@@ -136,8 +136,9 @@ function setDealer() {
 }
 
 function setBlinds() {
-	players[1].placeBet(smallBlind);
-	players[2].placeBet(bigBlind);
+	const i = (players.length > 2) ? 1 : 0;
+	players[i].placeBet(smallBlind);
+	players[i+1].placeBet(bigBlind);
 }
 
 function dealCards() {
