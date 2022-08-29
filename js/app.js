@@ -136,8 +136,8 @@ function setDealer() {
 		const dealerIndex = players.findIndex(isDealer);
 		players[dealerIndex].dealer = false;
 		players[dealerIndex].dealerButton.hide();
-		players[dealerIndex].dealer = true;
-		players[dealerIndex].dealerButton.show();
+		players[dealerIndex+1].dealer = true;
+		players[dealerIndex+1].dealerButton.show();
 	}
 
 	while (players[0].dealer === false) {
