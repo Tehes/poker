@@ -33,6 +33,9 @@ let cardGraveyard = [];
 
 let players = [];
 
+let smallBlind = 10;
+let bigBlind = 20;
+
 /* --------------------------------------------------------------------------------------------------
 functions
 ---------------------------------------------------------------------------------------------------*/
@@ -63,6 +66,7 @@ function startGame(event) {
 		event.target.classList.add("hidden");
 		notification.textContent = "Game has begun. ";
 		setDealer();
+		setBlinds();
 		dealCards();
 	}
 	else {
@@ -107,8 +111,15 @@ function createPlayers() {
 					player.querySelector(".dealer").classList.add("hidden");
 				}
 			},
-			totalChips: player.querySelector(".chips .total").textContent,
-			betChips: player.querySelector(".chips .bet").textContent,
+			chips: 2000,
+			showTotal: function() {
+				player.querySelector(".chips .total").textContent = playerObject.chips;
+			},
+			placeBet: function (x) {
+				player.querySelector(".chips .bet").textContent = x;
+				playerObject.chips = playerObject.chips - x;
+				playerObject.showTotal();
+			},
 		};
 		players.push(playerObject);
 	}
@@ -118,6 +129,15 @@ function setDealer() {
 	const randomPlayerIndex = Math.floor(Math.random() * players.length);
 	players[randomPlayerIndex].dealer = true;
 	players[randomPlayerIndex].dealerButton.show();
+
+	while (players[0].dealer === false) {
+		players.unshift(players.pop());
+	}
+}
+
+function setBlinds() {
+	players[1].placeBet(smallBlind);
+	players[2].placeBet(bigBlind);
 }
 
 function dealCards() {
