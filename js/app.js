@@ -94,7 +94,7 @@ function createPlayers() {
 			qr: {
 				show: function (card1, card2, name) {
 					player.querySelector(".qr").classList.remove("hidden");
-					player.querySelector(".qr").src = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" + window.location.href + "hole-cards.html?params=" + card1 + "-" + card2 + "-" + playerObject.name + "-" + playerObject.chips;
+					player.querySelector(".qr").src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${window.location.href}hole-cards.html?params=${card1}-${card2}-${playerObject.name}-${playerObject.chips}`;
 				},
 				hide: function () {
 					player.querySelector(".qr").classList.add("hidden");
@@ -198,7 +198,7 @@ function init() {
 public members, exposed with return statement
 ---------------------------------------------------------------------------------------------------*/
 window.poker = {
-	init, players, cards, cardGraveyard
+	init, players
 };
 
 poker.init();
