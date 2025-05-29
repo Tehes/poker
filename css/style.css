@@ -48,7 +48,6 @@ body {
 }
 
 button {
-    width: 100px;
     background-color: var(--yellow);
     color: var(--blue-darker);
     border: none;

@@ -164,10 +164,15 @@ function setDealer() {
 }
 
 function setBlinds() {
-	const i = (players.length > 2) ? 1 : 0;
-	// Blind chip deduction happens in startBettingRound()
-	notification.textContent += players[i].name + " is small Blind. ";
-	notification.textContent += players[i + 1].name + " is big Blind";
+	// Post blinds for Pre-Flop and set currentBet
+	const sbIdx = (players.length > 2) ? 1 : 0;
+	const bbIdx = (players.length > 2) ? 2 : 1;
+	players[sbIdx].placeBet(smallBlind);
+	players[bbIdx].placeBet(bigBlind);
+	currentBet = bigBlind;
+
+	notification.textContent += players[sbIdx].name + " is small Blind. ";
+	notification.textContent += players[bbIdx].name + " is big Blind";
 }
 
 function dealCards() {
@@ -185,6 +190,11 @@ function dealCards() {
 }
 
 function setPhase() {
+	// If only one player remains, skip community deals and go straight to showdown
+	const activePlayers = players.filter(p => !p.folded);
+	if (activePlayers.length <= 1) {
+		return doShowdown();
+	}
 	currentPhaseIndex++;
 	switch (Phases[currentPhaseIndex]) {
 		case "flop": dealCommunityCards(3); startBettingRound(); break;
@@ -213,25 +223,10 @@ function doShowdown() {
 }
 
 function startBettingRound() {
-	// 1) Clear previous bets
-	players.forEach(p => p.resetRoundBet());
-	// Reset slider and button for new round
-	amountSlider.min = 0;
-	amountSlider.value = 0;
-	amountSlider.nextElementSibling.value = 0;
-	actionButton.textContent = "Check";
-
-	// Post blinds for Pre-Flop and set currentBet
-	if (currentPhaseIndex === 0) {
-		const sbIdx = (players.length > 2) ? 1 : 0;
-		const bbIdx = (players.length > 2) ? 2 : 1;
-		// Post blinds via placeBet so UI and roundBet update correctly
-		players[sbIdx].placeBet(smallBlind);
-		players[bbIdx].placeBet(bigBlind);
-		currentBet = bigBlind;
-	} else {
-		// New round after flop/turn/river
-		currentBet = 0;
+	// If only one player remains, proceed directly to showdown
+	const activePlayers = players.filter(p => !p.folded);
+	if (activePlayers.length <= 1) {
+		return setPhase();
 	}
 
 	// 2) Determine start index
@@ -243,6 +238,10 @@ function startBettingRound() {
 	} else {
 		// first player left of dealer
 		startIdx = 1;
+		// Reset currentBet for post-Flop rounds
+		currentBet = 0;
+		// Reset bets only for post-flop rounds
+		players.forEach(p => p.resetRoundBet());
 	}
 
 	let idx = startIdx;
@@ -265,9 +264,12 @@ function startBettingRound() {
 
 		// Only check roundBet for skipping/termination
 		if (player.roundBet >= currentBet) {
-			// Post-flop: allow one pass-through if no bets
-			if (currentPhaseIndex > 0 && currentBet === 0 && cycles <= players.length) {
-				// still within first cycle: let them check (fall through to UI)
+			// Allow one pass-through for Big Blind pre-flop or Check post-flop
+			if (
+				(currentPhaseIndex === 0 && cycles <= players.length) ||
+				(currentPhaseIndex > 0 && currentBet === 0 && cycles <= players.length)
+			) {
+				// within first cycle: let them act (Big Blind gets checked, others check post-flop)
 			} else {
 				if (anyUncalled()) return nextPlayer();
 				return setPhase();
@@ -291,10 +293,12 @@ function startBettingRound() {
 		// Update button label on slider input
 		function onSliderInput() {
 			const val = parseInt(amountSlider.value, 10);
-			if (currentBet === 0) {
-				actionButton.textContent = val === 0 ? "Check" : "Bet";
+			if (val === 0) {
+				actionButton.textContent = "Check";
+			} else if (val === needToCall) {
+				actionButton.textContent = "Call";
 			} else {
-				actionButton.textContent = val === needToCall ? "Call" : "Raise";
+				actionButton.textContent = "Raise";
 			}
 		}
 		amountSlider.addEventListener("input", onSliderInput);
