@@ -285,11 +285,20 @@ function startBettingRound() {
 		amountSlider.min = needToCall;
 		amountSlider.value = needToCall;
 		amountSlider.nextElementSibling.value = amountSlider.value;
-		actionButton.textContent = needToCall === 0
-			? "Check"
-			: (parseInt(amountSlider.value, 10) === needToCall ? "Call" : "Raise");
 		foldButton.disabled = false;
 		actionButton.disabled = false;
+
+		// Update button label on slider input
+		function onSliderInput() {
+			const val = parseInt(amountSlider.value, 10);
+			if (currentBet === 0) {
+				actionButton.textContent = val === 0 ? "Check" : "Bet";
+			} else {
+				actionButton.textContent = val === needToCall ? "Call" : "Raise";
+			}
+		}
+		amountSlider.addEventListener("input", onSliderInput);
+		onSliderInput();
 
 		// Ereignishandler
 		function onAction() {
@@ -297,6 +306,7 @@ function startBettingRound() {
 			if (bet > needToCall) currentBet = player.roundBet + bet;
 			player.placeBet(bet);
 			player.seat.classList.remove('active');
+			amountSlider.removeEventListener("input", onSliderInput);
 			foldButton.removeEventListener("click", onFold);
 			actionButton.removeEventListener("click", onAction);
 			nextPlayer();
@@ -306,6 +316,7 @@ function startBettingRound() {
 			// Visually mark folded player
 			player.seat.classList.add('folded');
 			player.seat.classList.remove('active');
+			amountSlider.removeEventListener("input", onSliderInput);
 			foldButton.removeEventListener("click", onFold);
 			actionButton.removeEventListener("click", onAction);
 			nextPlayer();
