@@ -10,6 +10,13 @@ const rotateIcons = document.querySelectorAll(".seat .rotate");
 const nameBadges = document.querySelectorAll("h3");
 const closeButtons = document.querySelectorAll(".close");
 const notification = document.querySelector("#notification");
+const foldButton = document.querySelector("#fold-button");
+const actionButton = document.querySelector("#action-button");
+const amountSlider = document.querySelector("#amount-slider");
+let communitySlots;
+const Phases = ["preflop", "flop", "turn", "river", "showdown"];
+let currentPhaseIndex = 0;
+let currentBet = 0;
 
 // Clubs, Diamonds, Hearts, Spades
 // 2,3,4,5,6,7,8,9,T,J,Q,K,A
@@ -52,6 +59,8 @@ Array.prototype.shuffle = function () {
 
 function startGame(event) {
 	createPlayers();
+	// Reset folded state at the beginning of each new hand
+	players.forEach(p => p.folded = false);
 
 	if (players.length > 1) {
 		for (const rotateIcon of rotateIcons) {
@@ -67,6 +76,7 @@ function startGame(event) {
 		setDealer();
 		setBlinds();
 		dealCards();
+		startBettingRound();
 	}
 	else {
 		for (const name of nameBadges) {
@@ -92,7 +102,7 @@ function createPlayers() {
 			name: player.querySelector("h3").textContent,
 			seat: player,
 			qr: {
-				show: function (card1, card2, name) {
+				show: function (card1, card2) {
 					player.querySelector(".qr").classList.remove("hidden");
 					player.querySelector(".qr").src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${window.location.href}hole-cards.html?params=${card1}-${card2}-${playerObject.name}-${playerObject.chips}`;
 				},
@@ -111,13 +121,19 @@ function createPlayers() {
 				}
 			},
 			chips: 2000,
-			showTotal: function() {
+			roundBet: 0,
+			showTotal: function () {
 				player.querySelector(".chips .total").textContent = playerObject.chips;
 			},
 			placeBet: function (x) {
-				player.querySelector(".chips .bet").textContent = x;
-				playerObject.chips = playerObject.chips - x;
+				playerObject.roundBet += x;
+				player.querySelector(".chips .bet").textContent = playerObject.roundBet;
+				playerObject.chips -= x;
 				playerObject.showTotal();
+			},
+			resetRoundBet: function () {
+				playerObject.roundBet = 0;
+				player.querySelector(".chips .bet").textContent = 0;
 			},
 		};
 		players.push(playerObject);
@@ -136,8 +152,8 @@ function setDealer() {
 		const dealerIndex = players.findIndex(isDealer);
 		players[dealerIndex].dealer = false;
 		players[dealerIndex].dealerButton.hide();
-		players[dealerIndex+1].dealer = true;
-		players[dealerIndex+1].dealerButton.show();
+		players[dealerIndex + 1].dealer = true;
+		players[dealerIndex + 1].dealerButton.show();
 	}
 
 	while (players[0].dealer === false) {
@@ -149,11 +165,9 @@ function setDealer() {
 
 function setBlinds() {
 	const i = (players.length > 2) ? 1 : 0;
-	players[i].placeBet(smallBlind);
-	players[i+1].placeBet(bigBlind);
-
+	// Blind chip deduction happens in startBettingRound()
 	notification.textContent += players[i].name + " is small Blind. ";
-	notification.textContent += players[i+1].name + " is big Blind";
+	notification.textContent += players[i + 1].name + " is big Blind";
 }
 
 function dealCards() {
@@ -170,14 +184,148 @@ function dealCards() {
 	}
 }
 
-function rotateSeat(event) {
-	const seat = event.target.parentElement.parentElement;
+function setPhase() {
+	currentPhaseIndex++;
+	switch (Phases[currentPhaseIndex]) {
+		case "flop": dealCommunityCards(3); startBettingRound(); break;
+		case "turn": dealCommunityCards(1); startBettingRound(); break;
+		case "river": dealCommunityCards(1); startBettingRound(); break;
+		case "showdown": doShowdown(); break;
+	}
+}
+
+function dealCommunityCards(amount) {
+	const emptySlots = document.querySelectorAll("#community-cards .cardslot:empty");
+	if (emptySlots.length < amount) {
+		console.warn("Nicht genug leere Slots für", amount);
+		return;
+	}
+	cardGraveyard.push(cards.shift()); // burn
+	for (let i = 0; i < amount; i++) {
+		emptySlots[i].innerHTML = `<img src="cards/${cards.shift()}.svg">`;
+	}
+}
+
+function doShowdown() {
+	// Showdown logic not yet implemented
+	notification.textContent = "Showdown: determining winner...";
+	// TODO: implement hand evaluation and pot distribution
+}
+
+function startBettingRound() {
+	// 1) Clear previous bets
+	players.forEach(p => p.resetRoundBet());
+	// Reset slider and button for new round
+	amountSlider.min = 0;
+	amountSlider.value = 0;
+	amountSlider.nextElementSibling.value = 0;
+	actionButton.textContent = "Check";
+
+	// Post blinds for Pre-Flop and set currentBet
+	if (currentPhaseIndex === 0) {
+		const sbIdx = (players.length > 2) ? 1 : 0;
+		const bbIdx = (players.length > 2) ? 2 : 1;
+		// Post blinds via placeBet so UI and roundBet update correctly
+		players[sbIdx].placeBet(smallBlind);
+		players[bbIdx].placeBet(bigBlind);
+		currentBet = bigBlind;
+	} else {
+		// New round after flop/turn/river
+		currentBet = 0;
+	}
+
+	// 2) Determine start index
+	let startIdx;
+	if (currentPhaseIndex === 0) {
+		// UTG: first player left of big blind
+		const bbIdx = (players.length > 2) ? 2 : 1;
+		startIdx = (bbIdx + 1) % players.length;
+	} else {
+		// first player left of dealer
+		startIdx = 1;
+	}
+
+	let idx = startIdx;
+	let cycles = 0;
+
+	function anyUncalled() {
+		return players.some(p => !p.folded && p.roundBet < currentBet);
+	}
+
+	function nextPlayer() {
+		// Finde nächsten, der noch schuldet
+		let player = players[idx % players.length];
+		idx++;
+		cycles++;
+
+		// Always skip folded players
+		if (player.folded) {
+			return nextPlayer();
+		}
+
+		// Only check roundBet for skipping/termination
+		if (player.roundBet >= currentBet) {
+			// Post-flop: allow one pass-through if no bets
+			if (currentPhaseIndex > 0 && currentBet === 0 && cycles <= players.length) {
+				// still within first cycle: let them check (fall through to UI)
+			} else {
+				if (anyUncalled()) return nextPlayer();
+				return setPhase();
+			}
+		}
+
+		// Highlight active player
+		// remove previous highlight
+		document.querySelectorAll('.seat').forEach(s => s.classList.remove('active'));
+		player.seat.classList.add('active');
+
+		const needToCall = currentBet - player.roundBet;
+
+		// UI: Slider und Button vorbereiten
+		amountSlider.min = needToCall;
+		amountSlider.value = needToCall;
+		amountSlider.nextElementSibling.value = amountSlider.value;
+		actionButton.textContent = needToCall === 0
+			? "Check"
+			: (parseInt(amountSlider.value, 10) === needToCall ? "Call" : "Raise");
+		foldButton.disabled = false;
+		actionButton.disabled = false;
+
+		// Ereignishandler
+		function onAction() {
+			const bet = parseInt(amountSlider.value, 10);
+			if (bet > needToCall) currentBet = player.roundBet + bet;
+			player.placeBet(bet);
+			player.seat.classList.remove('active');
+			foldButton.removeEventListener("click", onFold);
+			actionButton.removeEventListener("click", onAction);
+			nextPlayer();
+		}
+		function onFold() {
+			player.folded = true;
+			// Visually mark folded player
+			player.seat.classList.add('folded');
+			player.seat.classList.remove('active');
+			foldButton.removeEventListener("click", onFold);
+			actionButton.removeEventListener("click", onAction);
+			nextPlayer();
+		}
+
+		foldButton.addEventListener("click", onFold);
+		actionButton.addEventListener("click", onAction);
+	}
+
+	nextPlayer();
+}
+
+function rotateSeat(ev) {
+	const seat = ev.target.parentElement.parentElement;
 	seat.dataset.rotation = parseInt(seat.dataset.rotation) + 90;
 	seat.style.transform = "rotate(" + seat.dataset.rotation + "deg)";
 }
 
-function deletePlayer(event) {
-	const seat = event.target.parentElement.parentElement;
+function deletePlayer(ev) {
+	const seat = ev.target.parentElement.parentElement;
 	seat.classList.add("hidden");
 }
 
@@ -185,6 +333,7 @@ function deletePlayer(event) {
 function init() {
 	document.addEventListener("touchstart", function () { }, false);
 	startButton.addEventListener("click", startGame, false);
+
 
 	for (const rotateIcon of rotateIcons) {
 		rotateIcon.addEventListener("click", rotateSeat, false);

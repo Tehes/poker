@@ -2,16 +2,16 @@
     --achromatic: 0, 0%;
     --blue: hsl(220, 40%, 30%);
     --blue-darker: hsl(220, 40%, 20%);
-	--blue-lighter: hsl(220, 40%, 40%);
+    --blue-lighter: hsl(220, 40%, 40%);
     --blue-lightest: hsl(220, 20%, 60%);
     --font-color: hsl(210, 14%, 95%);
     --red-suit: hsl(0, 100%, 50%);
     --black-suit: hsl(var(--achromatic), 0%);
-	--shadow: rgba(0, 0, 0, 0.4) 0px 3px 8px;
-	--shadow-pressed: rgba(0, 0, 0, 0.6) 0px 2px 8px;
-	--shadow-light: rgba(0, 0, 0, 0.2) 0px 3px 8px;
-	--yellow: hsl(40, 90%, 60%);
-	--yellow-active: hsl(40, 100%, 50%);
+    --shadow: rgba(0, 0, 0, 0.4) 0px 3px 8px;
+    --shadow-pressed: rgba(0, 0, 0, 0.6) 0px 2px 8px;
+    --shadow-light: rgba(0, 0, 0, 0.2) 0px 3px 8px;
+    --yellow: hsl(40, 90%, 60%);
+    --yellow-active: hsl(40, 100%, 50%);
 }
 
 * {
@@ -26,7 +26,9 @@ html {
     padding: 0;
 }
 
-h1, h2, h3 {
+h1,
+h2,
+h3 {
     font-weight: normal;
     margin: 0;
     padding: 0;
@@ -46,6 +48,7 @@ body {
 }
 
 button {
+    width: 100px;
     background-color: var(--yellow);
     color: var(--blue-darker);
     border: none;
@@ -55,13 +58,13 @@ button {
     font-family: 'Secular One', sans-serif;
     border-radius: 1vmin;
     cursor: pointer;
-	box-shadow: var(--shadow);
+    box-shadow: var(--shadow);
 }
 
 button:active {
-	box-shadow: var(--shadow-pressed);
-	background-color: var(--yellow-active);
-	transform: translateY(1px);
+    box-shadow: var(--shadow-pressed);
+    background-color: var(--yellow-active);
+    transform: translateY(1px);
 }
 
 input[type=range] {
@@ -73,33 +76,33 @@ input[type=range] {
     background: var(--yellow);
     outline: none;
     border-radius: 15px;
-	box-shadow: var(--shadow);
+    box-shadow: var(--shadow);
 }
 
 input[type=range]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 45px;
-  height: 45px;
-  background: url('../icons/chip.svg'), var(--yellow);
-  cursor: pointer;
-  border-radius: 50%;
-  box-shadow: var(--shadow);
+    -webkit-appearance: none;
+    appearance: none;
+    width: 45px;
+    height: 45px;
+    background: url('../icons/chip.svg'), var(--yellow);
+    cursor: pointer;
+    border-radius: 50%;
+    box-shadow: var(--shadow);
 }
 
 input[type=range]::-moz-range-thumb {
-  width: 45px;
-  height: 45px;
-  background: url('../icons/chip.svg'),  var(--yellow);
-  cursor: pointer;
-  border-radius: 50%;
-  box-shadow: var(--shadow);
+    width: 45px;
+    height: 45px;
+    background: url('../icons/chip.svg'), var(--yellow);
+    cursor: pointer;
+    border-radius: 50%;
+    box-shadow: var(--shadow);
 }
 
 output {
     text-align: center;
     min-width: 6vmin;
-	color: var(--yellow);
+    color: var(--yellow);
     font-size: 1.2em;
 }
 
@@ -226,11 +229,11 @@ h3 {
     color: var(--blue-darker);
     margin-bottom: 1vmin;
     text-align: center;
-	box-shadow: var(--shadow-light);
+    box-shadow: var(--shadow-light);
     font-size: 1.1em;
     line-height: 1.1;
-	-webkit-user-select: auto;
-	user-select: auto;
+    -webkit-user-select: auto;
+    user-select: auto;
 }
 
 h3:empty::before {
@@ -241,8 +244,16 @@ h3:focus::before {
     content: "";
 }
 
+.active h3 {
+    border: 2px solid var(--yellow);
+}
+
+.folded h3 {
+    text-decoration: line-through;
+}
+
 .hole-cards {
-	position: relative;
+    position: relative;
 }
 
 .hole-cards img {
@@ -256,71 +267,71 @@ h3:focus::before {
 }
 
 .hole-cards img:nth-of-type(1) {
-	transform: rotate(-2deg);
+    transform: rotate(-2deg);
     min-width: 80px;
 }
 
 .hole-cards img:nth-of-type(2) {
-	transform: rotate(3deg);
+    transform: rotate(3deg);
     position: absolute;
     min-width: 80px;
     right: 0;
 }
 
 .hole-cards .qr {
-	position: absolute;
-	top: 50%;
-	left: 50%;
-	transform: translate(-50%,-50%);
-	box-shadow: var(--shadow);
-	padding: 5px;
-	background-color: #fff;
-	width: 12vmin;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    box-shadow: var(--shadow);
+    padding: 5px;
+    background-color: #fff;
+    width: 12vmin;
     aspect-ratio: 1/1;
-	min-width: 80px;
-	z-index: 1000;
+    min-width: 80px;
+    z-index: 1000;
     border-radius: 5%;
 }
 
 .hole-cards .rotate {
     position: absolute;
-	top: 50%;
-	left: 50%;
-	transform: translate(-50%,-50%);
-	box-shadow: var(--shadow);
-	padding: 5px;
-	background-color: #fff;
-	width: 8vmin;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    box-shadow: var(--shadow);
+    padding: 5px;
+    background-color: #fff;
+    width: 8vmin;
     aspect-ratio: 1/1;
-	min-width: 65px;
-	z-index: 2000;
+    min-width: 65px;
+    z-index: 2000;
     border-radius: 5%;
 }
 
 .chips {
-	text-align: center;
+    text-align: center;
 }
 
 .chips .bet {
-	color: var(--yellow);
+    color: var(--yellow);
 }
 
 .hole-cards .dealer {
-	width: 45px;
-	border-radius: 50%;
-	background-color: var(--yellow);
-	position: absolute;
-	right: 0px;
-	bottom:0px;
+    width: 45px;
+    border-radius: 50%;
+    background-color: var(--yellow);
+    position: absolute;
+    right: 0px;
+    bottom: 0px;
 }
 
 .hole-cards .close {
-	width: 45px;
-	border-radius: 50%;
-	background-color: #fff;
-	position: absolute;
-	right: 0px;
-	top: 0px;
+    width: 45px;
+    border-radius: 50%;
+    background-color: #fff;
+    position: absolute;
+    right: 0px;
+    top: 0px;
 }
 
 /*
@@ -331,9 +342,9 @@ MODAL
 
 aside {
     position: absolute;
-    top:50%;
-    left:50%;
-    transform: translate(-50%,-50%);
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
 }
 
 /*
