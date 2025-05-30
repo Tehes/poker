@@ -244,11 +244,16 @@ h3:focus::before {
 }
 
 .active h3 {
-    border: 2px solid var(--yellow);
+    background-color: var(--yellow);
 }
 
 .folded h3 {
-    text-decoration: line-through;
+    background-color: var(--blue);
+    color: var(--blue-lightest);
+}
+
+.folded h3::before {
+    content: "❌ ";
 }
 
 .hole-cards {
@@ -315,7 +320,7 @@ h3:focus::before {
     color: var(--yellow);
 }
 
-.hole-cards .dealer {
+.hole-cards .blind-icons {
     width: 45px;
     border-radius: 50%;
     background-color: var(--yellow);

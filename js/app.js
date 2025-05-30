@@ -112,14 +112,20 @@ function createPlayers() {
 			},
 			cards: player.querySelectorAll(".card"),
 			dealer: false,
-			dealerButton: {
-				show: function () {
-					player.querySelector(".dealer").classList.remove("hidden");
-				},
-				hide: function () {
-					player.querySelector(".dealer").classList.add("hidden");
-				}
+			smallBlind: false,
+			bigBlind: false,
+			assignRole: function (role) {
+				// Convert kebab-case role to camelCase flag name
+				const flag = role.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+				this[flag] = true;
+				this.seat.querySelector(`#${role}`).classList.remove('hidden');
 			},
+			clearRole: function (role) {
+				const flag = role.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+				this[flag] = false;
+				this.seat.querySelector(`#${role}`).classList.add('hidden');
+			},
+			folded: false,
 			chips: 2000,
 			roundBet: 0,
 			showTotal: function () {
@@ -145,15 +151,15 @@ function setDealer() {
 	if (players.every(isNotDealer)) {
 		const randomPlayerIndex = Math.floor(Math.random() * players.length);
 		players[randomPlayerIndex].dealer = true;
-		players[randomPlayerIndex].dealerButton.show();
+		players[randomPlayerIndex].assignRole('dealer');
 	}
 	else {
 		const isDealer = (element) => element.dealer === true;
 		const dealerIndex = players.findIndex(isDealer);
 		players[dealerIndex].dealer = false;
-		players[dealerIndex].dealerButton.hide();
+		players[dealerIndex].clearRole('dealer');
 		players[dealerIndex + 1].dealer = true;
-		players[dealerIndex + 1].dealerButton.show();
+		players[dealerIndex + 1].assignRole('dealer');
 	}
 
 	while (players[0].dealer === false) {
@@ -164,11 +170,19 @@ function setDealer() {
 }
 
 function setBlinds() {
+	// Clear previous roles and icons
+	players.forEach(p => {
+		p.clearRole('small-blind');
+		p.clearRole('big-blind');
+	});
 	// Post blinds for Pre-Flop and set currentBet
 	const sbIdx = (players.length > 2) ? 1 : 0;
 	const bbIdx = (players.length > 2) ? 2 : 1;
 	players[sbIdx].placeBet(smallBlind);
 	players[bbIdx].placeBet(bigBlind);
+	// Assign new blinds
+	players[sbIdx].assignRole('small-blind');
+	players[bbIdx].assignRole('big-blind');
 	currentBet = bigBlind;
 
 	notification.textContent += players[sbIdx].name + " is small Blind. ";
@@ -233,11 +247,12 @@ function startBettingRound() {
 	let startIdx;
 	if (currentPhaseIndex === 0) {
 		// UTG: first player left of big blind
-		const bbIdx = (players.length > 2) ? 2 : 1;
+		const bbIdx = players.findIndex(p => p.bigBlind);
 		startIdx = (bbIdx + 1) % players.length;
 	} else {
 		// first player left of dealer
-		startIdx = 1;
+		const dealerIdx = players.findIndex(p => p.dealer);
+		startIdx = (dealerIdx + 1) % players.length;
 		// Reset currentBet for post-Flop rounds
 		currentBet = 0;
 		// Reset bets only for post-flop rounds
