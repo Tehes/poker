@@ -300,6 +300,8 @@ function startBettingRound() {
 
 		// UI: prepare slider and buttons
 		amountSlider.min = needToCall;
+		// Cap slider to player's available chips
+		amountSlider.max = player.chips;
 		amountSlider.value = needToCall;
 		amountSlider.nextElementSibling.value = amountSlider.value;
 		foldButton.disabled = false;
@@ -310,6 +312,8 @@ function startBettingRound() {
 			const val = parseInt(amountSlider.value, 10);
 			if (val === 0) {
 				actionButton.textContent = "Check";
+			} else if (val === player.chips) {
+				actionButton.textContent = "All-In";
 			} else if (val === needToCall) {
 				actionButton.textContent = "Call";
 			} else {
