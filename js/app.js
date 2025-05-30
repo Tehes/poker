@@ -221,7 +221,7 @@ function setPhase() {
 function dealCommunityCards(amount) {
 	const emptySlots = document.querySelectorAll("#community-cards .cardslot:empty");
 	if (emptySlots.length < amount) {
-		console.warn("Nicht genug leere Slots für", amount);
+		console.warn("Not enough empty slots for", amount);
 		return;
 	}
 	cardGraveyard.push(cards.shift()); // burn
@@ -267,7 +267,7 @@ function startBettingRound() {
 	}
 
 	function nextPlayer() {
-		// Finde nächsten, der noch schuldet
+		// Find next player who still owes action
 		let player = players[idx % players.length];
 		idx++;
 		cycles++;
@@ -298,7 +298,7 @@ function startBettingRound() {
 
 		const needToCall = currentBet - player.roundBet;
 
-		// UI: Slider und Button vorbereiten
+		// UI: prepare slider and buttons
 		amountSlider.min = needToCall;
 		amountSlider.value = needToCall;
 		amountSlider.nextElementSibling.value = amountSlider.value;
@@ -319,7 +319,7 @@ function startBettingRound() {
 		amountSlider.addEventListener("input", onSliderInput);
 		onSliderInput();
 
-		// Ereignishandler
+		// Event handlers
 		function onAction() {
 			const bet = parseInt(amountSlider.value, 10);
 			if (bet > needToCall) currentBet = player.roundBet + bet;
