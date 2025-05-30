@@ -303,13 +303,13 @@ h3:focus::before {
     left: 50%;
     transform: translate(-50%, -50%);
     box-shadow: var(--shadow);
-    padding: 5px;
+    padding: 8px;
     background-color: #fff;
     width: 8vmin;
     aspect-ratio: 1/1;
     min-width: 65px;
     z-index: 2000;
-    border-radius: 5%;
+    border-radius: 50%;
 }
 
 .chips {
