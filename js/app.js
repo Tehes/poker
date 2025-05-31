@@ -63,8 +63,6 @@ Array.prototype.shuffle = function () {
 
 function startGame(event) {
 	createPlayers();
-	// Reset folded state at the beginning of each new hand
-	players.forEach(p => p.folded = false);
 
 	if (players.length > 1) {
 		for (const rotateIcon of rotateIcons) {
@@ -77,13 +75,7 @@ function startGame(event) {
 			name.contentEditable = "false";
 		}
 		event.target.classList.add("hidden");
-		// Reset pot at the beginning of the hand
-		pot = 0;
-		document.getElementById("pot").textContent = pot;
-		setDealer();
-		setBlinds();
-		dealCards();
-		startBettingRound();
+		preFlop();
 	}
 	else {
 		for (const name of nameBadges) {
@@ -208,6 +200,24 @@ function dealCards() {
 		cardGraveyard.push(cards.shift());
 		cardGraveyard.push(cards.shift());
 	}
+}
+
+/**
+ * Execute the standard pre-flop steps: rotate dealer, post blinds, deal cards, start betting.
+ */
+function preFlop() {
+	// Reset folded state and remove folded class from each seat
+	players.forEach(p => {
+		p.folded = false;
+		p.seat.classList.remove('folded');
+	});
+	// Reset pot at the beginning of the hand
+	pot = 0;
+	document.getElementById("pot").textContent = pot;
+	setDealer();
+	setBlinds();
+	dealCards();
+	startBettingRound();
 }
 
 function setPhase() {
@@ -506,7 +516,7 @@ function init() {
 public members, exposed with return statement
 ---------------------------------------------------------------------------------------------------*/
 window.poker = {
-	init, players
+	init, players, preFlop
 };
 
 poker.init();
