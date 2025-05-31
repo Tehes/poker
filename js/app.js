@@ -343,6 +343,7 @@ function startBettingRound() {
 		}
 		function onFold() {
 			player.folded = true;
+			player.qr.hide();
 			// Visually mark folded player
 			player.seat.classList.add('folded');
 			player.seat.classList.remove('active');

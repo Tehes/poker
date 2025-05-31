@@ -131,6 +131,14 @@ main .seat {
     transition: all 0.5s;
 }
 
+main .seat .hole-cards img {
+    transition: all 0.3s;
+}
+
+main .seat .hole-cards img {
+    transition: all 0.3s;
+}
+
 .seat:nth-of-type(1) {
     grid-area: 1 / 1 / 2 / 2;
 }
@@ -280,6 +288,19 @@ h3:focus::before {
     position: absolute;
     min-width: 80px;
     right: 0;
+}
+
+/* When a player folds, bring their hole cards closer together with directional shift */
+main .seat.folded .hole-cards img:nth-of-type(1) {
+    margin: 0 0.2vmin;
+    transform: translateX(3.5vmin) rotate(-0.5deg);
+    transition: all 0.3s;
+}
+
+main .seat.folded .hole-cards img:nth-of-type(2) {
+    margin: 0 0.2vmin;
+    transform: translateX(-3.5vmin) rotate(1deg);
+    transition: all 0.3s;
 }
 
 .hole-cards .qr {
