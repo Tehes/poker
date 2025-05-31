@@ -17,6 +17,7 @@ let communitySlots;
 const Phases = ["preflop", "flop", "turn", "river", "showdown"];
 let currentPhaseIndex = 0;
 let currentBet = 0;
+let pot = 0;
 
 // Clubs, Diamonds, Hearts, Spades
 // 2,3,4,5,6,7,8,9,T,J,Q,K,A
@@ -77,6 +78,8 @@ function startGame(event) {
 		setBlinds();
 		dealCards();
 		startBettingRound();
+		pot = 0;
+		document.getElementById("pot").textContent = pot;
 	}
 	else {
 		for (const name of nameBadges) {
@@ -299,10 +302,12 @@ function startBettingRound() {
 		const needToCall = currentBet - player.roundBet;
 
 		// UI: prepare slider and buttons
-		amountSlider.min = needToCall;
+		// Determine minimum bet as the lesser of needToCall and player chips
+		const minBet = Math.min(needToCall, player.chips);
+		amountSlider.min = minBet;
 		// Cap slider to player's available chips
 		amountSlider.max = player.chips;
-		amountSlider.value = needToCall;
+		amountSlider.value = minBet;
 		amountSlider.nextElementSibling.value = amountSlider.value;
 		foldButton.disabled = false;
 		actionButton.disabled = false;
@@ -328,6 +333,8 @@ function startBettingRound() {
 			const bet = parseInt(amountSlider.value, 10);
 			if (bet > needToCall) currentBet = player.roundBet + bet;
 			player.placeBet(bet);
+			pot += bet;
+			document.getElementById("pot").textContent = pot;
 			player.seat.classList.remove('active');
 			amountSlider.removeEventListener("input", onSliderInput);
 			foldButton.removeEventListener("click", onFold);
