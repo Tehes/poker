@@ -260,7 +260,7 @@ h3:focus::before {
 }
 
 .folded h3 {
-    background-color: var(--blue);
+    background-color: var(--blue-darker);
     color: var(--blue-lightest);
 }
 

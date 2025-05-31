@@ -19,6 +19,9 @@ let currentPhaseIndex = 0;
 let currentBet = 0;
 let pot = 0;
 
+let notificationQueue = [];
+let isDisplayingNotification = false;
+
 // Clubs, Diamonds, Hearts, Spades
 // 2,3,4,5,6,7,8,9,T,J,Q,K,A
 let cards = [
@@ -74,19 +77,19 @@ function startGame(event) {
 			name.contentEditable = "false";
 		}
 		event.target.classList.add("hidden");
+		// Reset pot at the beginning of the hand
+		pot = 0;
+		document.getElementById("pot").textContent = pot;
 		setDealer();
 		setBlinds();
 		dealCards();
 		startBettingRound();
-		pot = 0;
-		document.getElementById("pot").textContent = pot;
 	}
 	else {
 		for (const name of nameBadges) {
 			if (name.textContent === "") {
 				name.parentElement.classList.remove("hidden");
 			}
-			notification.textContent = "Not enough players";
 			players = [];
 		}
 	}
@@ -169,7 +172,7 @@ function setDealer() {
 		players.unshift(players.pop());
 	}
 
-	notification.textContent = players[0].name + " is Dealer. ";
+	enqueueNotification(`${players[0].name} is Dealer.`);
 }
 
 function setBlinds() {
@@ -183,13 +186,14 @@ function setBlinds() {
 	const bbIdx = (players.length > 2) ? 2 : 1;
 	players[sbIdx].placeBet(smallBlind);
 	players[bbIdx].placeBet(bigBlind);
+	enqueueNotification(`${players[sbIdx].name} posted small blind of ${smallBlind}. ${players[bbIdx].name} posted big blind of ${bigBlind}.`);
+	// Add blinds to the pot
+	pot += smallBlind + bigBlind;
+	document.getElementById("pot").textContent = pot;
 	// Assign new blinds
 	players[sbIdx].assignRole('small-blind');
 	players[bbIdx].assignRole('big-blind');
 	currentBet = bigBlind;
-
-	notification.textContent += players[sbIdx].name + " is small Blind. ";
-	notification.textContent += players[bbIdx].name + " is big Blind";
 }
 
 function dealCards() {
@@ -214,9 +218,21 @@ function setPhase() {
 	}
 	currentPhaseIndex++;
 	switch (Phases[currentPhaseIndex]) {
-		case "flop": dealCommunityCards(3); startBettingRound(); break;
-		case "turn": dealCommunityCards(1); startBettingRound(); break;
-		case "river": dealCommunityCards(1); startBettingRound(); break;
+		case "flop":
+			dealCommunityCards(3);
+			enqueueNotification("Flop dealt: 3 community cards.");
+			startBettingRound();
+			break;
+		case "turn":
+			dealCommunityCards(1);
+			enqueueNotification("Turn dealt: 4th community card.");
+			startBettingRound();
+			break;
+		case "river":
+			dealCommunityCards(1);
+			enqueueNotification("River dealt: 5th community card.");
+			startBettingRound();
+			break;
 		case "showdown": doShowdown(); break;
 	}
 }
@@ -235,7 +251,7 @@ function dealCommunityCards(amount) {
 
 function doShowdown() {
 	// Showdown logic not yet implemented
-	notification.textContent = "Showdown: determining winner...";
+	enqueueNotification("Showdown: determining winner...");
 	// TODO: implement hand evaluation and pot distribution
 }
 
@@ -331,18 +347,47 @@ function startBettingRound() {
 		// Event handlers
 		function onAction() {
 			const bet = parseInt(amountSlider.value, 10);
-			if (bet > needToCall) currentBet = player.roundBet + bet;
-			player.placeBet(bet);
-			pot += bet;
-			document.getElementById("pot").textContent = pot;
+			const needToCall = currentBet - player.roundBet;
+
+			// Remove active highlight and slider listener
 			player.seat.classList.remove('active');
 			amountSlider.removeEventListener("input", onSliderInput);
+
+			// Handle action types
+			if (bet === 0) {
+				// Check
+				notifyPlayerAction(player, "check");
+			} else if (bet === player.chips && bet < needToCall) {
+				// All-In (short stack)
+				player.placeBet(bet);
+				pot += bet;
+				document.getElementById("pot").textContent = pot;
+				notifyPlayerAction(player, "allin", bet);
+				foldButton.removeEventListener("click", onFold);
+				actionButton.removeEventListener("click", onAction);
+				return nextPlayer();
+			} else if (bet === needToCall) {
+				// Call
+				player.placeBet(bet);
+				pot += bet;
+				document.getElementById("pot").textContent = pot;
+				notifyPlayerAction(player, "call", player.roundBet);
+			} else {
+				// Raise
+				player.placeBet(bet);
+				currentBet = player.roundBet;
+				pot += bet;
+				document.getElementById("pot").textContent = pot;
+				notifyPlayerAction(player, "raise", player.roundBet);
+			}
+
 			foldButton.removeEventListener("click", onFold);
 			actionButton.removeEventListener("click", onAction);
 			nextPlayer();
 		}
 		function onFold() {
 			player.folded = true;
+			notifyPlayerAction(player, "fold");
 			player.qr.hide();
 			// Visually mark folded player
 			player.seat.classList.add('folded');
@@ -371,6 +416,56 @@ function deletePlayer(ev) {
 	seat.classList.add("hidden");
 }
 
+function notifyPlayerAction(player, action, amount) {
+	let msg = "";
+	switch (action) {
+		case "fold":
+			msg = `${player.name} folded.`;
+			break;
+		case "check":
+			msg = `${player.name} checked.`;
+			break;
+		case "call":
+			msg = `${player.name} called ${amount}.`;
+			break;
+		case "raise":
+			msg = `${player.name} raised to ${amount}.`;
+			break;
+		case "allin":
+			msg = `${player.name} is all-in (${amount}).`;
+			break;
+		case "postblind":
+			msg = `${player.name} posted blind of ${amount}.`;
+			break;
+		default:
+			msg = `${player.name} did something…`;
+	}
+	enqueueNotification(msg);
+}
+
+/**
+ * Display the next notification from the queue.
+ */
+function displayNextNotification() {
+	if (notificationQueue.length === 0) {
+		isDisplayingNotification = false;
+		return;
+	}
+	isDisplayingNotification = true;
+	const msg = notificationQueue.shift();
+	notification.textContent = msg;
+	// Display each notification for 2 seconds
+	setTimeout(() => {
+		displayNextNotification();
+	}, 2000);
+}
+
+function enqueueNotification(msg) {
+	notificationQueue.push(msg);
+	if (!isDisplayingNotification) {
+		displayNextNotification();
+	}
+}
 
 function init() {
 	document.addEventListener("touchstart", function () { }, false);
