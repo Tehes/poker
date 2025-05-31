@@ -220,17 +220,17 @@ function setPhase() {
 	switch (Phases[currentPhaseIndex]) {
 		case "flop":
 			dealCommunityCards(3);
-			enqueueNotification("Flop dealt: 3 community cards.");
+			enqueueNotification("Flop dealt: 3 community cards");
 			startBettingRound();
 			break;
 		case "turn":
 			dealCommunityCards(1);
-			enqueueNotification("Turn dealt: 4th community card.");
+			enqueueNotification("Turn dealt: 4th community card");
 			startBettingRound();
 			break;
 		case "river":
 			dealCommunityCards(1);
-			enqueueNotification("River dealt: 5th community card.");
+			enqueueNotification("River dealt: 5th community card");
 			startBettingRound();
 			break;
 		case "showdown": doShowdown(); break;
@@ -250,9 +250,21 @@ function dealCommunityCards(amount) {
 }
 
 function doShowdown() {
-	// Showdown logic not yet implemented
+	players.forEach(p => p.resetRoundBet());
+	// If only one player remains, they win the pot immediately
+	const activePlayers = players.filter(p => !p.folded);
+	if (activePlayers.length === 1) {
+		const winner = activePlayers[0];
+		winner.chips += pot;
+		winner.showTotal();
+		enqueueNotification(`${winner.name} wins the pot of ${pot}!`);
+		pot = 0;
+		document.getElementById("pot").textContent = pot;
+		return;
+	}
+	// Otherwise, proceed with normal showdown (not yet implemented)
 	enqueueNotification("Showdown: determining winner...");
-	// TODO: implement hand evaluation and pot distribution
+	// TODO: implement full hand evaluation and pot distribution
 }
 
 function startBettingRound() {
