@@ -318,15 +318,25 @@ function startBettingRound() {
 		const needToCall = currentBet - player.roundBet;
 
 		// UI: prepare slider and buttons
-		// Determine minimum bet as the lesser of needToCall and player chips
-		const minBet = Math.min(needToCall, player.chips);
-		amountSlider.min = minBet;
-		// Cap slider to player's available chips
-		amountSlider.max = player.chips;
-		amountSlider.value = minBet;
-		amountSlider.nextElementSibling.value = amountSlider.value;
 		foldButton.disabled = false;
 		actionButton.disabled = false;
+		if (currentPhaseIndex > 0 && currentBet === 0) {
+			// First bet post-flop: allow Check (0) or at least big blind
+			amountSlider.min = 0;
+			amountSlider.max = player.chips;
+			// Step equals big blind (or entire stack if less than big blind)
+			amountSlider.step = (player.chips >= bigBlind) ? bigBlind : player.chips;
+			amountSlider.value = 0;
+			amountSlider.nextElementSibling.value = 0;
+		} else {
+			// Determine minimum bet as the lesser of needToCall and player chips
+			const minBet = Math.min(needToCall, player.chips);
+			amountSlider.min = minBet;
+			amountSlider.max = player.chips;
+			amountSlider.step = 10;
+			amountSlider.value = minBet;
+			amountSlider.nextElementSibling.value = minBet;
+		}
 
 		// Update button label on slider input
 		function onSliderInput() {

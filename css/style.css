@@ -213,8 +213,8 @@ TABLE-MIDDLE
 }
 
 .cardslot:empty {
-    background-color: var(--blue);
-    box-shadow: inset var(--shadow-light);
+    border: 0.25vmin dashed var(--blue-lightest);
+    background-color: hsla(0, 0%, 0%, 5%);
 }
 
 .cardslot img {
