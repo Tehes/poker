@@ -18,6 +18,7 @@ const Phases = ["preflop", "flop", "turn", "river", "showdown"];
 let currentPhaseIndex = 0;
 let currentBet = 0;
 let pot = 0;
+let gameStarted = false;
 
 let notificationQueue = [];
 let isDisplayingNotification = false;
@@ -62,28 +63,34 @@ Array.prototype.shuffle = function () {
 };
 
 function startGame(event) {
-	createPlayers();
+	if (!gameStarted) {
+		createPlayers();
 
-	if (players.length > 1) {
-		for (const rotateIcon of rotateIcons) {
-			rotateIcon.classList.add("hidden");
-		}
-		for (const closeButton of closeButtons) {
-			closeButton.classList.add("hidden");
-		}
-		for (const name of nameBadges) {
-			name.contentEditable = "false";
-		}
-		event.target.classList.add("hidden");
-		preFlop();
-	}
-	else {
-		for (const name of nameBadges) {
-			if (name.textContent === "") {
-				name.parentElement.classList.remove("hidden");
+		if (players.length > 1) {
+			for (const rotateIcon of rotateIcons) {
+				rotateIcon.classList.add("hidden");
 			}
-			players = [];
+			for (const closeButton of closeButtons) {
+				closeButton.classList.add("hidden");
+			}
+			for (const name of nameBadges) {
+				name.contentEditable = "false";
+			}
+			event.target.classList.add("hidden");
+			gameStarted = true;
+			preFlop();
+		} else {
+			for (const name of nameBadges) {
+				if (name.textContent === "") {
+					name.parentElement.classList.remove("hidden");
+				}
+				players = [];
+			}
+			enqueueNotification("Not enough players");
 		}
+	} else {
+		// New Round
+		preFlop();
 	}
 }
 
@@ -206,17 +213,33 @@ function dealCards() {
  * Execute the standard pre-flop steps: rotate dealer, post blinds, deal cards, start betting.
  */
 function preFlop() {
-	// Reset folded state and remove folded class from each seat
+	// Reset phase to preflop
+	currentPhaseIndex = 0;
+
+	startButton.classList.add("hidden");
+
+	// Clear folded state and remove CSS-Klasse
 	players.forEach(p => {
 		p.folded = false;
 		p.seat.classList.remove('folded');
 	});
-	// Reset pot at the beginning of the hand
-	pot = 0;
-	document.getElementById("pot").textContent = pot;
+
+	// Reset all previous round bets
+	players.forEach(p => p.resetRoundBet());
+
+	// Clear community cards from last hand
+	document.querySelectorAll("#community-cards .cardslot").forEach(slot => {
+		slot.innerHTML = "";
+	});
+
+	// Assign dealer and post blinds
 	setDealer();
 	setBlinds();
+
+	// Shuffle and deal new hole cards
 	dealCards();
+
+	// Start first betting round (preflop)
 	startBettingRound();
 }
 
@@ -257,24 +280,6 @@ function dealCommunityCards(amount) {
 	for (let i = 0; i < amount; i++) {
 		emptySlots[i].innerHTML = `<img src="cards/${cards.shift()}.svg">`;
 	}
-}
-
-function doShowdown() {
-	players.forEach(p => p.resetRoundBet());
-	// If only one player remains, they win the pot immediately
-	const activePlayers = players.filter(p => !p.folded);
-	if (activePlayers.length === 1) {
-		const winner = activePlayers[0];
-		winner.chips += pot;
-		winner.showTotal();
-		enqueueNotification(`${winner.name} wins the pot of ${pot}!`);
-		pot = 0;
-		document.getElementById("pot").textContent = pot;
-		return;
-	}
-	// Otherwise, proceed with normal showdown (not yet implemented)
-	enqueueNotification("Showdown: determining winner...");
-	// TODO: implement full hand evaluation and pot distribution
 }
 
 function startBettingRound() {
@@ -437,6 +442,25 @@ function startBettingRound() {
 	nextPlayer();
 }
 
+function doShowdown() {
+	// If only one player remains, they win the pot immediately
+	const activePlayers = players.filter(p => !p.folded);
+	if (activePlayers.length === 1) {
+		const winner = activePlayers[0];
+		winner.chips += pot;
+		winner.showTotal();
+		enqueueNotification(`${winner.name} wins the pot of ${pot}!`);
+		pot = 0;
+		document.getElementById("pot").textContent = pot;
+		startButton.textContent = "New Round";
+		startButton.classList.remove("hidden");
+		return;
+	}
+	// Otherwise, proceed with normal showdown (not yet implemented)
+	enqueueNotification("Showdown: determining winner...");
+	// TODO: implement full hand evaluation and pot distribution
+}
+
 function rotateSeat(ev) {
 	const seat = ev.target.parentElement.parentElement;
 	seat.dataset.rotation = parseInt(seat.dataset.rotation) + 90;
@@ -502,7 +526,6 @@ function enqueueNotification(msg) {
 function init() {
 	document.addEventListener("touchstart", function () { }, false);
 	startButton.addEventListener("click", startGame, false);
-
 
 	for (const rotateIcon of rotateIcons) {
 		rotateIcon.addEventListener("click", rotateSeat, false);
