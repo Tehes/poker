@@ -223,8 +223,15 @@ function preFlop() {
 		p.folded = false;
 		p.seat.classList.remove('folded');
 	});
+
 	// Remove any previous winner highlighting
 	players.forEach(p => p.seat.classList.remove('winner'));
+
+	// Cover all hole cards with card back
+	players.forEach(p => {
+		p.cards[0].src = "cards/1B.svg";
+		p.cards[1].src = "cards/1B.svg";
+	});
 
 	// Reset all previous round bets
 	players.forEach(p => p.resetRoundBet());
@@ -468,7 +475,13 @@ function doShowdown() {
 		winner.showTotal();
 		// Highlight the winning player
 		winner.seat.classList.add('winner');
-		enqueueNotification(`${winner.name} wins the pot of ${pot}!`);
+		// Determine winner’s hand description
+		const hole = [winner.cards[0].dataset.value, winner.cards[1].dataset.value];
+		const communityCards = Array.from(
+			document.querySelectorAll("#community-cards .cardslot img")
+		).map(img => img.src.match(/\/cards\/([2-9TJQKA][CDHS])\.svg$/)[1]);
+		const winnerHand = Hand.solve([...hole, ...communityCards]);
+		enqueueNotification(`${winner.name} wins the pot of ${pot}! (${winnerHand.name})`);
 		pot = 0;
 		document.getElementById("pot").textContent = pot;
 		startButton.textContent = "New Round";
@@ -513,13 +526,13 @@ function doShowdown() {
 	if (winningHands.length === 1) {
 		const winnerHand = winningHands[0];
 		const entry = hands.find(h => h.handObj === winnerHand);
-		enqueueNotification(`${entry.player.name} wins ${share}!`);
+		enqueueNotification(`${entry.player.name} wins ${share}! (${entry.handObj.name})`);
 	} else {
-		const names = winningHands.map(winnerHand => {
+		const descrs = winningHands.map(winnerHand => {
 			const entry = hands.find(h => h.handObj === winnerHand);
-			return entry.player.name;
+			return `${entry.player.name} (${winnerHand.name})`;
 		}).join(" & ");
-		enqueueNotification(`Split pot: ${names} each win ${share}!`);
+		enqueueNotification(`Split pot: ${descrs} each win ${share}!`);
 	}
 	// Highlight all winning players
 	winningHands.forEach(winnerHand => {
