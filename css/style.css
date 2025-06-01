@@ -264,6 +264,10 @@ h3:focus::before {
     color: var(--blue-lightest);
 }
 
+.winner h3 {
+    border: 3px solid var(--yellow);
+}
+
 .folded h3::before {
     content: "❌ ";
 }

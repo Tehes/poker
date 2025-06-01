@@ -223,6 +223,8 @@ function preFlop() {
 		p.folded = false;
 		p.seat.classList.remove('folded');
 	});
+	// Remove any previous winner highlighting
+	players.forEach(p => p.seat.classList.remove('winner'));
 
 	// Reset all previous round bets
 	players.forEach(p => p.resetRoundBet());
@@ -249,6 +251,7 @@ function setPhase() {
 	if (activePlayers.length <= 1) {
 		return doShowdown();
 	}
+
 	currentPhaseIndex++;
 	switch (Phases[currentPhaseIndex]) {
 		case "flop":
@@ -283,11 +286,6 @@ function dealCommunityCards(amount) {
 }
 
 function startBettingRound() {
-	// If only one player remains, proceed directly to showdown
-	const activePlayers = players.filter(p => !p.folded);
-	if (activePlayers.length <= 1) {
-		return setPhase();
-	}
 
 	// 2) Determine start index
 	let startIdx;
@@ -313,6 +311,11 @@ function startBettingRound() {
 	}
 
 	function nextPlayer() {
+		// If only one player remains, skip to next phase (or showdown)
+		const remaining = players.filter(p => !p.folded);
+		if (remaining.length === 1) {
+			return setPhase();
+		}
 		// Find next player who still owes action
 		let player = players[idx % players.length];
 		idx++;
@@ -443,12 +446,28 @@ function startBettingRound() {
 }
 
 function doShowdown() {
-	// If only one player remains, they win the pot immediately
+	// 1) Filter active players
 	const activePlayers = players.filter(p => !p.folded);
+
+	// Reveal hole cards of all active players
+	if (activePlayers.length > 1) {
+		activePlayers.forEach(p => {
+			const card1 = p.cards[0].dataset.value;
+			const card2 = p.cards[1].dataset.value;
+			p.cards[0].src = `cards/${card1}.svg`;
+			p.cards[1].src = `cards/${card2}.svg`;
+			p.qr.hide();
+		});
+	}
+
+
+	// Single-player case: immediate win
 	if (activePlayers.length === 1) {
 		const winner = activePlayers[0];
 		winner.chips += pot;
 		winner.showTotal();
+		// Highlight the winning player
+		winner.seat.classList.add('winner');
 		enqueueNotification(`${winner.name} wins the pot of ${pot}!`);
 		pot = 0;
 		document.getElementById("pot").textContent = pot;
@@ -456,9 +475,63 @@ function doShowdown() {
 		startButton.classList.remove("hidden");
 		return;
 	}
-	// Otherwise, proceed with normal showdown (not yet implemented)
-	enqueueNotification("Showdown: determining winner...");
-	// TODO: implement full hand evaluation and pot distribution
+
+	// 2) Gather community cards from the DOM
+	const communityCards = Array.from(
+		document.querySelectorAll("#community-cards .cardslot img")
+	).map(img => {
+		// Extract card code from src, e.g., ".../cards/Ah.svg" → "Ah"
+		const match = img.src.match(/\/cards\/([2-9TJQKA][CDHS])\.svg$/);
+		return match ? match[1] : null;
+	}).filter(Boolean);
+
+	// 3) Create Hand objects for each active player
+	const hands = activePlayers.map(p => {
+		const holeCards = [
+			p.cards[0].dataset.value,
+			p.cards[1].dataset.value
+		];
+		const sevenCards = [...holeCards, ...communityCards];
+		return {
+			player: p,
+			handObj: Hand.solve(sevenCards)
+		};
+	});
+
+	// 4) Determine winning hand(s)
+	const winningHands = Hand.winners(hands.map(h => h.handObj));
+
+	// 5) Distribute pot among winners (split pot equally)
+	const share = Math.floor(pot / winningHands.length);
+	winningHands.forEach(winnerHand => {
+		const entry = hands.find(h => h.handObj === winnerHand);
+		entry.player.chips += share;
+		entry.player.showTotal();
+	});
+
+	// 6) Notify result
+	if (winningHands.length === 1) {
+		const winnerHand = winningHands[0];
+		const entry = hands.find(h => h.handObj === winnerHand);
+		enqueueNotification(`${entry.player.name} wins ${share}!`);
+	} else {
+		const names = winningHands.map(winnerHand => {
+			const entry = hands.find(h => h.handObj === winnerHand);
+			return entry.player.name;
+		}).join(" & ");
+		enqueueNotification(`Split pot: ${names} each win ${share}!`);
+	}
+	// Highlight all winning players
+	winningHands.forEach(winnerHand => {
+		const entry = hands.find(h => h.handObj === winnerHand);
+		entry.player.seat.classList.add('winner');
+	});
+
+	// 7) Reset pot
+	pot = 0;
+	document.getElementById("pot").textContent = pot;
+	startButton.textContent = "New Round";
+	startButton.classList.remove("hidden");
 }
 
 function rotateSeat(ev) {
