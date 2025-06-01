@@ -5,7 +5,7 @@ Imports
 /* --------------------------------------------------------------------------------------------------
 Variables
 ---------------------------------------------------------------------------------------------------*/
-const startButton = document.querySelector("aside button");
+const startButton = document.querySelector("#start-button");
 const rotateIcons = document.querySelectorAll(".seat .rotate");
 const nameBadges = document.querySelectorAll("h3");
 const closeButtons = document.querySelectorAll(".close");
