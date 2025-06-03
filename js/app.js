@@ -241,6 +241,19 @@ function preFlop() {
 		slot.innerHTML = "";
 	});
 
+	// Remove players with zero chips from the table
+	const remainingPlayers = [];
+	players.forEach(p => {
+		if (p.chips <= 0) {
+			p.chips = 0;
+			p.seat.classList.add("hidden");
+			enqueueNotification(`${p.name} is out of chips and leaves the table.`);
+		} else {
+			remainingPlayers.push(p);
+		}
+	});
+	players = remainingPlayers;
+
 	// Assign dealer and post blinds
 	setDealer();
 	setBlinds();
