@@ -279,6 +279,21 @@ function preFlop() {
 	});
 	players = remainingPlayers;
 
+	// ----------------------------------------------------------
+	// GAME OVER: only one player left at the table
+	if (players.length === 1) {
+		const champion = players[0];
+		enqueueNotification(`${champion.name} has won all the chips and the game! 🏆`);
+		// Reveal champion's stack
+		champion.showTotal();
+		// Show start button for a fresh game
+		startButton.textContent = "Restart";
+		startButton.classList.remove("hidden");
+		gameStarted = false;   // allow new startGame() to reset everything
+		return;                // skip the rest of preFlop()
+	}
+	// ----------------------------------------------------------
+
 	// Assign dealer and post blinds
 	setDealer();
 	setBlinds();
@@ -585,6 +600,29 @@ function doShowdown() {
 			prev = lvl;
 		}
 	}
+
+	// ------------------------------------------------------------------
+	// COSMETIC MERGE: combine consecutive side pots whose eligible
+	// player sets are identical.  This removes tiny "blind-only" pots
+	// when all remaining contenders have contributed to the next level.
+	for (let i = 0; i < sidePots.length - 1;) {
+		const eligA = sidePots[i].eligible.filter(p => !p.folded);
+		const eligB = sidePots[i + 1].eligible.filter(p => !p.folded);
+
+		const sameEligible =
+			eligA.length === eligB.length &&
+			eligA.every(p => eligB.includes(p));
+
+		if (sameEligible) {
+			// Merge amounts and discard the next pot
+			sidePots[i].amount += sidePots[i + 1].amount;
+			sidePots.splice(i + 1, 1);
+			// Do not increment i – check the newly merged pot against the next
+		} else {
+			i++; // move to next pair
+		}
+	}
+	// ------------------------------------------------------------------
 
 	// ---- Evaluate each side pot ----
 	sidePots.forEach((sp, potIdx) => {
