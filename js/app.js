@@ -165,12 +165,22 @@ function setDealer() {
 		players[randomPlayerIndex].assignRole('dealer');
 	}
 	else {
-		const isDealer = (element) => element.dealer === true;
-		const dealerIndex = players.findIndex(isDealer);
+		// If only one player remains, keep them as dealer and exit early
+		if (players.length === 1) {
+			players[0].dealer = true;
+			players[0].assignRole('dealer');
+			enqueueNotification(`${players[0].name} is Dealer.`);
+			return;
+		}
+		const dealerIndex = players.findIndex(p => p.dealer);
+		// clear current dealer flag
 		players[dealerIndex].dealer = false;
 		players[dealerIndex].clearRole('dealer');
-		players[dealerIndex + 1].dealer = true;
-		players[dealerIndex + 1].assignRole('dealer');
+
+		// assign new dealer – wrap with modulo to avoid “undefined”
+		const nextIndex = (dealerIndex + 1) % players.length;
+		players[nextIndex].dealer = true;
+		players[nextIndex].assignRole('dealer');
 	}
 
 	while (players[0].dealer === false) {
@@ -181,6 +191,12 @@ function setDealer() {
 }
 
 function setBlinds() {
+	// If there are fewer than two players, no blinds are posted.
+	if (players.length < 2) {
+		currentBet = 0;
+		enqueueNotification("Waiting for more players – blinds skipped.");
+		return;
+	}
 	// Clear previous roles and icons
 	players.forEach(p => {
 		p.clearRole('small-blind');
@@ -508,6 +524,7 @@ function startBettingRound() {
 function doShowdown() {
 	// 1) Filter active players
 	const activePlayers = players.filter(p => !p.folded);
+	const contributors = players.filter(p => p.totalBet > 0);
 
 	// Reveal hole cards of all active players
 	if (activePlayers.length > 1) {
@@ -552,7 +569,7 @@ function doShowdown() {
 	}).filter(Boolean);
 
 	// ---- Build side pots based on each player's totalBet ----
-	const contenders = activePlayers.slice();
+	const contenders = contributors.slice();
 	const sidePots = [];
 	const sorted = contenders.slice().sort((a, b) => a.totalBet - b.totalBet);
 	let prev = 0;
@@ -570,15 +587,28 @@ function doShowdown() {
 	}
 
 	// ---- Evaluate each side pot ----
-	sidePots.forEach(sp => {
-		const spHands = sp.eligible.map(p => {
-			const seven = [
-				p.cards[0].dataset.value,
-				p.cards[1].dataset.value,
-				...communityCards
-			];
-			return { player: p, handObj: Hand.solve(seven) };
-		});
+	sidePots.forEach((sp, potIdx) => {
+		const spHands = sp.eligible
+			.filter(p => !p.folded)   // only players still in the hand can win
+			.map(p => {
+				const seven = [
+					p.cards[0].dataset.value,
+					p.cards[1].dataset.value,
+					...communityCards
+				];
+				return { player: p, handObj: Hand.solve(seven) };
+			});
+
+		// --- If only one player is eligible for this pot, refund/award it immediately ---
+		if (sp.eligible.filter(p => !p.folded).length === 1) {
+			const solePlayer = sp.eligible.find(p => !p.folded);
+			solePlayer.chips += sp.amount;
+			solePlayer.showTotal();
+			solePlayer.seat.classList.add('winner');
+			enqueueNotification(`Pot ${potIdx + 1} (${sp.amount}): ${solePlayer.name} wins ${sp.amount} (uncalled).`);
+			return; // skip normal evaluation
+		}
+
 		const winners = Hand.winners(spHands.map(h => h.handObj));
 		const share = Math.floor(sp.amount / winners.length);
 		let remainder = sp.amount - share * winners.length;
@@ -590,10 +620,22 @@ function doShowdown() {
 			entry.player.showTotal();
 			entry.player.seat.classList.add('winner');
 		});
+
+
+		// ---- Build detailed payout message for this pot ----
+		const winnerDescriptions = winners.map(w => {
+			const e = spHands.find(h => h.handObj === w);
+			return `${e.player.name} (${w.name})`;
+		}).join(" & ");
+
+		if (winners.length === 1) {
+			enqueueNotification(`Pot ${potIdx + 1} (${sp.amount}): ${winnerDescriptions} wins ${sp.amount}.`);
+		} else {
+			enqueueNotification(`Pot ${potIdx + 1} (${sp.amount}): ${winnerDescriptions} split ${sp.amount} (each ${share}).`);
+		}
+
 	});
-
-	enqueueNotification("Showdown complete – side pots distributed.");
-
+	enqueueNotification("Showdown complete.");
 	pot = 0;
 	document.getElementById("pot").textContent = pot;
 	startButton.textContent = "New Round";
@@ -649,6 +691,7 @@ function displayNextNotification() {
 	isDisplayingNotification = true;
 	const msg = notificationQueue.shift();
 	notification.textContent = msg;
+	console.log("Notification:", msg);
 	// Display each notification for 2 seconds
 	setTimeout(() => {
 		displayNextNotification();
