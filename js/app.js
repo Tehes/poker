@@ -230,7 +230,6 @@ function dealCards() {
 function preFlop() {
 	// Reset phase to preflop
 	currentPhaseIndex = 0;
-	players.forEach(p => { p.totalBet = 0; });
 
 	startButton.classList.add("hidden");
 
@@ -250,9 +249,6 @@ function preFlop() {
 		p.cards[0].src = "cards/1B.svg";
 		p.cards[1].src = "cards/1B.svg";
 	});
-
-	// Reset all previous round bets
-	players.forEach(p => p.resetRoundBet());
 
 	// Clear community cards from last hand
 	document.querySelectorAll("#community-cards .cardslot").forEach(slot => {
@@ -508,8 +504,53 @@ function startBettingRound() {
 	nextPlayer();
 }
 
+/**
+ * Animate chip transfer from the pot display to a player's total chips.
+ * amount   – integer to transfer
+ * playerObj – player object to receive chips
+ * onDone   – callback after animation completes
+ */
+function animateChipTransfer(amount, playerObj, onDone) {
+	const steps = 100;
+	const increment = Math.floor(amount / steps);
+	let remainder = amount - increment * steps;
+	let currentStep = 0;
+
+	function step() {
+		if (currentStep < steps) {
+			// decrement pot
+			const potElem = document.getElementById("pot");
+			let potVal = parseInt(potElem.textContent, 10);
+			potVal -= increment;
+			potElem.textContent = potVal;
+
+			// increment player chips
+			playerObj.chips += increment;
+			playerObj.showTotal();
+
+			currentStep++;
+			requestAnimationFrame(step);
+		} else {
+			// add any remainder
+			const potElem = document.getElementById("pot");
+			let potVal = parseInt(potElem.textContent, 10);
+			potVal -= remainder;
+			potElem.textContent = potVal;
+
+			playerObj.chips += remainder;
+			playerObj.showTotal();
+
+			if (onDone) onDone();
+		}
+	}
+	step();
+}
+
 function doShowdown() {
-	// 1) Filter active players
+	// Reset round bets now that they are in the pot
+	players.forEach(p => p.resetRoundBet());
+
+	// Filter active players
 	const activePlayers = players.filter(p => !p.folded);
 	const contributors = players.filter(p => p.totalBet > 0);
 
@@ -528,15 +569,16 @@ function doShowdown() {
 	// Single-player case: immediate win (no hand needed)
 	if (activePlayers.length === 1) {
 		const winner = activePlayers[0];
-		winner.chips += pot;
-		winner.showTotal();
+		// Animate the chip transfer for the single winner
 		winner.seat.classList.add('winner');
 		winner.qr.hide();                // keep hole cards concealed
 		enqueueNotification(`${winner.name} wins the pot of ${pot}!`);
-		pot = 0;
-		document.getElementById("pot").textContent = pot;
-		startButton.textContent = "New Round";
-		startButton.classList.remove("hidden");
+		animateChipTransfer(pot, winner, () => {
+			pot = 0;
+			document.getElementById("pot").textContent = pot;
+			startButton.textContent = "New Round";
+			startButton.classList.remove("hidden");
+		});
 		return;
 	}
 
@@ -590,6 +632,9 @@ function doShowdown() {
 	}
 	// ------------------------------------------------------------------
 
+	// ---- Collect animated chip transfers ----
+	const transferQueue = [];
+
 	// ---- Evaluate each side pot ----
 	sidePots.forEach((sp, potIdx) => {
 		const spHands = sp.eligible
@@ -606,8 +651,7 @@ function doShowdown() {
 		// --- If only one player is eligible for this pot, refund/award it immediately ---
 		if (sp.eligible.filter(p => !p.folded).length === 1) {
 			const solePlayer = sp.eligible.find(p => !p.folded);
-			solePlayer.chips += sp.amount;
-			solePlayer.showTotal();
+			transferQueue.push({ player: solePlayer, amount: sp.amount });
 			// No notification for uncalled pot
 			return; // skip normal evaluation
 		}
@@ -618,15 +662,14 @@ function doShowdown() {
 
 		winners.forEach(w => {
 			const entry = spHands.find(h => h.handObj === w);
-			entry.player.chips += share + (remainder > 0 ? 1 : 0);
+			const payout = share + (remainder > 0 ? 1 : 0);
 			if (remainder > 0) remainder--;
-			entry.player.showTotal();
+			transferQueue.push({ player: entry.player, amount: payout });
 			// Highlight winners only for the main pot
 			if (potIdx === 0) {
 				entry.player.seat.classList.add('winner');
 			}
 		});
-
 
 		// ---- Build detailed payout message for this pot ----
 		const winnerDescriptions = winners.map(w => {
@@ -649,10 +692,23 @@ function doShowdown() {
 		}
 
 	});
-	pot = 0;
-	document.getElementById("pot").textContent = pot;
-	startButton.textContent = "New Round";
-	startButton.classList.remove("hidden");
+
+	// Run queued chip transfers sequentially with animation
+	function runTransfers(index) {
+		if (index >= transferQueue.length) {
+			// All animations done – reset pot, show New Round button
+			pot = 0;
+			document.getElementById("pot").textContent = pot;
+
+			startButton.textContent = "New Round";
+			startButton.classList.remove("hidden");
+			return;
+		}
+		const t = transferQueue[index];
+		animateChipTransfer(t.amount, t.player, () => runTransfers(index + 1));
+	}
+	runTransfers(0);
+	return; // exit doShowdown early because UI flow continues in animation
 }
 
 function rotateSeat(ev) {
