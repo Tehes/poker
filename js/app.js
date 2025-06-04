@@ -139,14 +139,17 @@ function createPlayers() {
 				player.querySelector(".chips .total").textContent = playerObject.chips;
 			},
 			placeBet: function (x) {
-				playerObject.roundBet += x;
-				playerObject.totalBet += x;
+				// Clamp bet to available chips → prevents negative stacks
+				const bet = Math.min(x, playerObject.chips);
+				playerObject.roundBet += bet;
+				playerObject.totalBet += bet;
 				player.querySelector(".chips .bet").textContent = playerObject.roundBet;
-				playerObject.chips -= x;
+				playerObject.chips -= bet;
 				if (playerObject.chips === 0) {
 					playerObject.allIn = true;
 				}
 				playerObject.showTotal();
+				return bet;   // return the real amount pushed to the pot
 			},
 			resetRoundBet: function () {
 				playerObject.roundBet = 0;
@@ -184,12 +187,6 @@ function setDealer() {
 }
 
 function setBlinds() {
-	// If there are fewer than two players, no blinds are posted.
-	if (players.length < 2) {
-		currentBet = 0;
-		enqueueNotification("Waiting for more players – blinds skipped.");
-		return;
-	}
 	// Clear previous roles and icons
 	players.forEach(p => {
 		p.clearRole('small-blind');
@@ -198,11 +195,14 @@ function setBlinds() {
 	// Post blinds for Pre-Flop and set currentBet
 	const sbIdx = (players.length > 2) ? 1 : 0;
 	const bbIdx = (players.length > 2) ? 2 : 1;
-	players[sbIdx].placeBet(smallBlind);
-	players[bbIdx].placeBet(bigBlind);
-	enqueueNotification(`${players[sbIdx].name} posted small blind of ${smallBlind}. ${players[bbIdx].name} posted big blind of ${bigBlind}.`);
+
+	const sbBet = players[sbIdx].placeBet(smallBlind);
+	const bbBet = players[bbIdx].placeBet(bigBlind);
+
+	enqueueNotification(`${players[sbIdx].name} posted small blind of ${sbBet}. ${players[bbIdx].name} posted big blind of ${bbBet}.`);
+
 	// Add blinds to the pot
-	pot += smallBlind + bigBlind;
+	pot += sbBet + bbBet;
 	document.getElementById("pot").textContent = pot;
 	// Assign new blinds
 	players[sbIdx].assignRole('small-blind');
@@ -279,10 +279,7 @@ function preFlop() {
 		enqueueNotification(`${champion.name} has won all the chips and the game! 🏆`);
 		// Reveal champion's stack
 		champion.showTotal();
-		// Show start button for a fresh game
-		startButton.textContent = "Restart";
-		startButton.classList.remove("hidden");
-		gameStarted = false;   // allow new startGame() to reset everything
+		champion.seat.classList.add('winner');
 		return;                // skip the rest of preFlop()
 	}
 	// ----------------------------------------------------------
@@ -339,7 +336,6 @@ function dealCommunityCards(amount) {
 }
 
 function startBettingRound() {
-
 	// ------------------------------------------------------------------
 	// EARLY EXIT: If zero or only one player still has chips to act,
 	// no betting round is possible. Skip straight to the next phase.
@@ -384,12 +380,6 @@ function startBettingRound() {
 			return setPhase();
 		}
 		// -------------------------------------------------------------------
-
-		// If only one player remains, skip to next phase (or showdown)
-		const remaining = players.filter(p => !p.folded);
-		if (remaining.length === 1) {
-			return setPhase();
-		}
 		// Find next player who still owes action
 		let player = players[idx % players.length];
 		idx++;
@@ -423,8 +413,6 @@ function startBettingRound() {
 		const needToCall = currentBet - player.roundBet;
 
 		// UI: prepare slider and buttons
-		foldButton.disabled = false;
-		actionButton.disabled = false;
 		if (currentPhaseIndex > 0 && currentBet === 0) {
 			// First bet post-flop: allow Check (0) or at least big blind
 			amountSlider.min = 0;
@@ -666,7 +654,6 @@ function doShowdown() {
 		}
 
 	});
-	enqueueNotification("Showdown complete.");
 	pot = 0;
 	document.getElementById("pot").textContent = pot;
 	startButton.textContent = "New Round";
