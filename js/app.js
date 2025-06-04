@@ -165,13 +165,6 @@ function setDealer() {
 		players[randomPlayerIndex].assignRole('dealer');
 	}
 	else {
-		// If only one player remains, keep them as dealer and exit early
-		if (players.length === 1) {
-			players[0].dealer = true;
-			players[0].assignRole('dealer');
-			enqueueNotification(`${players[0].name} is Dealer.`);
-			return;
-		}
 		const dealerIndex = players.findIndex(p => p.dealer);
 		// clear current dealer flag
 		players[dealerIndex].dealer = false;
@@ -759,7 +752,7 @@ function init() {
 public members, exposed with return statement
 ---------------------------------------------------------------------------------------------------*/
 window.poker = {
-	init, players, preFlop
+	init, players
 };
 
 poker.init();
