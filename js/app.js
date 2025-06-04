@@ -463,9 +463,6 @@ function startBettingRound() {
 			} else if (bet === player.chips && bet < needToCall) {
 				// All-In (short stack)
 				player.placeBet(bet);
-				if (player.chips === 0) {
-					player.allIn = true;
-				}
 				pot += bet;
 				document.getElementById("pot").textContent = pot;
 				notifyPlayerAction(player, "allin", bet);
@@ -475,18 +472,12 @@ function startBettingRound() {
 			} else if (bet === needToCall) {
 				// Call
 				player.placeBet(bet);
-				if (player.chips === 0) {
-					player.allIn = true;
-				}
 				pot += bet;
 				document.getElementById("pot").textContent = pot;
 				notifyPlayerAction(player, "call", player.roundBet);
 			} else {
 				// Raise
 				player.placeBet(bet);
-				if (player.chips === 0) {
-					player.allIn = true;
-				}
 				currentBet = player.roundBet;
 				pot += bet;
 				document.getElementById("pot").textContent = pot;
@@ -534,20 +525,14 @@ function doShowdown() {
 	}
 
 
-	// Single-player case: immediate win
+	// Single-player case: immediate win (no hand needed)
 	if (activePlayers.length === 1) {
 		const winner = activePlayers[0];
 		winner.chips += pot;
 		winner.showTotal();
-		// Highlight the winning player
 		winner.seat.classList.add('winner');
-		// Determine winner’s hand description
-		const hole = [winner.cards[0].dataset.value, winner.cards[1].dataset.value];
-		const communityCards = Array.from(
-			document.querySelectorAll("#community-cards .cardslot img")
-		).map(img => img.src.match(/\/cards\/([2-9TJQKA][CDHS])\.svg$/)[1]);
-		const winnerHand = Hand.solve([...hole, ...communityCards]);
-		enqueueNotification(`${winner.name} wins the pot of ${pot}! (${winnerHand.name})`);
+		winner.qr.hide();                // keep hole cards concealed
+		enqueueNotification(`${winner.name} wins the pot of ${pot}!`);
 		pot = 0;
 		document.getElementById("pot").textContent = pot;
 		startButton.textContent = "New Round";
@@ -623,8 +608,7 @@ function doShowdown() {
 			const solePlayer = sp.eligible.find(p => !p.folded);
 			solePlayer.chips += sp.amount;
 			solePlayer.showTotal();
-			solePlayer.seat.classList.add('winner');
-			enqueueNotification(`Pot ${potIdx + 1} (${sp.amount}): ${solePlayer.name} wins ${sp.amount} (uncalled).`);
+			// No notification for uncalled pot
 			return; // skip normal evaluation
 		}
 
@@ -637,7 +621,10 @@ function doShowdown() {
 			entry.player.chips += share + (remainder > 0 ? 1 : 0);
 			if (remainder > 0) remainder--;
 			entry.player.showTotal();
-			entry.player.seat.classList.add('winner');
+			// Highlight winners only for the main pot
+			if (potIdx === 0) {
+				entry.player.seat.classList.add('winner');
+			}
 		});
 
 
@@ -647,8 +634,16 @@ function doShowdown() {
 			return `${e.player.name} (${w.name})`;
 		}).join(" & ");
 
-		if (winners.length === 1) {
-			enqueueNotification(`Pot ${potIdx + 1} (${sp.amount}): ${winnerDescriptions} wins ${sp.amount}.`);
+		if (winners.length === 1 && sidePots.length === 1) {
+			// Only one pot in the hand and a single winner → concise wording
+			const winningHand = winners[0].name; // e.g. "Two Pair"
+			const entry = spHands.find(h => h.handObj === winners[0]);
+			enqueueNotification(`${entry.player.name} wins with ${winningHand}.`);
+		} else if (winners.length === 1) {
+			// Single winner but multiple pots in the hand
+			const winningHand = winners[0].name;
+			const entry = spHands.find(h => h.handObj === winners[0]);
+			enqueueNotification(`Pot ${potIdx + 1} (${sp.amount}): ${entry.player.name} wins with ${winningHand}.`);
 		} else {
 			enqueueNotification(`Pot ${potIdx + 1} (${sp.amount}): ${winnerDescriptions} split ${sp.amount} (each ${share}).`);
 		}
@@ -709,11 +704,11 @@ function displayNextNotification() {
 	isDisplayingNotification = true;
 	const msg = notificationQueue.shift();
 	notification.textContent = msg;
-	console.log("Notification:", msg);
-	// Display each notification for 2 seconds
+	console.log(msg);
+	// Display each notification for 1 second
 	setTimeout(() => {
 		displayNextNotification();
-	}, 2000);
+	}, 1000);
 }
 
 function enqueueNotification(msg) {
