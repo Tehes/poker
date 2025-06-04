@@ -132,14 +132,20 @@ function createPlayers() {
 			},
 			folded: false,
 			chips: 2000,
+			allIn: false,
+			totalBet: 0,
 			roundBet: 0,
 			showTotal: function () {
 				player.querySelector(".chips .total").textContent = playerObject.chips;
 			},
 			placeBet: function (x) {
 				playerObject.roundBet += x;
+				playerObject.totalBet += x;
 				player.querySelector(".chips .bet").textContent = playerObject.roundBet;
 				playerObject.chips -= x;
+				if (playerObject.chips === 0) {
+					playerObject.allIn = true;
+				}
 				playerObject.showTotal();
 			},
 			resetRoundBet: function () {
@@ -215,12 +221,15 @@ function dealCards() {
 function preFlop() {
 	// Reset phase to preflop
 	currentPhaseIndex = 0;
+	players.forEach(p => { p.totalBet = 0; });
 
 	startButton.classList.add("hidden");
 
 	// Clear folded state and remove CSS-Klasse
 	players.forEach(p => {
 		p.folded = false;
+		p.allIn = false;
+		p.totalBet = 0;
 		p.seat.classList.remove('folded');
 	});
 
@@ -307,6 +316,15 @@ function dealCommunityCards(amount) {
 
 function startBettingRound() {
 
+	// ------------------------------------------------------------------
+	// EARLY EXIT: If zero or only one player still has chips to act,
+	// no betting round is possible. Skip straight to the next phase.
+	const actionable = players.filter(p => !p.folded && !p.allIn);
+	if (actionable.length <= 1) {
+		return setPhase();
+	}
+	// ------------------------------------------------------------------
+
 	// 2) Determine start index
 	let startIdx;
 	if (currentPhaseIndex === 0) {
@@ -327,10 +345,22 @@ function startBettingRound() {
 	let cycles = 0;
 
 	function anyUncalled() {
-		return players.some(p => !p.folded && p.roundBet < currentBet);
+		return players.some(p => !p.folded && !p.allIn && p.roundBet < currentBet);
 	}
 
 	function nextPlayer() {
+		// --- Guard against infinite recursion -----------------------------
+		// If nobody who is NOT folded and NOT all‑in can still act, advance the phase.
+		const someoneCanAct = players.some(p =>
+			!p.folded &&                 // still in hand
+			!p.allIn &&                  // has chips left
+			(currentBet === 0 || p.roundBet < currentBet) // owes action
+		);
+		if (!someoneCanAct) {
+			return setPhase();
+		}
+		// -------------------------------------------------------------------
+
 		// If only one player remains, skip to next phase (or showdown)
 		const remaining = players.filter(p => !p.folded);
 		if (remaining.length === 1) {
@@ -341,8 +371,9 @@ function startBettingRound() {
 		idx++;
 		cycles++;
 
-		// Always skip folded players
-		if (player.folded) {
+		// Always skip folded or all-in players
+		if (player.folded || player.allIn) {
+			// Skip this seat – guard clause at the top ensures we won't recurse forever
 			return nextPlayer();
 		}
 
@@ -420,6 +451,9 @@ function startBettingRound() {
 			} else if (bet === player.chips && bet < needToCall) {
 				// All-In (short stack)
 				player.placeBet(bet);
+				if (player.chips === 0) {
+					player.allIn = true;
+				}
 				pot += bet;
 				document.getElementById("pot").textContent = pot;
 				notifyPlayerAction(player, "allin", bet);
@@ -429,12 +463,18 @@ function startBettingRound() {
 			} else if (bet === needToCall) {
 				// Call
 				player.placeBet(bet);
+				if (player.chips === 0) {
+					player.allIn = true;
+				}
 				pot += bet;
 				document.getElementById("pot").textContent = pot;
 				notifyPlayerAction(player, "call", player.roundBet);
 			} else {
 				// Raise
 				player.placeBet(bet);
+				if (player.chips === 0) {
+					player.allIn = true;
+				}
 				currentBet = player.roundBet;
 				pot += bet;
 				document.getElementById("pot").textContent = pot;
@@ -511,49 +551,49 @@ function doShowdown() {
 		return match ? match[1] : null;
 	}).filter(Boolean);
 
-	// 3) Create Hand objects for each active player
-	const hands = activePlayers.map(p => {
-		const holeCards = [
-			p.cards[0].dataset.value,
-			p.cards[1].dataset.value
-		];
-		const sevenCards = [...holeCards, ...communityCards];
-		return {
-			player: p,
-			handObj: Hand.solve(sevenCards)
-		};
-	});
-
-	// 4) Determine winning hand(s)
-	const winningHands = Hand.winners(hands.map(h => h.handObj));
-
-	// 5) Distribute pot among winners (split pot equally)
-	const share = Math.floor(pot / winningHands.length);
-	winningHands.forEach(winnerHand => {
-		const entry = hands.find(h => h.handObj === winnerHand);
-		entry.player.chips += share;
-		entry.player.showTotal();
-	});
-
-	// 6) Notify result
-	if (winningHands.length === 1) {
-		const winnerHand = winningHands[0];
-		const entry = hands.find(h => h.handObj === winnerHand);
-		enqueueNotification(`${entry.player.name} wins ${share}! (${entry.handObj.name})`);
-	} else {
-		const descrs = winningHands.map(winnerHand => {
-			const entry = hands.find(h => h.handObj === winnerHand);
-			return `${entry.player.name} (${winnerHand.name})`;
-		}).join(" & ");
-		enqueueNotification(`Split pot: ${descrs} each win ${share}!`);
+	// ---- Build side pots based on each player's totalBet ----
+	const contenders = activePlayers.slice();
+	const sidePots = [];
+	const sorted = contenders.slice().sort((a, b) => a.totalBet - b.totalBet);
+	let prev = 0;
+	for (let i = 0; i < sorted.length; i++) {
+		const lvl = sorted[i].totalBet;
+		const diff = lvl - prev;
+		if (diff > 0) {
+			const eligible = sorted.slice(i);
+			sidePots.push({
+				amount: diff * eligible.length,
+				eligible
+			});
+			prev = lvl;
+		}
 	}
-	// Highlight all winning players
-	winningHands.forEach(winnerHand => {
-		const entry = hands.find(h => h.handObj === winnerHand);
-		entry.player.seat.classList.add('winner');
+
+	// ---- Evaluate each side pot ----
+	sidePots.forEach(sp => {
+		const spHands = sp.eligible.map(p => {
+			const seven = [
+				p.cards[0].dataset.value,
+				p.cards[1].dataset.value,
+				...communityCards
+			];
+			return { player: p, handObj: Hand.solve(seven) };
+		});
+		const winners = Hand.winners(spHands.map(h => h.handObj));
+		const share = Math.floor(sp.amount / winners.length);
+		let remainder = sp.amount - share * winners.length;
+
+		winners.forEach(w => {
+			const entry = spHands.find(h => h.handObj === w);
+			entry.player.chips += share + (remainder > 0 ? 1 : 0);
+			if (remainder > 0) remainder--;
+			entry.player.showTotal();
+			entry.player.seat.classList.add('winner');
+		});
 	});
 
-	// 7) Reset pot
+	enqueueNotification("Showdown complete – side pots distributed.");
+
 	pot = 0;
 	document.getElementById("pot").textContent = pot;
 	startButton.textContent = "New Round";
