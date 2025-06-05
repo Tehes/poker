@@ -81,4 +81,4 @@ MIT License. Do whatever you want, just don't sue me.
 ## 🙌 Credits
 
 * [pokersolver](https://github.com/goldfire/pokersolver) for hand ranking logic
-* QR codes by [api.qrserver.com](https://goqr.me/api/)
+* QR codes by [https://goqr.me/api/](https://goqr.me/api/)
