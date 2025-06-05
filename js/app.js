@@ -95,24 +95,24 @@ function startGame(event) {
 }
 
 function createPlayers() {
-       for (const name of nameBadges) {
-               if (name.textContent === "") {
-                       name.parentElement.classList.add("hidden");
-               }
-       }
+	for (const name of nameBadges) {
+		if (name.textContent === "") {
+			name.parentElement.classList.add("hidden");
+		}
+	}
 
 	const activePlayers = document.querySelectorAll(".seat:not(.hidden)");
 	for (const player of activePlayers) {
 		const playerObject = {
 			name: player.querySelector("h3").textContent,
 			seat: player,
-                       qr: {
-                               show: function (card1, card2) {
-                                       player.querySelector(".qr").classList.remove("hidden");
-                                       const base = window.location.origin + window.location.pathname.replace(/[^/]*$/, '');
-                                       player.querySelector(".qr").src =
-                                               `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${base}hole-cards.html?params=${card1}-${card2}-${playerObject.name}-${playerObject.chips}`;
-                               },
+			qr: {
+				show: function (card1, card2) {
+					player.querySelector(".qr").classList.remove("hidden");
+					const base = window.location.origin + window.location.pathname.replace(/[^/]*$/, '');
+					player.querySelector(".qr").src =
+						`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${base}hole-cards.html?params=${card1}-${card2}-${playerObject.name}-${playerObject.chips}`;
+				},
 				hide: function () {
 					player.querySelector(".qr").classList.add("hidden");
 				}
@@ -329,7 +329,9 @@ function dealCommunityCards(amount) {
 	}
 	cardGraveyard.push(cards.shift()); // burn
 	for (let i = 0; i < amount; i++) {
-		emptySlots[i].innerHTML = `<img src="cards/${cards.shift()}.svg">`;
+		const card = cards.shift();
+		emptySlots[i].innerHTML = `<img src="cards/${card}.svg">`;
+		cardGraveyard.push(card);   // zurück ins Deck
 	}
 }
 
@@ -367,16 +369,24 @@ function startBettingRound() {
 	}
 
 	function nextPlayer() {
-		// --- Guard against infinite recursion -----------------------------
-		// If nobody who is NOT folded and NOT all‑in can still act, advance the phase.
+		// --- EARLY EXIT --------------------------------------------------
+		// If only ONE player has not folded, the hand ends immediately
+		if (players.filter(p => !p.folded).length === 1) {
+			return setPhase();        // immediately triggers the show-down / pot award
+		}
+
+		// --- Guard against infinite recursion ---------------------------
+		// If nobody who is NOT folded and NOT all-in can still act, …
 		const someoneCanAct = players.some(p =>
 			!p.folded &&                 // still in hand
 			!p.allIn &&                  // has chips left
 			(currentBet === 0 || p.roundBet < currentBet) // owes action
 		);
-		if (!someoneCanAct) {
+
+		if (!someoneCanAct && cycles >= players.length) {
 			return setPhase();
 		}
+
 		// -------------------------------------------------------------------
 		// Find next player who still owes action
 		let player = players[idx % players.length];
