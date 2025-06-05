@@ -252,16 +252,10 @@ function preFlop() {
 		p.cards[1].src = "cards/1B.svg";
 	});
 
-        // Collect community cards into graveyard before clearing the slots
-        document.querySelectorAll("#community-cards .cardslot img").forEach(img => {
-                const code = img.src.match(/\/cards\/([2-9TJQKA][CDHS])\.svg$/);
-                if (code) cardGraveyard.push(code[1]);
-        });
-
-        // Clear community cards from last hand
-        document.querySelectorAll("#community-cards .cardslot").forEach(slot => {
-                slot.innerHTML = "";
-        });
+    // Clear community cards from last hand
+    document.querySelectorAll("#community-cards .cardslot").forEach(slot => {
+            slot.innerHTML = "";
+    });
 
 	// Remove players with zero chips from the table
 	const remainingPlayers = [];
@@ -335,8 +329,11 @@ function dealCommunityCards(amount) {
 	}
 	cardGraveyard.push(cards.shift()); // burn
 	for (let i = 0; i < amount; i++) {
-		emptySlots[i].innerHTML = `<img src="cards/${cards.shift()}.svg">`;
-	}
+    	const card = cards.shift();
+	    emptySlots[i].innerHTML = `<img src="cards/${card}.svg">`;
+	    cardGraveyard.push(card);   // back into Deck
+}
+
 }
 
 function startBettingRound() {
