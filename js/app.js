@@ -95,22 +95,24 @@ function startGame(event) {
 }
 
 function createPlayers() {
-	for (const name of nameBadges) {
-		if (name.textContent === "") {
-			name.parentElement.classList.add("hidden");
-		}
-	}
+       for (const name of nameBadges) {
+               if (name.textContent === "") {
+                       name.parentElement.classList.add("hidden");
+               }
+       }
 
 	const activePlayers = document.querySelectorAll(".seat:not(.hidden)");
 	for (const player of activePlayers) {
 		const playerObject = {
 			name: player.querySelector("h3").textContent,
 			seat: player,
-			qr: {
-				show: function (card1, card2) {
-					player.querySelector(".qr").classList.remove("hidden");
-					player.querySelector(".qr").src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${window.location.href}hole-cards.html?params=${card1}-${card2}-${playerObject.name}-${playerObject.chips}`;
-				},
+                       qr: {
+                               show: function (card1, card2) {
+                                       player.querySelector(".qr").classList.remove("hidden");
+                                       const base = window.location.origin + window.location.pathname.replace(/[^/]*$/, '');
+                                       player.querySelector(".qr").src =
+                                               `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${base}hole-cards.html?params=${card1}-${card2}-${playerObject.name}-${playerObject.chips}`;
+                               },
 				hide: function () {
 					player.querySelector(".qr").classList.add("hidden");
 				}
