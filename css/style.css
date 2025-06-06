@@ -226,6 +226,15 @@ TABLE-MIDDLE
     max-width: 70vmin;
 }
 
+#notification span::after {
+    content: " | ";
+    color: var(--blue-lightest);
+}
+
+#notification span:first-child {
+    color: var(--font-color);
+}
+
 #pot::before {
     content: "💰 ";
 }

@@ -24,6 +24,8 @@ let gameStarted = false;
 
 const MAX_ITEMS = 5;
 const notifArr = [];
+const pendingNotif = [];
+let isNotifProcessing = false;
 
 // Clubs, Diamonds, Hearts, Spades
 // 2,3,4,5,6,7,8,9,T,J,Q,K,A
@@ -787,15 +789,33 @@ function notifyPlayerAction(player, action, amount) {
 }
 
 function enqueueNotification(msg) {
-	// neueste Meldung vorn einfügen
+	pendingNotif.push(msg);
+	if (!isNotifProcessing) {
+		showNextNotif();
+	}
+}
+
+function showNextNotif() {
+	if (pendingNotif.length === 0) {
+		isNotifProcessing = false;
+		return;
+	}
+	isNotifProcessing = true;
+	const msg = pendingNotif.shift();
+	// newest message first for tracking
 	notifArr.unshift(msg);
-
-	// zu viele? letztes Element entfernen
 	if (notifArr.length > MAX_ITEMS) notifArr.pop();
-
-	// zusammenbauen mit Trenner •
-	notification.textContent = notifArr.join(" | ");
+	// create a new span for this message
+	const span = document.createElement("span");
+	span.textContent = msg;
+	// prepend to container
+	notification.prepend(span);
+	// remove excess spans from end if over limit
+	while (notification.childElementCount > MAX_ITEMS) {
+		notification.removeChild(notification.lastChild);
+	}
 	console.log(msg);
+	setTimeout(showNextNotif, 1500);
 }
 
 
