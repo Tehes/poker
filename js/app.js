@@ -331,7 +331,7 @@ function dealCommunityCards(amount) {
 	for (let i = 0; i < amount; i++) {
 		const card = cards.shift();
 		emptySlots[i].innerHTML = `<img src="cards/${card}.svg">`;
-		cardGraveyard.push(card);   // zurück ins Deck
+		cardGraveyard.push(card);   // back into Deck
 	}
 }
 
@@ -693,7 +693,7 @@ function doShowdown() {
 			// Only one pot in the hand and a single winner → concise wording
 			const winningHand = winners[0].name; // e.g. "Two Pair"
 			const entry = spHands.find(h => h.handObj === winners[0]);
-			enqueueNotification(`${entry.player.name} wins with ${winningHand}.`);
+			enqueueNotification(`${entry.player.name} wins ${sp.amount} with ${winningHand}.`);
 		} else if (winners.length === 1) {
 			// Single winner but multiple pots in the hand
 			const winningHand = winners[0].name;
