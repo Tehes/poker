@@ -18,6 +18,8 @@ const Phases = ["preflop", "flop", "turn", "river", "showdown"];
 let currentPhaseIndex = 0;
 let currentBet = 0;
 let pot = 0;
+let initialDealerName = null;
+let dealerOrbitCount  = 0;
 let gameStarted = false;
 
 const MAX_ITEMS = 5;
@@ -283,8 +285,26 @@ function preFlop() {
 	}
 	// ----------------------------------------------------------
 
-	// Assign dealer and post blinds
+	// Assign dealer 
 	setDealer();
+
+	// Remember the initial opening dealer
+  if (initialDealerName === null) {
+    initialDealerName = players[0].name;
+  }
+
+  // When the dealer is back at initialDealer → increment orbit
+  else if (players[0].name === initialDealerName) {
+    dealerOrbitCount++;
+    if (dealerOrbitCount >= 2) {
+      // Increase blind level
+      smallBlind *= 2;
+      bigBlind   *= 2;
+      dealerOrbitCount = 0;
+      enqueueNotification(`Blinds are now ${smallBlind}/${bigBlind}.`);
+    }
+  }
+	// post blinds
 	setBlinds();
 
 	// Shuffle and deal new hole cards
@@ -763,15 +783,15 @@ function notifyPlayerAction(player, action, amount) {
 }
 
 function enqueueNotification(msg) {
-  // neueste Meldung vorn einfügen
-  notifArr.unshift(msg);
+	// neueste Meldung vorn einfügen
+	notifArr.unshift(msg);
 
-  // zu viele? letztes Element entfernen
-  if (notifArr.length > MAX_ITEMS) notifArr.pop();
+	// zu viele? letztes Element entfernen
+	if (notifArr.length > MAX_ITEMS) notifArr.pop();
 
-  // zusammenbauen mit Trenner •
-  notification.textContent = notifArr.join(" | ");
-  console.log(msg);
+	// zusammenbauen mit Trenner •
+	notification.textContent = notifArr.join(" | ");
+	console.log(msg);
 }
 
 
