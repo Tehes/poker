@@ -285,6 +285,12 @@ function preFlop() {
 	});
 	players = remainingPlayers;
 
+	// If the original dealer is eliminated, update initialDealerName and reset dealerOrbitCount
+	if (!players.some(p => p.name === initialDealerName) && players.length > 0) {
+		initialDealerName = players[0].name;
+		dealerOrbitCount = -1;
+	}
+
 	// ----------------------------------------------------------
 	// GAME OVER: only one player left at the table
 	if (players.length === 1) {
