@@ -20,8 +20,8 @@ let currentBet = 0;
 let pot = 0;
 let gameStarted = false;
 
-let notificationQueue = [];
-let isDisplayingNotification = false;
+const MAX_ITEMS = 5;
+const notifArr = [];
 
 // Clubs, Diamonds, Hearts, Spades
 // 2,3,4,5,6,7,8,9,T,J,Q,K,A
@@ -201,7 +201,8 @@ function setBlinds() {
 	const sbBet = players[sbIdx].placeBet(smallBlind);
 	const bbBet = players[bbIdx].placeBet(bigBlind);
 
-	enqueueNotification(`${players[sbIdx].name} posted small blind of ${sbBet}. ${players[bbIdx].name} posted big blind of ${bbBet}.`);
+	enqueueNotification(`${players[sbIdx].name} posted small blind of ${sbBet}.`);
+	enqueueNotification(`${players[bbIdx].name} posted big blind of ${bbBet}.`);
 
 	// Add blinds to the pot
 	pot += sbBet + bbBet;
@@ -761,30 +762,18 @@ function notifyPlayerAction(player, action, amount) {
 	enqueueNotification(msg);
 }
 
-/**
- * Display the next notification from the queue.
- */
-function displayNextNotification() {
-	if (notificationQueue.length === 0) {
-		isDisplayingNotification = false;
-		return;
-	}
-	isDisplayingNotification = true;
-	const msg = notificationQueue.shift();
-	notification.textContent = msg;
-	console.log(msg);
-	// Display each notification for 1 second
-	setTimeout(() => {
-		displayNextNotification();
-	}, 1000);
+function enqueueNotification(msg) {
+  // neueste Meldung vorn einfügen
+  notifArr.unshift(msg);
+
+  // zu viele? letztes Element entfernen
+  if (notifArr.length > MAX_ITEMS) notifArr.pop();
+
+  // zusammenbauen mit Trenner •
+  notification.textContent = notifArr.join(" | ");
+  console.log(msg);
 }
 
-function enqueueNotification(msg) {
-	notificationQueue.push(msg);
-	if (!isDisplayingNotification) {
-		displayNextNotification();
-	}
-}
 
 function init() {
 	document.addEventListener("touchstart", function () { }, false);

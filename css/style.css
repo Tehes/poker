@@ -201,7 +201,7 @@ TABLE-MIDDLE
 .infos {
     display: flex;
     gap: 20px;
-    justify-content: stretch;
+    justify-content: center;
     width: 100%;
 }
 
@@ -220,6 +220,10 @@ TABLE-MIDDLE
     color: var(--blue-lightest);
     flex: 1 0 auto;
     text-align: left;
+    text-overflow: ellipsis;
+    overflow-x: hidden;
+    white-space: nowrap;
+    max-width: 70vmin;
 }
 
 #pot::before {
