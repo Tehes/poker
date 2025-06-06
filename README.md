@@ -9,6 +9,7 @@ A browser-based, zero-setup poker table to play Texas Hold'em with friends using
 * **No Setup Required**: Just open the table in your browser and start playing. No app install, no sign-ups.
 * **Device Pairing via QR**: Each player scans a code to privately view their cards on their phone.
 * **Automatic Game Logic**: Handles blinds, bets, pots, side pots, and showdown evaluations.
+* **Progressive Blinds**: Blinds automatically double every 2 complete dealer orbits to keep the action going.
 * **Side Pot Support**: Accurately resolves complex all-in scenarios.
 * **Supports All Table Sizes**: From heads-up to full-ring games.
 * **Responsive Design**: Optimized for tablets, phones, and desktops.
@@ -47,8 +48,8 @@ A browser-based, zero-setup poker table to play Texas Hold'em with friends using
 * Players take turns acting via the main table.
 * Game flow logic ensures proper handling of:
 
-  * Blinds and dealer rotation
-  * Bet matching / raises / folds
+  * **Dealer rotation** and automatic blind posting
+  * **Progressive blinds** that double every 2 complete orbits (e.g., 10/20 → 20/40 → 40/80)
   * Side pots and all-ins
   * Automatic showdown resolution
 
@@ -60,6 +61,7 @@ A browser-based, zero-setup poker table to play Texas Hold'em with friends using
 * **No back-end**: All state is client-side only.
 * **Zero footprint**: No accounts, no tracking, no cloud sync.
 * **Focus on flow**: The app enforces rules and turn order so you can focus on the game.
+* **Tournament-style**: Progressive blinds keep games from stalling.
 
 ---
 
@@ -68,6 +70,7 @@ A browser-based, zero-setup poker table to play Texas Hold'em with friends using
 * No live syncing between devices — players act only via the shared table.
 * No persistent chip stacks or session saving (yet).
 * Not designed for remote multiplayer.
+* Fixed blind structure (doubles every 2 orbits) — not customizable.
 
 ---
 

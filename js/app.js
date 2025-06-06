@@ -19,7 +19,7 @@ let currentPhaseIndex = 0;
 let currentBet = 0;
 let pot = 0;
 let initialDealerName = null;
-let dealerOrbitCount  = 0;
+let dealerOrbitCount = -1;
 let gameStarted = false;
 
 const MAX_ITEMS = 5;
@@ -170,6 +170,7 @@ function setDealer() {
 		const randomPlayerIndex = Math.floor(Math.random() * players.length);
 		players[randomPlayerIndex].dealer = true;
 		players[randomPlayerIndex].assignRole('dealer');
+		initialDealerName = players[randomPlayerIndex].name;
 	}
 	else {
 		const dealerIndex = players.findIndex(p => p.dealer);
@@ -191,6 +192,17 @@ function setDealer() {
 }
 
 function setBlinds() {
+	// When the dealer is back at initialDealer → increment orbit
+	if (players[0].name === initialDealerName) {
+		dealerOrbitCount++;
+		if (dealerOrbitCount > 0 && dealerOrbitCount % 2 === 0) {
+			// Increase blind level
+			smallBlind *= 2;
+			bigBlind *= 2;
+			enqueueNotification(`Blinds are now ${smallBlind}/${bigBlind}.`);
+		}
+	}
+
 	// Clear previous roles and icons
 	players.forEach(p => {
 		p.clearRole('small-blind');
@@ -288,22 +300,6 @@ function preFlop() {
 	// Assign dealer 
 	setDealer();
 
-	// Remember the initial opening dealer
-  if (initialDealerName === null) {
-    initialDealerName = players[0].name;
-  }
-
-  // When the dealer is back at initialDealer → increment orbit
-  else if (players[0].name === initialDealerName) {
-    dealerOrbitCount++;
-    if (dealerOrbitCount >= 2) {
-      // Increase blind level
-      smallBlind *= 2;
-      bigBlind   *= 2;
-      dealerOrbitCount = 0;
-      enqueueNotification(`Blinds are now ${smallBlind}/${bigBlind}.`);
-    }
-  }
 	// post blinds
 	setBlinds();
 
