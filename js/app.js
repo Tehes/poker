@@ -540,7 +540,9 @@ function startBettingRound() {
  * onDone   – callback after animation completes
  */
 function animateChipTransfer(amount, playerObj, onDone) {
-	const steps = 100;
+	const steps = 30;
+	const totalDuration = Math.min(Math.max(amount * 20, 300), 3000);
+	const delay = totalDuration / steps;
 	const increment = Math.floor(amount / steps);
 	let remainder = amount - increment * steps;
 	let currentStep = 0;
@@ -558,7 +560,7 @@ function animateChipTransfer(amount, playerObj, onDone) {
 			playerObj.showTotal();
 
 			currentStep++;
-			requestAnimationFrame(step);
+			setTimeout(step, delay);
 		} else {
 			// add any remainder
 			const potElem = document.getElementById("pot");
