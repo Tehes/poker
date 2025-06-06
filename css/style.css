@@ -55,7 +55,7 @@ button {
     color: var(--blue-darker);
     border: none;
     padding: 1.5vmin 3vmin;
-    margin: 2vmin;
+    margin: 0 2vmin;
     font-size: 1em;
     font-family: 'Secular One', sans-serif;
     border-radius: 1vmin;
@@ -195,6 +195,35 @@ TABLE-MIDDLE
     align-items: center;
     justify-content: center;
     gap: 3vh;
+    margin: 1vh 0;
+}
+
+.infos {
+    display: flex;
+    gap: 20px;
+    justify-content: stretch;
+    width: 100%;
+}
+
+.infos div {
+    padding: 5px 20px;
+    background-color: var(--blue);
+    box-shadow: inset var(--shadow-pressed);
+    color: var(--yellow);
+    border-radius: 30px;
+    min-width: 85px;
+    text-align: center;
+    flex: 0 1 auto;
+}
+
+#notification {
+    color: var(--blue-lightest);
+    flex: 1 0 auto;
+    text-align: left;
+}
+
+#pot::before {
+    content: "💰 ";
 }
 
 #community-cards {
