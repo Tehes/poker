@@ -129,12 +129,12 @@ function createPlayers() {
 				// Convert kebab-case role to camelCase flag name
 				const flag = role.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 				this[flag] = true;
-				this.seat.querySelector(`#${role}`).classList.remove('hidden');
+				this.seat.querySelector(`.${role}`).classList.remove('hidden');
 			},
 			clearRole: function (role) {
 				const flag = role.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 				this[flag] = false;
-				this.seat.querySelector(`#${role}`).classList.add('hidden');
+				this.seat.querySelector(`.${role}`).classList.add('hidden');
 			},
 			folded: false,
 			chips: 2000,
@@ -493,11 +493,15 @@ function startBettingRound() {
 			if (bet === 0) {
 				// Check
 				notifyPlayerAction(player, "check");
-			} else if (bet === player.chips && bet < needToCall) {
-				// All-In (short stack)
+			} else if (bet === player.chips) {
+				// All-In
 				player.placeBet(bet);
 				pot += bet;
 				document.getElementById("pot").textContent = pot;
+				// If this all-in meets or exceeds the call amount, treat it as a raise
+				if (bet >= needToCall) {
+					currentBet = player.roundBet;
+				}
 				notifyPlayerAction(player, "allin", bet);
 				foldButton.removeEventListener("click", onFold);
 				actionButton.removeEventListener("click", onAction);
