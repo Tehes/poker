@@ -28,6 +28,9 @@ const MAX_ITEMS = 5;
 const notifArr = [];
 const pendingNotif = [];
 let isNotifProcessing = false;
+let onAllNotifsDone = null;
+const BOT_ACTION_DELAY = 1500;
+const NOTIF_INTERVAL = 1500; // ms per notification display
 
 // Clubs, Diamonds, Hearts, Spades
 // 2,3,4,5,6,7,8,9,T,J,Q,K,A
@@ -435,29 +438,25 @@ function startBettingRound() {
 
 		// If this is a bot, perform a simple rule-based action
 		if (player.isBot) {
+			// Bot action immediately, then wait for notifications to clear
+			document.querySelectorAll('.seat').forEach(s => s.classList.remove('active'));
+			player.seat.classList.add('active');
+
 			const needToCall = currentBet - player.roundBet;
 			const betAmount = needToCall > 0 ? needToCall : 0;
 
-			setTimeout(() => {
-				if (betAmount > 0) {
-					const actualBet = player.placeBet(betAmount);
-					pot += actualBet;
-					document.getElementById("pot").textContent = pot;
-					notifyPlayerAction(player, "call", actualBet);
-				} else {
-					notifyPlayerAction(player, "check");
-				}
-
-				// If no one still owes action, advance to next phase
-				if (!anyUncalled()) {
-					return setPhase();
-				}
-				return nextPlayer();
-			}, 1500);
-
+			if (betAmount > 0) {
+				const actualBet = player.placeBet(betAmount);
+				pot += actualBet;
+				document.getElementById("pot").textContent = pot;
+				notifyPlayerAction(player, "call", actualBet);
+			} else {
+				notifyPlayerAction(player, "check");
+			}
+			// Schedule nextPlayer after all notifications are shown
+			onAllNotifsDone = () => nextPlayer();
 			return;
 		}
-
 
 		// Always skip folded or all-in players
 		if (player.folded || player.allIn) {
@@ -869,6 +868,11 @@ function enqueueNotification(msg) {
 function showNextNotif() {
 	if (pendingNotif.length === 0) {
 		isNotifProcessing = false;
+		if (onAllNotifsDone) {
+			const cb = onAllNotifsDone;
+			onAllNotifsDone = null;
+			cb();
+		}
 		return;
 	}
 	isNotifProcessing = true;
