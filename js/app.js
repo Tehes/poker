@@ -32,7 +32,6 @@ const botActionQueue = [];
 let processingBotActions = false;
 const BOT_ACTION_DELAY = 1500;
 const NOTIF_INTERVAL = 1500; // ms per notification display
-let openCardsMode = false; // show human player's cards when playing solo
 
 // Clubs, Diamonds, Hearts, Spades
 // 2,3,4,5,6,7,8,9,T,J,Q,K,A
