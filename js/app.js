@@ -22,6 +22,8 @@ let initialDealerName = null;
 let dealerOrbitCount = -1;
 let gameStarted = false;
 
+let botCount = 0;
+
 const MAX_ITEMS = 5;
 const notifArr = [];
 const pendingNotif = [];
@@ -99,9 +101,14 @@ function startGame(event) {
 }
 
 function createPlayers() {
-	for (const name of nameBadges) {
-		if (name.textContent === "") {
-			name.parentElement.classList.add("hidden");
+	// Auto-fill empty seats with Bots
+	let botIndex = 1;
+	for (const seat of document.querySelectorAll(".seat")) {
+		const nameEl = seat.querySelector("h3");
+		if (seat.classList.contains("hidden")) continue;
+		if (nameEl.textContent.trim() === "") {
+			nameEl.textContent = `Bot ${botIndex++}`;
+			seat.classList.add("bot");
 		}
 	}
 
@@ -109,6 +116,7 @@ function createPlayers() {
 	for (const player of activePlayers) {
 		const playerObject = {
 			name: player.querySelector("h3").textContent,
+			isBot: player.querySelector("h3").textContent.startsWith("Bot"),
 			seat: player,
 			qr: {
 				show: function (card1, card2) {
@@ -237,7 +245,9 @@ function dealCards() {
 	for (const player of players) {
 		player.cards[0].dataset.value = cards[0];
 		player.cards[1].dataset.value = cards[1];
-		player.qr.show(cards[0], cards[1]);
+		if (!player.isBot) {
+			player.qr.show(cards[0], cards[1]);
+		}
 		cardGraveyard.push(cards.shift());
 		cardGraveyard.push(cards.shift());
 	}
@@ -390,8 +400,13 @@ function startBettingRound() {
 	let cycles = 0;
 
 	function anyUncalled() {
+		if (currentBet === 0) {
+			// Post-flop: Prüfe ob alle Spieler schon dran waren
+			return cycles < players.filter(p => !p.folded && !p.allIn).length;
+		}
 		return players.some(p => !p.folded && !p.allIn && p.roundBet < currentBet);
 	}
+
 
 	function nextPlayer() {
 		// --- EARLY EXIT --------------------------------------------------
@@ -417,6 +432,35 @@ function startBettingRound() {
 		let player = players[idx % players.length];
 		idx++;
 		cycles++;
+
+		// If this is a bot, perform a simple rule-based action
+		if (player.isBot) {
+			if (player.isBot) {
+				const needToCall = currentBet - player.roundBet;
+				const betAmount = needToCall > 0 ? needToCall : 0;
+				const delay = pendingNotif.length * 1500; // delay based on pending notifications
+
+				setTimeout(() => {
+					if (betAmount > 0) {
+						const actualBet = player.placeBet(betAmount);
+						pot += actualBet;
+						document.getElementById("pot").textContent = pot;
+						notifyPlayerAction(player, "call", actualBet);
+					} else {
+						notifyPlayerAction(player, "check");
+					}
+
+					// If no one still owes action, advance to next phase
+					if (!anyUncalled()) {
+						return setPhase();
+					}
+					return nextPlayer();
+				}, delay);
+
+				return;
+			}
+		}
+
 
 		// Always skip folded or all-in players
 		if (player.folded || player.allIn) {
