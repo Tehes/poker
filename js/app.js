@@ -485,6 +485,7 @@ function startBettingRound() {
 
 
 	function nextPlayer() {
+                const activeCount = players.filter(p => !p.folded && !p.allIn).length;
 		// --- EARLY EXIT --------------------------------------------------
 		// If only ONE player has not folded, the hand ends immediately
 		if (players.filter(p => !p.folded).length === 1) {
@@ -499,7 +500,7 @@ function startBettingRound() {
 			(currentBet === 0 || p.roundBet < currentBet) // owes action
 		);
 
-		if (!someoneCanAct && cycles >= players.length) {
+		if (!someoneCanAct && cycles >= activeCount) {
 			return setPhase();
 		}
 
@@ -546,7 +547,7 @@ function startBettingRound() {
 			}
 
 			enqueueBotAction(() => {
-				if (cycles < players.length) {
+				if (cycles < activeCount) {
 					nextPlayer();
 				} else if (anyUncalled()) {
 					nextPlayer();
@@ -561,8 +562,8 @@ function startBettingRound() {
 		if (player.roundBet >= currentBet) {
 			// Allow one pass-through for Big Blind pre-flop or Check post-flop
 			if (
-				(currentPhaseIndex === 0 && cycles <= players.length) ||
-				(currentPhaseIndex > 0 && currentBet === 0 && cycles <= players.length)
+				(currentPhaseIndex === 0 && cycles <= activeCount) ||
+				(currentPhaseIndex > 0 && currentBet === 0 && cycles <= activeCount)
 			) {
 				// within first cycle: let them act (Big Blind gets checked, others check post-flop)
 			} else {
