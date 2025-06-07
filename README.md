@@ -22,6 +22,7 @@ cards, blinds, pot, and betting rounds.
 - **Responsive Design**: Optimized for tablets, phones, and desktops.
 - **Fast & Offline-Ready**: Loads fast, works without internet once cached.
 - **Built‑in Bot Players**: Automatically fills empty seats with bots that use basic hand-strength heuristics to fold, check, call or raise.
+- **Solo Play Option**: If you're the only human at the table, your hole cards can be displayed openly instead of using a QR code.
 
 ---
 
@@ -32,7 +33,7 @@ cards, blinds, pot, and betting rounds.
 
 2. Add players by typing their names.
 
-3. Start the game — each player scans their QR code to get their cards.
+3. Start the game — each player scans their QR code to get their cards. When playing solo against bots, your cards show up directly on the table.
 
 4. The table handles dealing, blinds, betting, and showdown.
 
@@ -50,8 +51,8 @@ cards, blinds, pot, and betting rounds.
 ## 🤖 How It Works
 
 - The shared device runs the table (e.g., tablet).
-- When a round starts, each player sees a QR code.
-- They scan it and view their private hole cards on their own phone.
+- When a round starts, each player sees a QR code to view their cards privately.
+- If only one human is playing, those cards are shown on the table instead.
 - Players take turns acting via the main table.
 - Game flow logic ensures proper handling of:
 

@@ -32,6 +32,7 @@ const botActionQueue = [];
 let processingBotActions = false;
 const BOT_ACTION_DELAY = 1500;
 const NOTIF_INTERVAL = 1500; // ms per notification display
+let openCardsMode = false; // show human player's cards when playing solo
 
 // Clubs, Diamonds, Hearts, Spades
 // 2,3,4,5,6,7,8,9,T,J,Q,K,A
@@ -139,8 +140,9 @@ Array.prototype.shuffle = function () {
 };
 
 function startGame(event) {
-	if (!gameStarted) {
-		createPlayers();
+        if (!gameStarted) {
+                createPlayers();
+                openCardsMode = players.filter(p => !p.isBot).length === 1;
 
 		if (players.length > 1) {
 			for (const rotateIcon of rotateIcons) {
@@ -312,15 +314,20 @@ function dealCards() {
 	cardGraveyard = [];
 	cards.shuffle();
 
-	for (const player of players) {
-		player.cards[0].dataset.value = cards[0];
-		player.cards[1].dataset.value = cards[1];
-		if (!player.isBot) {
-			player.qr.show(cards[0], cards[1]);
-		}
-		cardGraveyard.push(cards.shift());
-		cardGraveyard.push(cards.shift());
-	}
+        for (const player of players) {
+                player.cards[0].dataset.value = cards[0];
+                player.cards[1].dataset.value = cards[1];
+                if (!player.isBot) {
+                        if (openCardsMode) {
+                                player.cards[0].src = `cards/${cards[0]}.svg`;
+                                player.cards[1].src = `cards/${cards[1]}.svg`;
+                        } else {
+                                player.qr.show(cards[0], cards[1]);
+                        }
+                }
+                cardGraveyard.push(cards.shift());
+                cardGraveyard.push(cards.shift());
+        }
 }
 
 /**
@@ -344,10 +351,11 @@ function preFlop() {
 	players.forEach(p => p.seat.classList.remove('winner'));
 
 	// Cover all hole cards with card back
-	players.forEach(p => {
-		p.cards[0].src = "cards/1B.svg";
-		p.cards[1].src = "cards/1B.svg";
-	});
+        players.forEach(p => {
+                p.cards[0].src = "cards/1B.svg";
+                p.cards[1].src = "cards/1B.svg";
+                p.qr.hide();
+        });
 
 	// Clear community cards from last hand
 	document.querySelectorAll("#community-cards .cardslot").forEach(slot => {
