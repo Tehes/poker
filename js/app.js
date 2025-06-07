@@ -103,7 +103,11 @@ function chooseBotAction(player) {
 		const raiseAmt = Math.min(player.chips,
 			Math.max(currentBet + bigBlind, bigBlind * 2));
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 		return { action: "raise", amount: raiseAmt };
+=======
+		return { action: 'raise', amount: raiseAmt };
+>>>>>>> Stashed changes
 =======
 		return { action: 'raise', amount: raiseAmt };
 >>>>>>> Stashed changes
@@ -112,6 +116,7 @@ function chooseBotAction(player) {
 	if (strength >= 5) {
 		if (needToCall === 0) {
 			const bet = Math.min(bigBlind, player.chips);
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
 			return { action: "raise", amount: bet };
 		}
@@ -138,12 +143,26 @@ function chooseBotAction(player) {
 	}
 
 	if (needToCall === 0) {
+=======
+			return { action: 'raise', amount: bet };
+		}
+		if (needToCall <= bigBlind) {
+			return { action: 'call', amount: needToCall };
+		}
+		return { action: 'fold' };
+	}
+
+	if (needToCall === 0) {
+>>>>>>> Stashed changes
 		return { action: 'check' };
 	}
 	if (needToCall <= bigBlind / 2) {
 		return { action: 'call', amount: needToCall };
 	}
 	return { action: 'fold' };
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 }
 
@@ -543,8 +562,13 @@ function startBettingRound() {
 		// If this is a bot, choose an action based on hand strength
 		if (player.isBot) {
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 			document.querySelectorAll(".seat").forEach(s => s.classList.remove("active"));
 			player.seat.classList.add("active");
+=======
+			document.querySelectorAll('.seat').forEach(s => s.classList.remove('active'));
+			player.seat.classList.add('active');
+>>>>>>> Stashed changes
 =======
 			document.querySelectorAll('.seat').forEach(s => s.classList.remove('active'));
 			player.seat.classList.add('active');
@@ -553,6 +577,7 @@ function startBettingRound() {
 			const decision = chooseBotAction(player);
 			const needToCall = currentBet - player.roundBet;
 
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
 			if (decision.action === "fold") {
 				player.folded = true;
@@ -568,6 +593,8 @@ function startBettingRound() {
 				notifyPlayerAction(player, "call", actual);
 			} else if (decision.action === "raise") {
 =======
+=======
+>>>>>>> Stashed changes
 			if (decision.action === 'fold') {
 				player.folded = true;
 				notifyPlayerAction(player, 'fold');
@@ -581,6 +608,9 @@ function startBettingRound() {
 				document.getElementById('pot').textContent = pot;
 				notifyPlayerAction(player, 'call', actual);
 			} else if (decision.action === 'raise') {
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 				const amt = player.placeBet(decision.amount);
 				if (amt > needToCall) {
@@ -588,8 +618,13 @@ function startBettingRound() {
 				}
 				pot += amt;
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 				document.getElementById("pot").textContent = pot;
 				notifyPlayerAction(player, "raise", player.roundBet);
+=======
+				document.getElementById('pot').textContent = pot;
+				notifyPlayerAction(player, 'raise', player.roundBet);
+>>>>>>> Stashed changes
 =======
 				document.getElementById('pot').textContent = pot;
 				notifyPlayerAction(player, 'raise', player.roundBet);
