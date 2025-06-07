@@ -551,13 +551,7 @@ function startBettingRound() {
                         return;
                 }
 
-		// Always skip folded or all-in players
-		if (player.folded || player.allIn) {
-			// Skip this seat – guard clause at the top ensures we won't recurse forever
-			return nextPlayer();
-		}
-
-		// Only check roundBet for skipping/termination
+                // Only check roundBet for skipping/termination
 		if (player.roundBet >= currentBet) {
 			// Allow one pass-through for Big Blind pre-flop or Check post-flop
 			if (
