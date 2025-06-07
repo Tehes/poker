@@ -435,30 +435,27 @@ function startBettingRound() {
 
 		// If this is a bot, perform a simple rule-based action
 		if (player.isBot) {
-			if (player.isBot) {
-				const needToCall = currentBet - player.roundBet;
-				const betAmount = needToCall > 0 ? needToCall : 0;
-				const delay = pendingNotif.length * 1500; // delay based on pending notifications
+			const needToCall = currentBet - player.roundBet;
+			const betAmount = needToCall > 0 ? needToCall : 0;
 
-				setTimeout(() => {
-					if (betAmount > 0) {
-						const actualBet = player.placeBet(betAmount);
-						pot += actualBet;
-						document.getElementById("pot").textContent = pot;
-						notifyPlayerAction(player, "call", actualBet);
-					} else {
-						notifyPlayerAction(player, "check");
-					}
+			setTimeout(() => {
+				if (betAmount > 0) {
+					const actualBet = player.placeBet(betAmount);
+					pot += actualBet;
+					document.getElementById("pot").textContent = pot;
+					notifyPlayerAction(player, "call", actualBet);
+				} else {
+					notifyPlayerAction(player, "check");
+				}
 
-					// If no one still owes action, advance to next phase
-					if (!anyUncalled()) {
-						return setPhase();
-					}
-					return nextPlayer();
-				}, delay);
+				// If no one still owes action, advance to next phase
+				if (!anyUncalled()) {
+					return setPhase();
+				}
+				return nextPlayer();
+			}, 1500);
 
-				return;
-			}
+			return;
 		}
 
 
