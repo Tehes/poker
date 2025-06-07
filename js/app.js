@@ -484,7 +484,8 @@ function startBettingRound() {
 	}
 
 
-	function nextPlayer() {
+        function nextPlayer() {
+                // Count how many players remain who can still take actions
                 const activeCount = players.filter(p => !p.folded && !p.allIn).length;
 		// --- EARLY EXIT --------------------------------------------------
 		// If only ONE player has not folded, the hand ends immediately
