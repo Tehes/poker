@@ -163,7 +163,10 @@ Array.prototype.shuffle = function () {
 function startGame(event) {
 	if (!gameStarted) {
 		createPlayers();
+<<<<<<< HEAD
 		openCardsMode = players.filter(p => !p.isBot).length === 1;
+=======
+>>>>>>> parent of 247bdaa (Merge pull request #6 from Tehes/codex/option-für-offenen-kartenspielmodus-hinzufügen)
 
 		if (players.length > 1) {
 			for (const rotateIcon of rotateIcons) {
@@ -339,6 +342,7 @@ function dealCards() {
 		player.cards[0].dataset.value = cards[0];
 		player.cards[1].dataset.value = cards[1];
 		if (!player.isBot) {
+<<<<<<< HEAD
 			if (openCardsMode) {
 				player.cards[0].src = `cards/${cards[0]}.svg`;
 				player.cards[1].src = `cards/${cards[1]}.svg`;
@@ -346,6 +350,9 @@ function dealCards() {
 			else {
 				player.qr.show(cards[0], cards[1]);
 			}
+=======
+			player.qr.show(cards[0], cards[1]);
+>>>>>>> parent of 247bdaa (Merge pull request #6 from Tehes/codex/option-für-offenen-kartenspielmodus-hinzufügen)
 		}
 		cardGraveyard.push(cards.shift());
 		cardGraveyard.push(cards.shift());
@@ -376,7 +383,10 @@ function preFlop() {
 	players.forEach(p => {
 		p.cards[0].src = "cards/1B.svg";
 		p.cards[1].src = "cards/1B.svg";
+<<<<<<< HEAD
 		p.qr.hide();
+=======
+>>>>>>> parent of 247bdaa (Merge pull request #6 from Tehes/codex/option-für-offenen-kartenspielmodus-hinzufügen)
 	});
 
 	// Clear community cards from last hand
