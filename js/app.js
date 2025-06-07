@@ -280,7 +280,7 @@ function preFlop() {
 		if (p.chips <= 0) {
 			p.chips = 0;
 			p.seat.classList.add("hidden");
-			enqueueNotification(`${p.name} is out of chips and leaves the table.`);
+			enqueueNotification(`${p.name} is out of the game!`);
 		} else {
 			remainingPlayers.push(p);
 		}
@@ -297,7 +297,7 @@ function preFlop() {
 	// GAME OVER: only one player left at the table
 	if (players.length === 1) {
 		const champion = players[0];
-		enqueueNotification(`${champion.name} has won all the chips and the game! 🏆`);
+		enqueueNotification(`${champion.name} wins the game! 🏆`);
 		// Reveal champion's stack
 		champion.showTotal();
 		champion.seat.classList.add('winner');
@@ -329,17 +329,17 @@ function setPhase() {
 	switch (Phases[currentPhaseIndex]) {
 		case "flop":
 			dealCommunityCards(3);
-			enqueueNotification("Flop dealt: 3 community cards");
+			enqueueNotification("Flop (3 cards) dealt.");
 			startBettingRound();
 			break;
 		case "turn":
 			dealCommunityCards(1);
-			enqueueNotification("Turn dealt: 4th community card");
+			enqueueNotification("Turn (4th card) dealt.");
 			startBettingRound();
 			break;
 		case "river":
 			dealCommunityCards(1);
-			enqueueNotification("River dealt: 5th community card");
+			enqueueNotification("River (5th card) dealt.");
 			startBettingRound();
 			break;
 		case "showdown": doShowdown(); break;
@@ -615,7 +615,7 @@ function doShowdown() {
 		// Animate the chip transfer for the single winner
 		winner.seat.classList.add('winner');
 		winner.qr.hide();                // keep hole cards concealed
-		enqueueNotification(`${winner.name} wins the pot of ${pot}!`);
+		enqueueNotification(`${winner.name} wins ${pot}!`);
 		animateChipTransfer(pot, winner, () => {
 			pot = 0;
 			document.getElementById("pot").textContent = pot;
@@ -679,6 +679,8 @@ function doShowdown() {
 	const transferQueue = [];
 
 	// ---- Evaluate each side pot ----
+	// Collect results for notification consolidation
+	const potResults = [];
 	sidePots.forEach((sp, potIdx) => {
 		const spHands = sp.eligible
 			.filter(p => !p.folded)   // only players still in the hand can win
@@ -695,8 +697,9 @@ function doShowdown() {
 		if (sp.eligible.filter(p => !p.folded).length === 1) {
 			const solePlayer = sp.eligible.find(p => !p.folded);
 			transferQueue.push({ player: solePlayer, amount: sp.amount });
-			// No notification for uncalled pot
-			return; // skip normal evaluation
+			// Collect for notification consolidation
+			potResults.push({ players: [solePlayer.name], amount: sp.amount, hand: null });
+			return;
 		}
 
 		const winners = Hand.winners(spHands.map(h => h.handObj));
@@ -722,19 +725,45 @@ function doShowdown() {
 
 		if (winners.length === 1 && sidePots.length === 1) {
 			// Only one pot in the hand and a single winner → concise wording
-			const winningHand = winners[0].name; // e.g. "Two Pair"
 			const entry = spHands.find(h => h.handObj === winners[0]);
-			enqueueNotification(`${entry.player.name} wins ${sp.amount} with ${winningHand}.`);
+			potResults.push({ players: [entry.player.name], amount: sp.amount, hand: winners[0].name });
 		} else if (winners.length === 1) {
 			// Single winner but multiple pots in the hand
-			const winningHand = winners[0].name;
 			const entry = spHands.find(h => h.handObj === winners[0]);
-			enqueueNotification(`Pot ${potIdx + 1} (${sp.amount}): ${entry.player.name} wins with ${winningHand}.`);
+			potResults.push({ players: [entry.player.name], amount: sp.amount, hand: winners[0].name });
 		} else {
-			enqueueNotification(`Pot ${potIdx + 1} (${sp.amount}): ${winnerDescriptions} split ${sp.amount} (each ${share}).`);
+			potResults.push({
+				players: winners.map(w => {
+					const e = spHands.find(h => h.handObj === w);
+					return `${e.player.name}`;
+				}), amount: sp.amount, hand: null
+			});
 		}
-
 	});
+
+	// Filter out side-pots where the winner only gets their own bet back (no profit)
+	const filteredResults = potResults.filter(r => !(r.players.length === 1 && r.hand === null));
+
+	// Consolidate notifications: if same player wins all pots, combine amounts
+	if (filteredResults.length > 0) {
+		const allSame = filteredResults.every(r => r.players.length === 1 && r.players[0] === filteredResults[0].players[0]);
+		if (allSame) {
+			const total = filteredResults.reduce((sum, r) => sum + r.amount, 0);
+			let msg = `${filteredResults[0].players[0]} wins ${total}`;
+			if (filteredResults[0].hand) msg += ` with ${filteredResults[0].hand}`;
+			enqueueNotification(msg);
+		} else {
+			filteredResults.forEach(r => {
+				if (r.players.length === 1) {
+					let msg = `${r.players[0]} wins ${r.amount}`;
+					if (r.hand) msg += ` with ${r.hand}`;
+					enqueueNotification(msg);
+				} else {
+					enqueueNotification(`${r.players.join(' & ')} split ${r.amount}`);
+				}
+			});
+		}
+	}
 
 	// Run queued chip transfers sequentially with animation
 	function runTransfers(index) {
@@ -781,10 +810,7 @@ function notifyPlayerAction(player, action, amount) {
 			msg = `${player.name} raised to ${amount}.`;
 			break;
 		case "allin":
-			msg = `${player.name} is all-in (${amount}).`;
-			break;
-		case "postblind":
-			msg = `${player.name} posted blind of ${amount}.`;
+			msg = `${player.name} is all-in.`;
 			break;
 		default:
 			msg = `${player.name} did something…`;
