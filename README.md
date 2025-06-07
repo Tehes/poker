@@ -21,8 +21,7 @@ cards, blinds, pot, and betting rounds.
 - **Supports All Table Sizes**: From heads-up to full-ring games.
 - **Responsive Design**: Optimized for tablets, phones, and desktops.
 - **Fast & Offline-Ready**: Loads fast, works without internet once cached.
-- **Built‑in Bot Players**: Automatically fills empty seats with simple
-  rule‑based bots that can check or call at a basic level.
+- **Built‑in Bot Players**: Automatically fills empty seats with bots that use basic hand-strength heuristics to fold, check, call or raise.
 
 ---
 
@@ -62,7 +61,7 @@ cards, blinds, pot, and betting rounds.
   - Side pots and all-ins
   - Automatic showdown resolution
   - **Bot Support**: Empty seats without a player name are assigned bots that
-    play automatically using basic heuristics.
+    play automatically using simple hand-strength logic.
 
 ---
 

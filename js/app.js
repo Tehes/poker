@@ -80,6 +80,50 @@ function processBotQueue() {
         }
 }
 
+function chooseBotAction(player) {
+        const needToCall = currentBet - player.roundBet;
+        const communityCards = Array.from(
+                document.querySelectorAll("#community-cards .cardslot img")
+        ).map(img => {
+                const m = img.src.match(/\/cards\/([2-9TJQKA][CDHS])\.svg$/);
+                return m ? m[1] : null;
+        }).filter(Boolean);
+
+        const cards = [
+                player.cards[0].dataset.value,
+                player.cards[1].dataset.value,
+                ...communityCards
+        ];
+
+        const hand = Hand.solve(cards);
+        const strength = hand.rank;
+
+        if (strength >= 8) {
+                const raiseAmt = Math.min(player.chips,
+                        Math.max(currentBet + bigBlind, bigBlind * 2));
+                return { action: 'raise', amount: raiseAmt };
+        }
+
+        if (strength >= 5) {
+                if (needToCall === 0) {
+                        const bet = Math.min(bigBlind, player.chips);
+                        return { action: 'raise', amount: bet };
+                }
+                if (needToCall <= bigBlind) {
+                        return { action: 'call', amount: needToCall };
+                }
+                return { action: 'fold' };
+        }
+
+        if (needToCall === 0) {
+                return { action: 'check' };
+        }
+        if (needToCall <= bigBlind / 2) {
+                return { action: 'call', amount: needToCall };
+        }
+        return { action: 'fold' };
+}
+
 /* --------------------------------------------------------------------------------------------------
 functions
 ---------------------------------------------------------------------------------------------------*/
@@ -454,29 +498,47 @@ function startBettingRound() {
 		}
 
 		// -------------------------------------------------------------------
-		// Find next player who still owes action
-		let player = players[idx % players.length];
-		idx++;
-		cycles++;
+               // Find next player who still owes action
+               let player = players[idx % players.length];
+               idx++;
+               cycles++;
 
-		// If this is a bot, perform a simple rule-based action
-		if (player.isBot) {
-			// Bot action immediately, then wait for notifications to clear
-			document.querySelectorAll('.seat').forEach(s => s.classList.remove('active'));
-			player.seat.classList.add('active');
+               // Always skip folded or all-in players first
+               if (player.folded || player.allIn) {
+                       // Skip this seat – guard clause at the top ensures we won't recurse forever
+                       return nextPlayer();
+               }
 
-			const needToCall = currentBet - player.roundBet;
-			const betAmount = needToCall > 0 ? needToCall : 0;
+               // If this is a bot, choose an action based on hand strength
+               if (player.isBot) {
+                        document.querySelectorAll('.seat').forEach(s => s.classList.remove('active'));
+                        player.seat.classList.add('active');
 
-			if (betAmount > 0) {
-				const actualBet = player.placeBet(betAmount);
-				pot += actualBet;
-				document.getElementById("pot").textContent = pot;
-				notifyPlayerAction(player, "call", actualBet);
-			} else {
-				notifyPlayerAction(player, "check");
-			}
-                        // Schedule next action after a delay
+                        const decision = chooseBotAction(player);
+                        const needToCall = currentBet - player.roundBet;
+
+                        if (decision.action === 'fold') {
+                                player.folded = true;
+                                notifyPlayerAction(player, 'fold');
+                                player.qr.hide();
+                                player.seat.classList.add('folded');
+                        } else if (decision.action === 'check') {
+                                notifyPlayerAction(player, 'check');
+                        } else if (decision.action === 'call') {
+                                const actual = player.placeBet(decision.amount);
+                                pot += actual;
+                                document.getElementById('pot').textContent = pot;
+                                notifyPlayerAction(player, 'call', actual);
+                        } else if (decision.action === 'raise') {
+                                const amt = player.placeBet(decision.amount);
+                                if (amt > needToCall) {
+                                        currentBet = player.roundBet;
+                                }
+                                pot += amt;
+                                document.getElementById('pot').textContent = pot;
+                                notifyPlayerAction(player, 'raise', player.roundBet);
+                        }
+
                         enqueueBotAction(() => {
                                 if (cycles < players.length) {
                                         nextPlayer();
@@ -486,16 +548,10 @@ function startBettingRound() {
                                         setPhase();
                                 }
                         });
-                       return;
+                        return;
                 }
 
-		// Always skip folded or all-in players
-		if (player.folded || player.allIn) {
-			// Skip this seat – guard clause at the top ensures we won't recurse forever
-			return nextPlayer();
-		}
-
-		// Only check roundBet for skipping/termination
+                // Only check roundBet for skipping/termination
 		if (player.roundBet >= currentBet) {
 			// Allow one pass-through for Big Blind pre-flop or Check post-flop
 			if (
