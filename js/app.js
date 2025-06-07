@@ -453,9 +453,15 @@ function startBettingRound() {
 			} else {
 				notifyPlayerAction(player, "check");
 			}
-			// Schedule nextPlayer after all notifications are shown
-			onAllNotifsDone = () => nextPlayer();
-			return;
+                        // Schedule next action once notifications clear
+                        onAllNotifsDone = () => {
+                                if (anyUncalled()) {
+                                        nextPlayer();
+                                } else {
+                                        setPhase();
+                                }
+                        };
+                       return;
 		}
 
 		// Always skip folded or all-in players
