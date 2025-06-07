@@ -498,13 +498,19 @@ function startBettingRound() {
 		}
 
 		// -------------------------------------------------------------------
-		// Find next player who still owes action
-		let player = players[idx % players.length];
-		idx++;
-		cycles++;
+               // Find next player who still owes action
+               let player = players[idx % players.length];
+               idx++;
+               cycles++;
 
-                // If this is a bot, choose an action based on hand strength
-                if (player.isBot) {
+               // Always skip folded or all-in players first
+               if (player.folded || player.allIn) {
+                       // Skip this seat – guard clause at the top ensures we won't recurse forever
+                       return nextPlayer();
+               }
+
+               // If this is a bot, choose an action based on hand strength
+               if (player.isBot) {
                         document.querySelectorAll('.seat').forEach(s => s.classList.remove('active'));
                         player.seat.classList.add('active');
 
