@@ -478,7 +478,9 @@ function startBettingRound() {
 			}
                         // Schedule next action after a delay
                         enqueueBotAction(() => {
-                                if (anyUncalled()) {
+                                if (cycles < players.length) {
+                                        nextPlayer();
+                                } else if (anyUncalled()) {
                                         nextPlayer();
                                 } else {
                                         setPhase();
