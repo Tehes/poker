@@ -102,12 +102,17 @@ function chooseBotAction(player) {
 	if (strength >= 8) {
 		const raiseAmt = Math.min(player.chips,
 			Math.max(currentBet + bigBlind, bigBlind * 2));
+<<<<<<< Updated upstream
 		return { action: "raise", amount: raiseAmt };
+=======
+		return { action: 'raise', amount: raiseAmt };
+>>>>>>> Stashed changes
 	}
 
 	if (strength >= 5) {
 		if (needToCall === 0) {
 			const bet = Math.min(bigBlind, player.chips);
+<<<<<<< Updated upstream
 			return { action: "raise", amount: bet };
 		}
 		if (needToCall <= bigBlind) {
@@ -123,6 +128,23 @@ function chooseBotAction(player) {
 		return { action: "call", amount: needToCall };
 	}
 	return { action: "fold" };
+=======
+			return { action: 'raise', amount: bet };
+		}
+		if (needToCall <= bigBlind) {
+			return { action: 'call', amount: needToCall };
+		}
+		return { action: 'fold' };
+	}
+
+	if (needToCall === 0) {
+		return { action: 'check' };
+	}
+	if (needToCall <= bigBlind / 2) {
+		return { action: 'call', amount: needToCall };
+	}
+	return { action: 'fold' };
+>>>>>>> Stashed changes
 }
 
 /* --------------------------------------------------------------------------------------------------
@@ -140,9 +162,9 @@ Array.prototype.shuffle = function () {
 };
 
 function startGame(event) {
-        if (!gameStarted) {
-                createPlayers();
-                openCardsMode = players.filter(p => !p.isBot).length === 1;
+	if (!gameStarted) {
+		createPlayers();
+		openCardsMode = players.filter(p => !p.isBot).length === 1;
 
 		if (players.length > 1) {
 			for (const rotateIcon of rotateIcons) {
@@ -314,20 +336,21 @@ function dealCards() {
 	cardGraveyard = [];
 	cards.shuffle();
 
-        for (const player of players) {
-                player.cards[0].dataset.value = cards[0];
-                player.cards[1].dataset.value = cards[1];
-                if (!player.isBot) {
-                        if (openCardsMode) {
-                                player.cards[0].src = `cards/${cards[0]}.svg`;
-                                player.cards[1].src = `cards/${cards[1]}.svg`;
-                        } else {
-                                player.qr.show(cards[0], cards[1]);
-                        }
-                }
-                cardGraveyard.push(cards.shift());
-                cardGraveyard.push(cards.shift());
-        }
+	for (const player of players) {
+		player.cards[0].dataset.value = cards[0];
+		player.cards[1].dataset.value = cards[1];
+		if (!player.isBot) {
+			if (openCardsMode) {
+				player.cards[0].src = `cards/${cards[0]}.svg`;
+				player.cards[1].src = `cards/${cards[1]}.svg`;
+			}
+			else {
+				player.qr.show(cards[0], cards[1]);
+			}
+		}
+		cardGraveyard.push(cards.shift());
+		cardGraveyard.push(cards.shift());
+	}
 }
 
 /**
@@ -351,11 +374,11 @@ function preFlop() {
 	players.forEach(p => p.seat.classList.remove("winner"));
 
 	// Cover all hole cards with card back
-        players.forEach(p => {
-                p.cards[0].src = "cards/1B.svg";
-                p.cards[1].src = "cards/1B.svg";
-                p.qr.hide();
-        });
+	players.forEach(p => {
+		p.cards[0].src = "cards/1B.svg";
+		p.cards[1].src = "cards/1B.svg";
+		p.qr.hide();
+	});
 
 	// Clear community cards from last hand
 	document.querySelectorAll("#community-cards .cardslot").forEach(slot => {
@@ -519,12 +542,18 @@ function startBettingRound() {
 
 		// If this is a bot, choose an action based on hand strength
 		if (player.isBot) {
+<<<<<<< Updated upstream
 			document.querySelectorAll(".seat").forEach(s => s.classList.remove("active"));
 			player.seat.classList.add("active");
+=======
+			document.querySelectorAll('.seat').forEach(s => s.classList.remove('active'));
+			player.seat.classList.add('active');
+>>>>>>> Stashed changes
 
 			const decision = chooseBotAction(player);
 			const needToCall = currentBet - player.roundBet;
 
+<<<<<<< Updated upstream
 			if (decision.action === "fold") {
 				player.folded = true;
 				notifyPlayerAction(player, "fold");
@@ -538,13 +567,33 @@ function startBettingRound() {
 				document.querySelector("#pot").textContent = pot;
 				notifyPlayerAction(player, "call", actual);
 			} else if (decision.action === "raise") {
+=======
+			if (decision.action === 'fold') {
+				player.folded = true;
+				notifyPlayerAction(player, 'fold');
+				player.qr.hide();
+				player.seat.classList.add('folded');
+			} else if (decision.action === 'check') {
+				notifyPlayerAction(player, 'check');
+			} else if (decision.action === 'call') {
+				const actual = player.placeBet(decision.amount);
+				pot += actual;
+				document.getElementById('pot').textContent = pot;
+				notifyPlayerAction(player, 'call', actual);
+			} else if (decision.action === 'raise') {
+>>>>>>> Stashed changes
 				const amt = player.placeBet(decision.amount);
 				if (amt > needToCall) {
 					currentBet = player.roundBet;
 				}
 				pot += amt;
+<<<<<<< Updated upstream
 				document.getElementById("pot").textContent = pot;
 				notifyPlayerAction(player, "raise", player.roundBet);
+=======
+				document.getElementById('pot').textContent = pot;
+				notifyPlayerAction(player, 'raise', player.roundBet);
+>>>>>>> Stashed changes
 			}
 
 			enqueueBotAction(() => {
