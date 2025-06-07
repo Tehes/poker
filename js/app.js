@@ -59,69 +59,69 @@ let smallBlind = 10;
 let bigBlind = 20;
 
 function enqueueBotAction(fn) {
-        botActionQueue.push(fn);
-        if (!processingBotActions) {
-                processingBotActions = true;
-                setTimeout(processBotQueue, BOT_ACTION_DELAY);
-        }
+	botActionQueue.push(fn);
+	if (!processingBotActions) {
+		processingBotActions = true;
+		setTimeout(processBotQueue, BOT_ACTION_DELAY);
+	}
 }
 
 function processBotQueue() {
-        if (botActionQueue.length === 0) {
-                processingBotActions = false;
-                return;
-        }
-        const fn = botActionQueue.shift();
-        fn();
-        if (botActionQueue.length > 0) {
-                setTimeout(processBotQueue, BOT_ACTION_DELAY);
-        } else {
-                processingBotActions = false;
-        }
+	if (botActionQueue.length === 0) {
+		processingBotActions = false;
+		return;
+	}
+	const fn = botActionQueue.shift();
+	fn();
+	if (botActionQueue.length > 0) {
+		setTimeout(processBotQueue, BOT_ACTION_DELAY);
+	} else {
+		processingBotActions = false;
+	}
 }
 
 function chooseBotAction(player) {
-        const needToCall = currentBet - player.roundBet;
-        const communityCards = Array.from(
-                document.querySelectorAll("#community-cards .cardslot img")
-        ).map(img => {
-                const m = img.src.match(/\/cards\/([2-9TJQKA][CDHS])\.svg$/);
-                return m ? m[1] : null;
-        }).filter(Boolean);
+	const needToCall = currentBet - player.roundBet;
+	const communityCards = Array.from(
+		document.querySelectorAll("#community-cards .cardslot img")
+	).map(img => {
+		const m = img.src.match(/\/cards\/([2-9TJQKA][CDHS])\.svg$/);
+		return m ? m[1] : null;
+	}).filter(Boolean);
 
-        const cards = [
-                player.cards[0].dataset.value,
-                player.cards[1].dataset.value,
-                ...communityCards
-        ];
+	const cards = [
+		player.cards[0].dataset.value,
+		player.cards[1].dataset.value,
+		...communityCards
+	];
 
-        const hand = Hand.solve(cards);
-        const strength = hand.rank;
+	const hand = Hand.solve(cards);
+	const strength = hand.rank;
 
-        if (strength >= 8) {
-                const raiseAmt = Math.min(player.chips,
-                        Math.max(currentBet + bigBlind, bigBlind * 2));
-                return { action: 'raise', amount: raiseAmt };
-        }
+	if (strength >= 8) {
+		const raiseAmt = Math.min(player.chips,
+			Math.max(currentBet + bigBlind, bigBlind * 2));
+		return { action: "raise", amount: raiseAmt };
+	}
 
-        if (strength >= 5) {
-                if (needToCall === 0) {
-                        const bet = Math.min(bigBlind, player.chips);
-                        return { action: 'raise', amount: bet };
-                }
-                if (needToCall <= bigBlind) {
-                        return { action: 'call', amount: needToCall };
-                }
-                return { action: 'fold' };
-        }
+	if (strength >= 5) {
+		if (needToCall === 0) {
+			const bet = Math.min(bigBlind, player.chips);
+			return { action: "raise", amount: bet };
+		}
+		if (needToCall <= bigBlind) {
+			return { action: "call", amount: needToCall };
+		}
+		return { action: "fold" };
+	}
 
-        if (needToCall === 0) {
-                return { action: 'check' };
-        }
-        if (needToCall <= bigBlind / 2) {
-                return { action: 'call', amount: needToCall };
-        }
-        return { action: 'fold' };
+	if (needToCall === 0) {
+		return { action: "check" };
+	}
+	if (needToCall <= bigBlind / 2) {
+		return { action: "call", amount: needToCall };
+	}
+	return { action: "fold" };
 }
 
 /* --------------------------------------------------------------------------------------------------
@@ -191,7 +191,7 @@ function createPlayers() {
 			qr: {
 				show: function (card1, card2) {
 					player.querySelector(".qr").classList.remove("hidden");
-					const base = window.location.origin + window.location.pathname.replace(/[^/]*$/, '');
+					const base = window.location.origin + window.location.pathname.replace(/[^/]*$/, "");
 					player.querySelector(".qr").src =
 						`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${base}hole-cards.html?params=${card1}-${card2}-${playerObject.name}-${playerObject.chips}`;
 				},
@@ -207,12 +207,12 @@ function createPlayers() {
 				// Convert kebab-case role to camelCase flag name
 				const flag = role.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 				this[flag] = true;
-				this.seat.querySelector(`.${role}`).classList.remove('hidden');
+				this.seat.querySelector(`.${role}`).classList.remove("hidden");
 			},
 			clearRole: function (role) {
 				const flag = role.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 				this[flag] = false;
-				this.seat.querySelector(`.${role}`).classList.add('hidden');
+				this.seat.querySelector(`.${role}`).classList.add("hidden");
 			},
 			folded: false,
 			chips: 2000,
@@ -249,19 +249,19 @@ function setDealer() {
 	if (players.every(isNotDealer)) {
 		const randomPlayerIndex = Math.floor(Math.random() * players.length);
 		players[randomPlayerIndex].dealer = true;
-		players[randomPlayerIndex].assignRole('dealer');
+		players[randomPlayerIndex].assignRole("dealer");
 		initialDealerName = players[randomPlayerIndex].name;
 	}
 	else {
 		const dealerIndex = players.findIndex(p => p.dealer);
 		// clear current dealer flag
 		players[dealerIndex].dealer = false;
-		players[dealerIndex].clearRole('dealer');
+		players[dealerIndex].clearRole("dealer");
 
 		// assign new dealer – wrap with modulo to avoid “undefined”
 		const nextIndex = (dealerIndex + 1) % players.length;
 		players[nextIndex].dealer = true;
-		players[nextIndex].assignRole('dealer');
+		players[nextIndex].assignRole("dealer");
 	}
 
 	while (players[0].dealer === false) {
@@ -285,8 +285,8 @@ function setBlinds() {
 
 	// Clear previous roles and icons
 	players.forEach(p => {
-		p.clearRole('small-blind');
-		p.clearRole('big-blind');
+		p.clearRole("small-blind");
+		p.clearRole("big-blind");
 	});
 	// Post blinds for Pre-Flop and set currentBet
 	const sbIdx = (players.length > 2) ? 1 : 0;
@@ -302,8 +302,8 @@ function setBlinds() {
 	pot += sbBet + bbBet;
 	document.getElementById("pot").textContent = pot;
 	// Assign new blinds
-	players[sbIdx].assignRole('small-blind');
-	players[bbIdx].assignRole('big-blind');
+	players[sbIdx].assignRole("small-blind");
+	players[bbIdx].assignRole("big-blind");
 	currentBet = bigBlind;
 }
 
@@ -337,11 +337,11 @@ function preFlop() {
 		p.folded = false;
 		p.allIn = false;
 		p.totalBet = 0;
-		p.seat.classList.remove('folded');
+		p.seat.classList.remove("folded");
 	});
 
 	// Remove any previous winner highlighting
-	players.forEach(p => p.seat.classList.remove('winner'));
+	players.forEach(p => p.seat.classList.remove("winner"));
 
 	// Cover all hole cards with card back
 	players.forEach(p => {
@@ -380,7 +380,7 @@ function preFlop() {
 		enqueueNotification(`${champion.name} wins the game! 🏆`);
 		// Reveal champion's stack
 		champion.showTotal();
-		champion.seat.classList.add('winner');
+		champion.seat.classList.add("winner");
 		return;                // skip the rest of preFlop()
 	}
 	// ----------------------------------------------------------
@@ -498,60 +498,60 @@ function startBettingRound() {
 		}
 
 		// -------------------------------------------------------------------
-               // Find next player who still owes action
-               let player = players[idx % players.length];
-               idx++;
-               cycles++;
+		// Find next player who still owes action
+		let player = players[idx % players.length];
+		idx++;
+		cycles++;
 
-               // Always skip folded or all-in players first
-               if (player.folded || player.allIn) {
-                       // Skip this seat – guard clause at the top ensures we won't recurse forever
-                       return nextPlayer();
-               }
+		// Always skip folded or all-in players first
+		if (player.folded || player.allIn) {
+			// Skip this seat – guard clause at the top ensures we won't recurse forever
+			return nextPlayer();
+		}
 
-               // If this is a bot, choose an action based on hand strength
-               if (player.isBot) {
-                        document.querySelectorAll('.seat').forEach(s => s.classList.remove('active'));
-                        player.seat.classList.add('active');
+		// If this is a bot, choose an action based on hand strength
+		if (player.isBot) {
+			document.querySelectorAll(".seat").forEach(s => s.classList.remove("active"));
+			player.seat.classList.add("active");
 
-                        const decision = chooseBotAction(player);
-                        const needToCall = currentBet - player.roundBet;
+			const decision = chooseBotAction(player);
+			const needToCall = currentBet - player.roundBet;
 
-                        if (decision.action === 'fold') {
-                                player.folded = true;
-                                notifyPlayerAction(player, 'fold');
-                                player.qr.hide();
-                                player.seat.classList.add('folded');
-                        } else if (decision.action === 'check') {
-                                notifyPlayerAction(player, 'check');
-                        } else if (decision.action === 'call') {
-                                const actual = player.placeBet(decision.amount);
-                                pot += actual;
-                                document.getElementById('pot').textContent = pot;
-                                notifyPlayerAction(player, 'call', actual);
-                        } else if (decision.action === 'raise') {
-                                const amt = player.placeBet(decision.amount);
-                                if (amt > needToCall) {
-                                        currentBet = player.roundBet;
-                                }
-                                pot += amt;
-                                document.getElementById('pot').textContent = pot;
-                                notifyPlayerAction(player, 'raise', player.roundBet);
-                        }
+			if (decision.action === "fold") {
+				player.folded = true;
+				notifyPlayerAction(player, "fold");
+				player.qr.hide();
+				player.seat.classList.add("folded");
+			} else if (decision.action === "check") {
+				notifyPlayerAction(player, "check");
+			} else if (decision.action === "call") {
+				const actual = player.placeBet(decision.amount);
+				pot += actual;
+				document.querySelector("#pot").textContent = pot;
+				notifyPlayerAction(player, "call", actual);
+			} else if (decision.action === "raise") {
+				const amt = player.placeBet(decision.amount);
+				if (amt > needToCall) {
+					currentBet = player.roundBet;
+				}
+				pot += amt;
+				document.getElementById("pot").textContent = pot;
+				notifyPlayerAction(player, "raise", player.roundBet);
+			}
 
-                        enqueueBotAction(() => {
-                                if (cycles < players.length) {
-                                        nextPlayer();
-                                } else if (anyUncalled()) {
-                                        nextPlayer();
-                                } else {
-                                        setPhase();
-                                }
-                        });
-                        return;
-                }
+			enqueueBotAction(() => {
+				if (cycles < players.length) {
+					nextPlayer();
+				} else if (anyUncalled()) {
+					nextPlayer();
+				} else {
+					setPhase();
+				}
+			});
+			return;
+		}
 
-                // Only check roundBet for skipping/termination
+		// Only check roundBet for skipping/termination
 		if (player.roundBet >= currentBet) {
 			// Allow one pass-through for Big Blind pre-flop or Check post-flop
 			if (
@@ -567,8 +567,8 @@ function startBettingRound() {
 
 		// Highlight active player
 		// remove previous highlight
-		document.querySelectorAll('.seat').forEach(s => s.classList.remove('active'));
-		player.seat.classList.add('active');
+		document.querySelectorAll(".seat").forEach(s => s.classList.remove("active"));
+		player.seat.classList.add("active");
 
 		const needToCall = currentBet - player.roundBet;
 
@@ -613,7 +613,7 @@ function startBettingRound() {
 			const needToCall = currentBet - player.roundBet;
 
 			// Remove active highlight and slider listener
-			player.seat.classList.remove('active');
+			player.seat.classList.remove("active");
 			amountSlider.removeEventListener("input", onSliderInput);
 
 			// Handle action types
@@ -657,8 +657,8 @@ function startBettingRound() {
 			notifyPlayerAction(player, "fold");
 			player.qr.hide();
 			// Visually mark folded player
-			player.seat.classList.add('folded');
-			player.seat.classList.remove('active');
+			player.seat.classList.add("folded");
+			player.seat.classList.remove("active");
 			amountSlider.removeEventListener("input", onSliderInput);
 			foldButton.removeEventListener("click", onFold);
 			actionButton.removeEventListener("click", onAction);
@@ -740,7 +740,7 @@ function doShowdown() {
 	if (activePlayers.length === 1) {
 		const winner = activePlayers[0];
 		// Animate the chip transfer for the single winner
-		winner.seat.classList.add('winner');
+		winner.seat.classList.add("winner");
 		winner.qr.hide();                // keep hole cards concealed
 		enqueueNotification(`${winner.name} wins ${pot}!`);
 		animateChipTransfer(pot, winner, () => {
@@ -840,7 +840,7 @@ function doShowdown() {
 			transferQueue.push({ player: entry.player, amount: payout });
 			// Highlight winners only for the main pot
 			if (potIdx === 0) {
-				entry.player.seat.classList.add('winner');
+				entry.player.seat.classList.add("winner");
 			}
 		});
 
@@ -886,7 +886,7 @@ function doShowdown() {
 					if (r.hand) msg += ` with ${r.hand}`;
 					enqueueNotification(msg);
 				} else {
-					enqueueNotification(`${r.players.join(' & ')} split ${r.amount}`);
+					enqueueNotification(`${r.players.join(" & ")} split ${r.amount}`);
 				}
 			});
 		}
@@ -953,11 +953,11 @@ function enqueueNotification(msg) {
 }
 
 function showNextNotif() {
-        if (pendingNotif.length === 0) {
-                isNotifProcessing = false;
-                return;
-        }
-        isNotifProcessing = true;
+	if (pendingNotif.length === 0) {
+		isNotifProcessing = false;
+		return;
+	}
+	isNotifProcessing = true;
 	const msg = pendingNotif.shift();
 	// newest message first for tracking
 	notifArr.unshift(msg);
@@ -971,8 +971,8 @@ function showNextNotif() {
 	while (notification.childElementCount > MAX_ITEMS) {
 		notification.removeChild(notification.lastChild);
 	}
-        console.log(msg);
-        setTimeout(showNextNotif, NOTIF_INTERVAL);
+	console.log(msg);
+	setTimeout(showNextNotif, NOTIF_INTERVAL);
 }
 
 
