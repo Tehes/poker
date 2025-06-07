@@ -21,6 +21,7 @@ let pot = 0;
 let initialDealerName = null;
 let dealerOrbitCount = -1;
 let gameStarted = false;
+let openCardsMode = false;
 
 let botCount = 0;
 
@@ -31,7 +32,7 @@ let isNotifProcessing = false;
 const botActionQueue = [];
 let processingBotActions = false;
 const BOT_ACTION_DELAY = 1500;
-const NOTIF_INTERVAL = 1500; // ms per notification display
+const NOTIF_INTERVAL = 750;
 
 // Clubs, Diamonds, Hearts, Spades
 // 2,3,4,5,6,7,8,9,T,J,Q,K,A
@@ -52,7 +53,6 @@ let cards = [
 ];
 
 let cardGraveyard = [];
-
 let players = [];
 
 let smallBlind = 10;
