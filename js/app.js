@@ -28,7 +28,8 @@ const MAX_ITEMS = 5;
 const notifArr = [];
 const pendingNotif = [];
 let isNotifProcessing = false;
-let onAllNotifsDone = null;
+const botActionQueue = [];
+let processingBotActions = false;
 const BOT_ACTION_DELAY = 1500;
 const NOTIF_INTERVAL = 1500; // ms per notification display
 
@@ -56,6 +57,28 @@ let players = [];
 
 let smallBlind = 10;
 let bigBlind = 20;
+
+function enqueueBotAction(fn) {
+        botActionQueue.push(fn);
+        if (!processingBotActions) {
+                processingBotActions = true;
+                setTimeout(processBotQueue, BOT_ACTION_DELAY);
+        }
+}
+
+function processBotQueue() {
+        if (botActionQueue.length === 0) {
+                processingBotActions = false;
+                return;
+        }
+        const fn = botActionQueue.shift();
+        fn();
+        if (botActionQueue.length > 0) {
+                setTimeout(processBotQueue, BOT_ACTION_DELAY);
+        } else {
+                processingBotActions = false;
+        }
+}
 
 /* --------------------------------------------------------------------------------------------------
 functions
@@ -453,16 +476,16 @@ function startBettingRound() {
 			} else {
 				notifyPlayerAction(player, "check");
 			}
-                        // Schedule next action once notifications clear
-                        onAllNotifsDone = () => {
+                        // Schedule next action after a delay
+                        enqueueBotAction(() => {
                                 if (anyUncalled()) {
                                         nextPlayer();
                                 } else {
                                         setPhase();
                                 }
-                        };
+                        });
                        return;
-		}
+                }
 
 		// Always skip folded or all-in players
 		if (player.folded || player.allIn) {
@@ -872,16 +895,11 @@ function enqueueNotification(msg) {
 }
 
 function showNextNotif() {
-	if (pendingNotif.length === 0) {
-		isNotifProcessing = false;
-		if (onAllNotifsDone) {
-			const cb = onAllNotifsDone;
-			onAllNotifsDone = null;
-			cb();
-		}
-		return;
-	}
-	isNotifProcessing = true;
+        if (pendingNotif.length === 0) {
+                isNotifProcessing = false;
+                return;
+        }
+        isNotifProcessing = true;
 	const msg = pendingNotif.shift();
 	// newest message first for tracking
 	notifArr.unshift(msg);
@@ -895,8 +913,8 @@ function showNextNotif() {
 	while (notification.childElementCount > MAX_ITEMS) {
 		notification.removeChild(notification.lastChild);
 	}
-	console.log(msg);
-	setTimeout(showNextNotif, 1500);
+        console.log(msg);
+        setTimeout(showNextNotif, NOTIF_INTERVAL);
 }
 
 
