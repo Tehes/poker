@@ -156,12 +156,12 @@ function chooseBotAction(player) {
         const pos = (seatIdx - refIdx + players.length) % players.length;
         const positionFactor = pos / (players.length - 1); // 0 = early, 1 = late
 
-        const communityCards = Array.from(
-                document.querySelectorAll("#community-cards .cardslot img")
-        ).map(img => {
-                const m = img.src.match(/\/cards\/([2-9TJQKA][CDHS])\.svg$/);
-                return m ? m[1] : null;
-        }).filter(Boolean);
+       const communityCards = Array.from(
+               document.querySelectorAll("#community-cards .cardslot img")
+       ).map(img => {
+               const m = img.src.match(/\/cards\/([2-9TJQKA][CDHS])\.svg$/);
+               return m ? m[1] : null;
+       }).filter(Boolean);
 
         const cards = [
                 player.cards[0].dataset.value,
@@ -169,20 +169,28 @@ function chooseBotAction(player) {
                 ...communityCards
         ];
 
-        let strength;
-        if (communityCards.length === 0) {
-                strength = preflopHandScore(player.cards[0].dataset.value, player.cards[1].dataset.value);
-        } else {
-                const hand = Hand.solve(cards);
-                strength = hand.rank;
-        }
+       const preflop = communityCards.length === 0;
 
-        // Normalize strength roughly between 0 and 1
-        const strengthRatio = strength / 10;
+       let strength;
+       if (preflop) {
+               strength = preflopHandScore(player.cards[0].dataset.value, player.cards[1].dataset.value);
+       } else {
+               const hand = Hand.solve(cards);
+               strength = hand.rank;
+       }
 
-       const raiseBase = Math.max(blindLevel.big * (strength >= 8 ? 3 : 2), pot / 2);
-       const aggressiveness = 0.8 + 0.4 * positionFactor;
-       const raiseThreshold = 8 - 2 * positionFactor;
+       // Normalize strength roughly between 0 and 1
+       const strengthRatio = strength / 10;
+
+       const raiseBase = preflop
+               ? Math.max(blindLevel.big * (strength >= 8 ? 3 : 2), pot / 2)
+               : Math.max(blindLevel.big * 2, pot * 0.6);
+       const aggressiveness = preflop
+               ? 0.8 + 0.4 * positionFactor
+               : 1 + 0.6 * positionFactor;
+       const raiseThreshold = preflop
+               ? 8 - 2 * positionFactor
+               : Math.max(2, 4 - 2 * positionFactor);
 
        let decision;
 
@@ -205,7 +213,7 @@ function chooseBotAction(player) {
                );
                raiseAmt = Math.min(player.chips, roundTo10(raiseAmt));
                decision = { action: "raise", amount: raiseAmt };
-       } else if (strengthRatio * aggressiveness >= potOdds && stackRatio <= 0.5) {
+       } else if (strengthRatio * aggressiveness >= potOdds && stackRatio <= (preflop ? 0.5 : 0.7)) {
                const callAmt = Math.min(player.chips, needToCall);
                decision = { action: "call", amount: callAmt };
        } else {
