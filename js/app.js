@@ -34,6 +34,27 @@ let processingBotActions = false;
 const BOT_ACTION_DELAY = 1500;
 const NOTIF_INTERVAL = 750;
 
+// Toggle verbose logging of bot decisions
+const DEBUG_DECISIONS = true;
+
+// Limit raises per betting round to prevent endless escalation
+const MAX_RAISES_PER_ROUND = 3;
+let raisesThisRound = 0;
+
+function logDecision(msg) {
+	if (DEBUG_DECISIONS) console.log(msg);
+}
+
+const SUIT_SYMBOLS = { C: "♣", D: "♦", H: "♥", S: "♠" };
+function formatCard(code) {
+	return code[0].replace("T", "10") + SUIT_SYMBOLS[code[1]];
+}
+
+// Round a value to the nearest multiple of 10
+function roundTo10(x) {
+	return Math.round(x / 10) * 10;
+}
+
 // Clubs, Diamonds, Hearts, Spades
 // 2,3,4,5,6,7,8,9,T,J,Q,K,A
 let cards = [
@@ -80,8 +101,61 @@ function processBotQueue() {
 	}
 }
 
+function preflopHandScore(cardA, cardB) {
+	const order = "23456789TJQKA";
+	const base = { A: 10, K: 8, Q: 7, J: 6, T: 5, "9": 4.5, "8": 4, "7": 3.5, "6": 3, "5": 2.5, "4": 2, "3": 1.5, "2": 1 };
+
+	let r1 = cardA[0];
+	let r2 = cardB[0];
+	let s1 = cardA[1];
+	let s2 = cardB[1];
+
+	let i1 = order.indexOf(r1);
+	let i2 = order.indexOf(r2);
+	if (i1 < i2) {
+		[r1, r2] = [r2, r1];
+		[s1, s2] = [s2, s1];
+		[i1, i2] = [i2, i1];
+	}
+
+	let score = base[r1];
+	if (r1 === r2) {
+		score *= 2;
+		if (score < 5) score = 5;
+	}
+
+	if (s1 === s2) score += 2;
+
+	const gap = i1 - i2 - 1;
+	if (gap === 1) score -= 1;
+	else if (gap === 2) score -= 2;
+	else if (gap === 3) score -= 4;
+	else if (gap >= 4) score -= 5;
+
+	if (gap <= 1 && i1 < order.indexOf("Q")) score += 1;
+
+	if (score < 0) score = 0;
+
+	return Math.min(10, score);
+}
+
 function chooseBotAction(player) {
 	const needToCall = currentBet - player.roundBet;
+
+	// Additional factors for decision making
+	const potOdds = needToCall / (pot + needToCall);
+	const stackRatio = needToCall / player.chips;
+	const blindLevel = { small: smallBlind, big: bigBlind };
+	const canRaise = raisesThisRound < MAX_RAISES_PER_ROUND && player.chips > blindLevel.big;
+
+	// Determine position: early players act after big blind / dealer
+	const seatIdx = players.indexOf(player);
+	const refIdx = currentPhaseIndex === 0
+		? (players.findIndex(p => p.bigBlind) + 1) % players.length
+		: (players.findIndex(p => p.dealer) + 1) % players.length;
+	const pos = (seatIdx - refIdx + players.length) % players.length;
+	const positionFactor = pos / (players.length - 1); // 0 = early, 1 = late
+
 	const communityCards = Array.from(
 		document.querySelectorAll("#community-cards .cardslot img")
 	).map(img => {
@@ -95,33 +169,62 @@ function chooseBotAction(player) {
 		...communityCards
 	];
 
-	const hand = Hand.solve(cards);
-	const strength = hand.rank;
+	const preflop = communityCards.length === 0;
 
-	if (strength >= 8) {
-		const raiseAmt = Math.min(player.chips,
-			Math.max(currentBet + bigBlind, bigBlind * 2));
-		return { action: "raise", amount: raiseAmt };
+	let strength;
+	if (preflop) {
+		strength = preflopHandScore(player.cards[0].dataset.value, player.cards[1].dataset.value);
+	} else {
+		const hand = Hand.solve(cards);
+		strength = hand.rank;
 	}
 
-	if (strength >= 5) {
-		if (needToCall === 0) {
-			const bet = Math.min(bigBlind, player.chips);
-			return { action: "raise", amount: bet };
+	// Normalize strength roughly between 0 and 1
+	const strengthRatio = strength / 10;
+
+	const raiseBase = preflop
+		? Math.max(blindLevel.big * (strength >= 8 ? 3 : 2), pot / 2)
+		: Math.max(blindLevel.big * 2, pot * 0.6);
+	const aggressiveness = preflop
+		? 0.8 + 0.4 * positionFactor
+		: 1 + 0.6 * positionFactor;
+	const raiseThreshold = preflop
+		? 8 - 2 * positionFactor
+		: Math.max(2, 4 - 2 * positionFactor);
+
+	let decision;
+
+	// If no bet to call, decide whether to raise or check
+	if (needToCall <= 0) {
+		if (canRaise && strength >= raiseThreshold) {
+			let raiseAmt = Math.min(
+				player.chips,
+				Math.max(currentBet + blindLevel.big, raiseBase * (1 + positionFactor * 0.5))
+			);
+			raiseAmt = Math.min(player.chips, roundTo10(raiseAmt));
+			decision = { action: "raise", amount: raiseAmt };
+		} else {
+			decision = { action: "check" };
 		}
-		if (needToCall <= bigBlind) {
-			return { action: "call", amount: needToCall };
-		}
-		return { action: "fold" };
+	} else if (canRaise && strength >= raiseThreshold && stackRatio <= 1 / 3) {
+		let raiseAmt = Math.min(
+			player.chips,
+			Math.max(currentBet + blindLevel.big, raiseBase * (1 + positionFactor * 0.5))
+		);
+		raiseAmt = Math.min(player.chips, roundTo10(raiseAmt));
+		decision = { action: "raise", amount: raiseAmt };
+	} else if (strengthRatio * aggressiveness >= potOdds && stackRatio <= (preflop ? 0.5 : 0.7)) {
+		const callAmt = Math.min(player.chips, needToCall);
+		decision = { action: "call", amount: callAmt };
+	} else {
+		decision = { action: "fold" };
 	}
 
-	if (needToCall === 0) {
-		return { action: "check" };
-	}
-	if (needToCall <= bigBlind / 2) {
-		return { action: "call", amount: needToCall };
-	}
-	return { action: "fold" };
+	const h1 = formatCard(player.cards[0].dataset.value);
+	const h2 = formatCard(player.cards[1].dataset.value);
+	logDecision(`${player.name} [${h1} ${h2}] | strength=${strength.toFixed(2)} potOdds=${potOdds.toFixed(2)} stack=${stackRatio.toFixed(2)} pos=${positionFactor.toFixed(2)} raises=${raisesThisRound} -> ${decision.action}`);
+
+	return decision;
 }
 
 /* --------------------------------------------------------------------------------------------------
@@ -472,6 +575,7 @@ function startBettingRound() {
 		players.forEach(p => p.resetRoundBet());
 	}
 
+	raisesThisRound = 0;
 	let idx = startIdx;
 	let cycles = 0;
 
@@ -544,6 +648,7 @@ function startBettingRound() {
 				pot += amt;
 				document.getElementById("pot").textContent = pot;
 				notifyPlayerAction(player, "raise", player.roundBet);
+				raisesThisRound++;
 			}
 
 			enqueueBotAction(() => {
@@ -623,6 +728,7 @@ function startBettingRound() {
 				// If this all-in meets or exceeds the call amount, treat it as a raise
 				if (bet >= needToCall) {
 					currentBet = player.roundBet;
+					raisesThisRound++;
 				}
 				notifyPlayerAction(player, "allin", bet);
 				foldButton.removeEventListener("click", onFold);
@@ -641,6 +747,7 @@ function startBettingRound() {
 				pot += bet;
 				document.getElementById("pot").textContent = pot;
 				notifyPlayerAction(player, "raise", player.roundBet);
+				raisesThisRound++;
 			}
 
 			foldButton.removeEventListener("click", onFold);
