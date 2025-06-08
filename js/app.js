@@ -80,6 +80,44 @@ function processBotQueue() {
 	}
 }
 
+function preflopHandScore(cardA, cardB) {
+        const order = "23456789TJQKA";
+        const base = { A: 10, K: 8, Q: 7, J: 6, T: 5, "9": 4.5, "8": 4, "7": 3.5, "6": 3, "5": 2.5, "4": 2, "3": 1.5, "2": 1 };
+
+        let r1 = cardA[0];
+        let r2 = cardB[0];
+        let s1 = cardA[1];
+        let s2 = cardB[1];
+
+        let i1 = order.indexOf(r1);
+        let i2 = order.indexOf(r2);
+        if (i1 < i2) {
+                [r1, r2] = [r2, r1];
+                [s1, s2] = [s2, s1];
+                [i1, i2] = [i2, i1];
+        }
+
+        let score = base[r1];
+        if (r1 === r2) {
+                score *= 2;
+                if (score < 5) score = 5;
+        }
+
+        if (s1 === s2) score += 2;
+
+        const gap = i1 - i2 - 1;
+        if (gap === 1) score -= 1;
+        else if (gap === 2) score -= 2;
+        else if (gap === 3) score -= 4;
+        else if (gap >= 4) score -= 5;
+
+        if (gap <= 1 && i1 <= order.indexOf("5")) score += 1;
+
+        if (score < 0) score = 0;
+
+        return Math.min(10, score / 2);
+}
+
 function chooseBotAction(player) {
         const needToCall = currentBet - player.roundBet;
 
@@ -101,8 +139,13 @@ function chooseBotAction(player) {
                 ...communityCards
         ];
 
-        const hand = Hand.solve(cards);
-        const strength = hand.rank;
+        let strength;
+        if (communityCards.length === 0) {
+                strength = preflopHandScore(player.cards[0].dataset.value, player.cards[1].dataset.value);
+        } else {
+                const hand = Hand.solve(cards);
+                strength = hand.rank;
+        }
 
         // Normalize strength roughly between 0 and 1
         const strengthRatio = strength / 10;
