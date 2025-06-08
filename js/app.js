@@ -514,6 +514,20 @@ function startBettingRound() {
                        return nextPlayer();
                }
 
+               // Skip if player already matched the current bet
+               if (player.roundBet >= currentBet) {
+                       // Allow one pass-through for Big Blind pre-flop or Check post-flop
+                       if (
+                               (currentPhaseIndex === 0 && cycles <= players.length) ||
+                               (currentPhaseIndex > 0 && currentBet === 0 && cycles <= players.length)
+                       ) {
+                               // within first cycle: let them act
+                       } else {
+                               if (anyUncalled()) return nextPlayer();
+                               return setPhase();
+                       }
+               }
+
 		// If this is a bot, choose an action based on hand strength
 		if (player.isBot) {
 			document.querySelectorAll(".seat").forEach(s => s.classList.remove("active"));
@@ -556,19 +570,7 @@ function startBettingRound() {
 			return;
 		}
 
-		// Only check roundBet for skipping/termination
-		if (player.roundBet >= currentBet) {
-			// Allow one pass-through for Big Blind pre-flop or Check post-flop
-			if (
-				(currentPhaseIndex === 0 && cycles <= players.length) ||
-				(currentPhaseIndex > 0 && currentBet === 0 && cycles <= players.length)
-			) {
-				// within first cycle: let them act (Big Blind gets checked, others check post-flop)
-			} else {
-				if (anyUncalled()) return nextPlayer();
-				return setPhase();
-			}
-		}
+
 
 		// Highlight active player
 		// remove previous highlight
