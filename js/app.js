@@ -118,11 +118,11 @@ function preflopHandScore(cardA, cardB) {
         else if (gap === 3) score -= 4;
         else if (gap >= 4) score -= 5;
 
-        if (gap <= 1 && i1 <= order.indexOf("5")) score += 1;
+        if (gap <= 1 && i1 < order.indexOf("Q")) score += 1;
 
         if (score < 0) score = 0;
 
-        return Math.min(10, score / 2);
+        return Math.min(10, score);
 }
 
 function chooseBotAction(player) {
