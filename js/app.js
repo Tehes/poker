@@ -37,8 +37,17 @@ const NOTIF_INTERVAL = 750;
 // Toggle verbose logging of bot decisions
 const DEBUG_DECISIONS = false;
 
+// Limit raises per betting round to prevent endless escalation
+const MAX_RAISES_PER_ROUND = 3;
+let raisesThisRound = 0;
+
 function logDecision(msg) {
         if (DEBUG_DECISIONS) console.log(msg);
+}
+
+const SUIT_SYMBOLS = { C: "♣", D: "♦", H: "♥", S: "♠" };
+function formatCard(code) {
+        return code[0].replace("T", "10") + SUIT_SYMBOLS[code[1]];
 }
 
 // Clubs, Diamonds, Hearts, Spades
@@ -132,6 +141,7 @@ function chooseBotAction(player) {
        const potOdds = needToCall / (pot + needToCall);
        const stackRatio = needToCall / player.chips;
        const blindLevel = { small: smallBlind, big: bigBlind };
+       const canRaise = raisesThisRound < MAX_RAISES_PER_ROUND && player.chips > blindLevel.big;
 
         // Determine position: early players act after big blind / dealer
         const seatIdx = players.indexOf(player);
@@ -173,7 +183,7 @@ function chooseBotAction(player) {
 
        // If no bet to call, decide whether to raise or check
        if (needToCall <= 0) {
-               if (strength >= raiseThreshold && player.chips > blindLevel.big) {
+               if (canRaise && strength >= raiseThreshold) {
                        const raiseAmt = Math.min(
                                player.chips,
                                Math.max(currentBet + blindLevel.big, raiseBase * (1 + positionFactor * 0.5))
@@ -182,7 +192,7 @@ function chooseBotAction(player) {
                } else {
                        decision = { action: "check" };
                }
-       } else if (strength >= raiseThreshold && stackRatio <= 1 / 3) {
+       } else if (canRaise && strength >= raiseThreshold && stackRatio <= 1 / 3) {
                const raiseAmt = Math.min(
                        player.chips,
                        Math.max(currentBet + blindLevel.big, raiseBase * (1 + positionFactor * 0.5))
@@ -195,7 +205,9 @@ function chooseBotAction(player) {
                decision = { action: "fold" };
        }
 
-       logDecision(`${player.name} | strength=${strength.toFixed(2)} potOdds=${potOdds.toFixed(2)} stack=${stackRatio.toFixed(2)} pos=${positionFactor.toFixed(2)} -> ${decision.action}`);
+       const h1 = formatCard(player.cards[0].dataset.value);
+       const h2 = formatCard(player.cards[1].dataset.value);
+       logDecision(`${player.name} [${h1} ${h2}] | strength=${strength.toFixed(2)} potOdds=${potOdds.toFixed(2)} stack=${stackRatio.toFixed(2)} pos=${positionFactor.toFixed(2)} raises=${raisesThisRound} -> ${decision.action}`);
 
        return decision;
 }
@@ -548,7 +560,8 @@ function startBettingRound() {
 		players.forEach(p => p.resetRoundBet());
 	}
 
-	let idx = startIdx;
+        raisesThisRound = 0;
+        let idx = startIdx;
 	let cycles = 0;
 
 	function anyUncalled() {
@@ -612,15 +625,16 @@ function startBettingRound() {
 				pot += actual;
 				document.querySelector("#pot").textContent = pot;
 				notifyPlayerAction(player, "call", actual);
-			} else if (decision.action === "raise") {
-				const amt = player.placeBet(decision.amount);
-				if (amt > needToCall) {
-					currentBet = player.roundBet;
-				}
-				pot += amt;
-				document.getElementById("pot").textContent = pot;
-				notifyPlayerAction(player, "raise", player.roundBet);
-			}
+                        } else if (decision.action === "raise") {
+                                const amt = player.placeBet(decision.amount);
+                                if (amt > needToCall) {
+                                        currentBet = player.roundBet;
+                                }
+                                pot += amt;
+                                document.getElementById("pot").textContent = pot;
+                                notifyPlayerAction(player, "raise", player.roundBet);
+                                raisesThisRound++;
+                        }
 
 			enqueueBotAction(() => {
 				if (cycles < players.length) {
@@ -691,16 +705,17 @@ function startBettingRound() {
 			if (bet === 0) {
 				// Check
 				notifyPlayerAction(player, "check");
-			} else if (bet === player.chips) {
-				// All-In
-				player.placeBet(bet);
-				pot += bet;
-				document.getElementById("pot").textContent = pot;
-				// If this all-in meets or exceeds the call amount, treat it as a raise
-				if (bet >= needToCall) {
-					currentBet = player.roundBet;
-				}
-				notifyPlayerAction(player, "allin", bet);
+                        } else if (bet === player.chips) {
+                                // All-In
+                                player.placeBet(bet);
+                                pot += bet;
+                                document.getElementById("pot").textContent = pot;
+                                // If this all-in meets or exceeds the call amount, treat it as a raise
+                                if (bet >= needToCall) {
+                                        currentBet = player.roundBet;
+                                        raisesThisRound++;
+                                }
+                                notifyPlayerAction(player, "allin", bet);
 				foldButton.removeEventListener("click", onFold);
 				actionButton.removeEventListener("click", onAction);
 				return nextPlayer();
@@ -710,14 +725,15 @@ function startBettingRound() {
 				pot += bet;
 				document.getElementById("pot").textContent = pot;
 				notifyPlayerAction(player, "call", player.roundBet);
-			} else {
-				// Raise
-				player.placeBet(bet);
-				currentBet = player.roundBet;
-				pot += bet;
-				document.getElementById("pot").textContent = pot;
-				notifyPlayerAction(player, "raise", player.roundBet);
-			}
+                        } else {
+                                // Raise
+                                player.placeBet(bet);
+                                currentBet = player.roundBet;
+                                pot += bet;
+                                document.getElementById("pot").textContent = pot;
+                                notifyPlayerAction(player, "raise", player.roundBet);
+                                raisesThisRound++;
+                        }
 
 			foldButton.removeEventListener("click", onFold);
 			actionButton.removeEventListener("click", onAction);
