@@ -50,6 +50,11 @@ function formatCard(code) {
         return code[0].replace("T", "10") + SUIT_SYMBOLS[code[1]];
 }
 
+// Round a value to the nearest multiple of 10
+function roundTo10(x) {
+        return Math.round(x / 10) * 10;
+}
+
 // Clubs, Diamonds, Hearts, Spades
 // 2,3,4,5,6,7,8,9,T,J,Q,K,A
 let cards = [
@@ -184,19 +189,21 @@ function chooseBotAction(player) {
        // If no bet to call, decide whether to raise or check
        if (needToCall <= 0) {
                if (canRaise && strength >= raiseThreshold) {
-                       const raiseAmt = Math.min(
+                       let raiseAmt = Math.min(
                                player.chips,
                                Math.max(currentBet + blindLevel.big, raiseBase * (1 + positionFactor * 0.5))
                        );
+                       raiseAmt = Math.min(player.chips, roundTo10(raiseAmt));
                        decision = { action: "raise", amount: raiseAmt };
                } else {
                        decision = { action: "check" };
                }
        } else if (canRaise && strength >= raiseThreshold && stackRatio <= 1 / 3) {
-               const raiseAmt = Math.min(
+               let raiseAmt = Math.min(
                        player.chips,
                        Math.max(currentBet + blindLevel.big, raiseBase * (1 + positionFactor * 0.5))
                );
+               raiseAmt = Math.min(player.chips, roundTo10(raiseAmt));
                decision = { action: "raise", amount: raiseAmt };
        } else if (strengthRatio * aggressiveness >= potOdds && stackRatio <= 0.5) {
                const callAmt = Math.min(player.chips, needToCall);
