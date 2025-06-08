@@ -491,28 +491,29 @@ function startBettingRound() {
 			return setPhase();        // immediately triggers the show-down / pot award
 		}
 
-		// --- Guard against infinite recursion ---------------------------
-		// If nobody who is NOT folded and NOT all-in can still act, …
-		const someoneCanAct = players.some(p =>
-			!p.folded &&                 // still in hand
-			!p.allIn &&                  // has chips left
-			(currentBet === 0 || p.roundBet < currentBet) // owes action
-		);
-
-		if (!someoneCanAct && cycles >= players.length) {
-			return setPhase();
-		}
-
 		// -------------------------------------------------------------------
 		// Find next player who still owes action
 		let player = players[idx % players.length];
 		idx++;
 		cycles++;
 
-		// Always skip folded or all-in players first
+		// Skip folded or all-in players immediately
 		if (player.folded || player.allIn) {
-			// Skip this seat – guard clause at the top ensures we won't recurse forever
 			return nextPlayer();
+		}
+
+		// Skip if player already matched the current bet
+		if (player.roundBet >= currentBet) {
+			// Allow one pass-through for Big Blind pre-flop or Check post-flop
+			if (
+				(currentPhaseIndex === 0 && cycles <= players.length) ||
+				(currentPhaseIndex > 0 && currentBet === 0 && cycles <= players.length)
+			) {
+				// within first cycle: let them act
+			} else {
+				if (anyUncalled()) return nextPlayer();
+				return setPhase();
+			}
 		}
 
 		// If this is a bot, choose an action based on hand strength
@@ -557,19 +558,7 @@ function startBettingRound() {
 			return;
 		}
 
-		// Only check roundBet for skipping/termination
-		if (player.roundBet >= currentBet) {
-			// Allow one pass-through for Big Blind pre-flop or Check post-flop
-			if (
-				(currentPhaseIndex === 0 && cycles <= players.length) ||
-				(currentPhaseIndex > 0 && currentBet === 0 && cycles <= players.length)
-			) {
-				// within first cycle: let them act (Big Blind gets checked, others check post-flop)
-			} else {
-				if (anyUncalled()) return nextPlayer();
-				return setPhase();
-			}
-		}
+
 
 		// Highlight active player
 		// remove previous highlight
@@ -747,6 +736,7 @@ function doShowdown() {
 		const winner = activePlayers[0];
 		// Animate the chip transfer for the single winner
 		winner.seat.classList.add("winner");
+		winner.seat.classList.remove("active");
 		winner.qr.hide();                // keep hole cards concealed
 		enqueueNotification(`${winner.name} wins ${pot}!`);
 		animateChipTransfer(pot, winner, () => {
@@ -847,6 +837,7 @@ function doShowdown() {
 			// Highlight winners only for the main pot
 			if (potIdx === 0) {
 				entry.player.seat.classList.add("winner");
+				entry.player.seat.classList.remove("active");
 			}
 		});
 
