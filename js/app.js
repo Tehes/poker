@@ -84,9 +84,9 @@ function chooseBotAction(player) {
         const needToCall = currentBet - player.roundBet;
 
         // Additional factors for decision making
-        const potOdds = needToCall / (pot + needToCall);
-        const stackRatio = needToCall / player.chips;
-        const blindLevel = { smallBlind, bigBlind };
+       const potOdds = needToCall / (pot + needToCall);
+       const stackRatio = needToCall / player.chips;
+       const blindLevel = { small: smallBlind, big: bigBlind };
 
         const communityCards = Array.from(
                 document.querySelectorAll("#community-cards .cardslot img")
@@ -107,26 +107,28 @@ function chooseBotAction(player) {
         // Normalize strength roughly between 0 and 1
         const strengthRatio = strength / 10;
 
-        // If no bet to call, decide whether to raise or check
-        if (needToCall <= 0) {
-                if (strength >= 8 && player.chips > bigBlind) {
-                        const raiseAmt = Math.min(
-                                player.chips,
-                                Math.max(currentBet + bigBlind, pot / 2)
-                        );
-                        return { action: "raise", amount: raiseAmt };
-                }
-                return { action: "check" };
-        }
+       const raiseBase = Math.max(blindLevel.big * (strength >= 8 ? 3 : 2), pot / 2);
 
-        // Consider raising with strong hands when the required bet isn't too big
-        if (strength >= 8 && stackRatio <= 1 / 3) {
-                const raiseAmt = Math.min(
-                        player.chips,
-                        Math.max(currentBet + bigBlind, pot / 2)
-                );
-                return { action: "raise", amount: raiseAmt };
-        }
+       // If no bet to call, decide whether to raise or check
+       if (needToCall <= 0) {
+               if (strength >= 8 && player.chips > blindLevel.big) {
+                       const raiseAmt = Math.min(
+                               player.chips,
+                               Math.max(currentBet + blindLevel.big, raiseBase)
+                       );
+                       return { action: "raise", amount: raiseAmt };
+               }
+               return { action: "check" };
+       }
+
+       // Consider raising with strong hands when the required bet isn't too big
+       if (strength >= 8 && stackRatio <= 1 / 3) {
+               const raiseAmt = Math.min(
+                       player.chips,
+                       Math.max(currentBet + blindLevel.big, raiseBase)
+               );
+               return { action: "raise", amount: raiseAmt };
+       }
 
         // Call when pot odds justify it relative to hand strength
         if (strengthRatio >= potOdds && stackRatio <= 0.5) {
