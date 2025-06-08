@@ -34,6 +34,13 @@ let processingBotActions = false;
 const BOT_ACTION_DELAY = 1500;
 const NOTIF_INTERVAL = 750;
 
+// Toggle verbose logging of bot decisions
+const DEBUG_DECISIONS = false;
+
+function logDecision(msg) {
+        if (DEBUG_DECISIONS) console.log(msg);
+}
+
 // Clubs, Diamonds, Hearts, Spades
 // 2,3,4,5,6,7,8,9,T,J,Q,K,A
 let cards = [
@@ -162,6 +169,8 @@ function chooseBotAction(player) {
        const aggressiveness = 0.8 + 0.4 * positionFactor;
        const raiseThreshold = 8 - 2 * positionFactor;
 
+       let decision;
+
        // If no bet to call, decide whether to raise or check
        if (needToCall <= 0) {
                if (strength >= raiseThreshold && player.chips > blindLevel.big) {
@@ -169,28 +178,26 @@ function chooseBotAction(player) {
                                player.chips,
                                Math.max(currentBet + blindLevel.big, raiseBase * (1 + positionFactor * 0.5))
                        );
-                       return { action: "raise", amount: raiseAmt };
+                       decision = { action: "raise", amount: raiseAmt };
+               } else {
+                       decision = { action: "check" };
                }
-               return { action: "check" };
-       }
-
-       // Consider raising with strong hands when the required bet isn't too big
-       if (strength >= raiseThreshold && stackRatio <= 1 / 3) {
+       } else if (strength >= raiseThreshold && stackRatio <= 1 / 3) {
                const raiseAmt = Math.min(
                        player.chips,
                        Math.max(currentBet + blindLevel.big, raiseBase * (1 + positionFactor * 0.5))
                );
-               return { action: "raise", amount: raiseAmt };
+               decision = { action: "raise", amount: raiseAmt };
+       } else if (strengthRatio * aggressiveness >= potOdds && stackRatio <= 0.5) {
+               const callAmt = Math.min(player.chips, needToCall);
+               decision = { action: "call", amount: callAmt };
+       } else {
+               decision = { action: "fold" };
        }
 
-        // Call when pot odds justify it relative to hand strength
-        if (strengthRatio * aggressiveness >= potOdds && stackRatio <= 0.5) {
-                const callAmt = Math.min(player.chips, needToCall);
-                return { action: "call", amount: callAmt };
-        }
+       logDecision(`${player.name} | strength=${strength.toFixed(2)} potOdds=${potOdds.toFixed(2)} stack=${stackRatio.toFixed(2)} pos=${positionFactor.toFixed(2)} -> ${decision.action}`);
 
-        // Otherwise fold
-        return { action: "fold" };
+       return decision;
 }
 
 /* --------------------------------------------------------------------------------------------------
