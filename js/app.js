@@ -81,47 +81,61 @@ function processBotQueue() {
 }
 
 function chooseBotAction(player) {
-	const needToCall = currentBet - player.roundBet;
-	const communityCards = Array.from(
-		document.querySelectorAll("#community-cards .cardslot img")
-	).map(img => {
-		const m = img.src.match(/\/cards\/([2-9TJQKA][CDHS])\.svg$/);
-		return m ? m[1] : null;
-	}).filter(Boolean);
+        const needToCall = currentBet - player.roundBet;
 
-	const cards = [
-		player.cards[0].dataset.value,
-		player.cards[1].dataset.value,
-		...communityCards
-	];
+        // Additional factors for decision making
+        const potOdds = needToCall / (pot + needToCall);
+        const stackRatio = needToCall / player.chips;
+        const blindLevel = { smallBlind, bigBlind };
 
-	const hand = Hand.solve(cards);
-	const strength = hand.rank;
+        const communityCards = Array.from(
+                document.querySelectorAll("#community-cards .cardslot img")
+        ).map(img => {
+                const m = img.src.match(/\/cards\/([2-9TJQKA][CDHS])\.svg$/);
+                return m ? m[1] : null;
+        }).filter(Boolean);
 
-	if (strength >= 8) {
-		const raiseAmt = Math.min(player.chips,
-			Math.max(currentBet + bigBlind, bigBlind * 2));
-		return { action: "raise", amount: raiseAmt };
-	}
+        const cards = [
+                player.cards[0].dataset.value,
+                player.cards[1].dataset.value,
+                ...communityCards
+        ];
 
-	if (strength >= 5) {
-		if (needToCall === 0) {
-			const bet = Math.min(bigBlind, player.chips);
-			return { action: "raise", amount: bet };
-		}
-		if (needToCall <= bigBlind) {
-			return { action: "call", amount: needToCall };
-		}
-		return { action: "fold" };
-	}
+        const hand = Hand.solve(cards);
+        const strength = hand.rank;
 
-	if (needToCall === 0) {
-		return { action: "check" };
-	}
-	if (needToCall <= bigBlind / 2) {
-		return { action: "call", amount: needToCall };
-	}
-	return { action: "fold" };
+        // Normalize strength roughly between 0 and 1
+        const strengthRatio = strength / 10;
+
+        // If no bet to call, decide whether to raise or check
+        if (needToCall <= 0) {
+                if (strength >= 8 && player.chips > bigBlind) {
+                        const raiseAmt = Math.min(
+                                player.chips,
+                                Math.max(currentBet + bigBlind, pot / 2)
+                        );
+                        return { action: "raise", amount: raiseAmt };
+                }
+                return { action: "check" };
+        }
+
+        // Consider raising with strong hands when the required bet isn't too big
+        if (strength >= 8 && stackRatio <= 1 / 3) {
+                const raiseAmt = Math.min(
+                        player.chips,
+                        Math.max(currentBet + bigBlind, pot / 2)
+                );
+                return { action: "raise", amount: raiseAmt };
+        }
+
+        // Call when pot odds justify it relative to hand strength
+        if (strengthRatio >= potOdds && stackRatio <= 0.5) {
+                const callAmt = Math.min(player.chips, needToCall);
+                return { action: "call", amount: callAmt };
+        }
+
+        // Otherwise fold
+        return { action: "fold" };
 }
 
 /* --------------------------------------------------------------------------------------------------
