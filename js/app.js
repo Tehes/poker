@@ -504,23 +504,15 @@ function startBettingRound() {
 		}
 
 		// -------------------------------------------------------------------
-                // Find next player who still owes action
-                let player = players[idx % players.length];
-                idx++;
-                cycles++;
+               // Find next player who still owes action
+               let player = players[idx % players.length];
+               idx++;
+               cycles++;
 
-                // Unified skip-check: continue until we hit a player
-                // who is neither folded nor all-in
-                while (player.folded || player.allIn) {
-                        // If we've looped through everyone and nobody can act,
-                        // move to the next phase to avoid an infinite loop
-                        if (cycles >= players.length) {
-                                return setPhase();
-                        }
-                        player = players[idx % players.length];
-                        idx++;
-                        cycles++;
-                }
+               // Skip folded or all-in players immediately
+               if (player.folded || player.allIn) {
+                       return nextPlayer();
+               }
 
 		// If this is a bot, choose an action based on hand strength
 		if (player.isBot) {
