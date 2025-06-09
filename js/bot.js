@@ -1,13 +1,32 @@
+/* 
+ * bot.js
+ * 
+ * Implements the poker bot's decision-making logic, including hand evaluation,
+ * action selection based on game context, and managing delayed execution of bot actions.
+ */
+
+/* ===========================
+   Configuration
+========================== */
+// Configuration constants
+// Delay in milliseconds between enqueued bot actions
 export const BOT_ACTION_DELAY = 1500;
 
+// Enable verbose logging of bot decisions
 const DEBUG_DECISIONS = true;
+// Maximum number of raises allowed per betting round
 const MAX_RAISES_PER_ROUND = 3;
-const STRENGTH_TIE_DELTA = 0.25; // Borderline Raise/Stärke
-const ODDS_TIE_DELTA = 0.02;     // Borderline Call/Fold
+// Tie-breaker thresholds for close decisions
+const STRENGTH_TIE_DELTA = 0.25; // Threshold for treating strength close to the raise threshold as a tie
+const ODDS_TIE_DELTA = 0.02;     // Threshold for treating pot odds close to expected value as a tie
 
 const botActionQueue = [];
 let processingBotActions = false;
 
+/* ===========================
+   Action Queue Management
+========================== */
+// Task queue management: enqueue bot actions for delayed execution
 export function enqueueBotAction(fn) {
     botActionQueue.push(fn);
     if (!processingBotActions) {
@@ -16,6 +35,7 @@ export function enqueueBotAction(fn) {
     }
 }
 
+// Execute queued actions at fixed intervals
 function processBotQueue() {
     if (botActionQueue.length === 0) {
         processingBotActions = false;
@@ -30,19 +50,31 @@ function processBotQueue() {
     }
 }
 
+/* ===========================
+   Logging and Utilities
+========================== */
+// Debug logging: prints decision details when enabled
 function logDecision(msg) {
     if (DEBUG_DECISIONS) console.log(msg);
 }
 
+// Card display utilities
+// Map suit codes to their Unicode symbols
 const SUIT_SYMBOLS = { C: "♣", D: "♦", H: "♥", S: "♠" };
+// Convert internal card code to human-readable symbol string
 function formatCard(code) {
     return code[0].replace("T", "10") + SUIT_SYMBOLS[code[1]];
 }
 
+// Numeric utility: round to nearest multiple of 10
 function roundTo10(x) {
     return Math.round(x / 10) * 10;
 }
 
+/* ===========================
+   Preflop Hand Evaluation
+========================== */
+// Preflop hand evaluation using simplified Chen formula
 function preflopHandScore(cardA, cardB) {
     const order = "23456789TJQKA";
     const base = { A: 10, K: 8, Q: 7, J: 6, T: 5, "9": 4.5, "8": 4, "7": 3.5, "6": 3, "5": 2.5, "4": 2, "3": 1.5, "2": 1 };
@@ -81,15 +113,23 @@ function preflopHandScore(cardA, cardB) {
     return Math.min(10, score);
 }
 
+/* ===========================
+   Decision Engine: Bot Action Selection
+========================== */
 export function chooseBotAction(player, ctx) {
     const { currentBet, pot, smallBlind, bigBlind, raisesThisRound, currentPhaseIndex, players } = ctx;
+    // Determine amount needed to call the current bet
     const needToCall = currentBet - player.roundBet;
 
+    // Calculate pot odds to assess call viability
     const potOdds = needToCall / (pot + needToCall);
+    // Compute risk as fraction of stack required
     const stackRatio = needToCall / player.chips;
     const blindLevel = { small: smallBlind, big: bigBlind };
+    // Check if bot is allowed to raise this round
     const canRaise = raisesThisRound < MAX_RAISES_PER_ROUND && player.chips > blindLevel.big;
 
+    // Compute positional factor based on dealer/blinds
     const seatIdx = players.indexOf(player);
     const refIdx = currentPhaseIndex === 0
         ? (players.findIndex(p => p.bigBlind) + 1) % players.length
@@ -97,6 +137,7 @@ export function chooseBotAction(player, ctx) {
     const pos = (seatIdx - refIdx + players.length) % players.length;
     const positionFactor = pos / (players.length - 1);
 
+    // Collect community cards from the board
     const communityCards = Array.from(
         document.querySelectorAll("#community-cards .cardslot img")
     ).map(img => {
@@ -104,24 +145,26 @@ export function chooseBotAction(player, ctx) {
         return m ? m[1] : null;
     }).filter(Boolean);
 
-    const cards = [
-        player.cards[0].dataset.value,
-        player.cards[1].dataset.value,
-        ...communityCards
-    ];
-
+    // Determine if we are in pre-flop stage
     const preflop = communityCards.length === 0;
 
+    // Evaluate hand strength
     let strength;
     if (preflop) {
         strength = preflopHandScore(player.cards[0].dataset.value, player.cards[1].dataset.value);
     } else {
-        const hand = Hand.solve(cards);
-        strength = hand.rank;
+        const cards = [
+            player.cards[0].dataset.value,
+            player.cards[1].dataset.value,
+            ...communityCards
+        ];
+        strength = Hand.solve(cards).rank;
     }
 
+    // Normalize strength to [0,1]
     const strengthRatio = strength / 10;
 
+    // Calculate dynamic thresholds for raising
     const raiseBase = preflop
         ? Math.max(blindLevel.big * (strength >= 8 ? 3 : 2), pot / 2)
         : Math.max(blindLevel.big * 2, pot * 0.6);
@@ -132,6 +175,15 @@ export function chooseBotAction(player, ctx) {
         ? 8 - 2 * positionFactor
         : Math.max(2, 4 - 2 * positionFactor);
 
+    /* -------------------------
+       Decision logic with tie-breakers
+    ------------------------- */
+    /* Tie-breaker explanation:
+       - When the difference between hand strength and the raise threshold is within STRENGTH_TIE_DELTA,
+         the bot randomly chooses between the two close options to introduce unpredictability.
+       - Similarly, when the difference between (strengthRatio * aggressiveness) and potOdds is within ODDS_TIE_DELTA,
+         the bot randomly resolves between call and fold to break ties.
+     */
     let decision;
 
     if (needToCall <= 0) {
@@ -141,6 +193,9 @@ export function chooseBotAction(player, ctx) {
                 Math.max(currentBet + blindLevel.big, raiseBase * (1 + positionFactor * 0.5))
             );
             raiseAmt = Math.min(player.chips, roundTo10(raiseAmt));
+            // Strength tie-breaker:
+            // When hand strength is within STRENGTH_TIE_DELTA of the raise threshold,
+            // randomly choose between 'check' and 'raise' to break ties.
             if (Math.abs(strength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
                 decision = Math.random() < 0.5
                     ? { action: "check" }
@@ -157,6 +212,9 @@ export function chooseBotAction(player, ctx) {
             Math.max(currentBet + blindLevel.big, raiseBase * (1 + positionFactor * 0.5))
         );
         raiseAmt = Math.min(player.chips, roundTo10(raiseAmt));
+        // Raise vs. alternative tie-breaker:
+        // When strength is near the threshold in this branch,
+        // randomly choose between 'raise' and the alternative (call or fold).
         if (Math.abs(strength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
             const callAmt = Math.min(player.chips, needToCall);
             const alt = (strengthRatio * aggressiveness >= potOdds && stackRatio <= (preflop ? 0.5 : 0.7))
@@ -170,6 +228,9 @@ export function chooseBotAction(player, ctx) {
         }
     } else if (strengthRatio * aggressiveness >= potOdds && stackRatio <= (preflop ? 0.5 : 0.7)) {
         const callAmt = Math.min(player.chips, needToCall);
+        // Odds tie-breaker:
+        // When adjusted strength (strengthRatio * aggressiveness) is within ODDS_TIE_DELTA of pot odds,
+        // randomly decide between 'call' and 'fold' to break ties.
         if (Math.abs(strengthRatio * aggressiveness - potOdds) <= ODDS_TIE_DELTA) {
             decision = Math.random() < 0.5
                 ? { action: "call", amount: callAmt }
@@ -183,7 +244,11 @@ export function chooseBotAction(player, ctx) {
 
     const h1 = formatCard(player.cards[0].dataset.value);
     const h2 = formatCard(player.cards[1].dataset.value);
-    const handName = !preflop ? Hand.solve(cards).name : "preflop";
+    const handName = !preflop ? Hand.solve([
+        player.cards[0].dataset.value,
+        player.cards[1].dataset.value,
+        ...communityCards
+    ]).name : "preflop";
     logDecision(`${player.name} [${h1} ${h2}] | strength=${strength.toFixed(2)} potOdds=${potOdds.toFixed(2)} stack=${stackRatio.toFixed(2)} pos=${positionFactor.toFixed(2)} raises=${raisesThisRound} -> ${decision.action} (${handName})`);
 
     return decision;
