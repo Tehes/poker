@@ -326,13 +326,15 @@ export function chooseBotAction(player, ctx) {
     else aggrEmoji = '❄️';
 
     console.table([{
+        Player: player.name,
+        Cards: `${h1} ${h2}`,
         Hand: handName,
         Strength: strengthRatio.toFixed(2),
-        'Pot Odds': potOdds.toFixed(2),
-        'Stack Ratio': stackRatio.toFixed(2),
+        PotOdds: potOdds.toFixed(2),
+        StackRatio: stackRatio.toFixed(2),
         Position: positionFactor.toFixed(2),
         Opponents: activeOpponents,
-        Threshold: raiseThreshold.toFixed(2),
+        RaiseThreshold: (raiseThreshold / 10).toFixed(2),
         Aggressiveness: aggressiveness.toFixed(2),
         Emoji: aggrEmoji,
         Action: decision.action

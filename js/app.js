@@ -28,6 +28,7 @@ const notifArr = [];
 const pendingNotif = [];
 let isNotifProcessing = false;
 const NOTIF_INTERVAL = 750;
+let HISTORY_LOG = false; // Set to true to enable history logging in the console
 
 let raisesThisRound = 0;
 
@@ -69,6 +70,10 @@ Array.prototype.shuffle = function () {
 	}
 	return this;
 };
+
+function logHistory(msg) {
+	if (HISTORY_LOG) console.log(msg);
+}
 
 function startGame(event) {
 	if (!gameStarted) {
@@ -960,7 +965,7 @@ function showNextNotif() {
 	while (notification.childElementCount > MAX_ITEMS) {
 		notification.removeChild(notification.lastChild);
 	}
-	console.log(msg);
+	logHistory(msg);
 	setTimeout(showNextNotif, NOTIF_INTERVAL);
 }
 
