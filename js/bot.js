@@ -25,6 +25,10 @@ const AGG_FACTOR = 0.1;          // Aggressiveness increase per missing opponent
 // Lower raise threshold slightly as opponents drop out; using a small factor so
 // heads-up play only reduces it by ~0.6
 const THRESHOLD_FACTOR = 0.3;
+// Minimum average hands before opponent stats influence the bot
+const MIN_HANDS_FOR_WEIGHT = 10;
+// Controls how quickly stat influence grows as more hands are played
+const WEIGHT_GROWTH = 10;
 
 const botActionQueue = [];
 let processingBotActions = false;
@@ -198,13 +202,45 @@ export function chooseBotAction(player, ctx) {
         activeOpponents < OPPONENT_THRESHOLD
             ? (OPPONENT_THRESHOLD - activeOpponents) * THRESHOLD_FACTOR
             : 0;
-    const aggressiveness = (preflop
+    let aggressiveness = (preflop
         ? 0.8 + 0.4 * positionFactor
         : 1 + 0.6 * positionFactor) + oppAggAdj;
     let raiseThreshold = preflop
         ? 8 - 2 * positionFactor
         : Math.max(2, 4 - 2 * positionFactor);
     raiseThreshold = Math.max(1, raiseThreshold - thresholdAdj);
+
+    // Adjust based on observed opponent tendencies
+    const opponents = players.filter(p => p !== player);
+    if (opponents.length > 0) {
+        const avgVPIP =
+            opponents.reduce((s, p) => s + (p.stats.vpip + 1) / (p.stats.hands + 2), 0) /
+            opponents.length;
+        const avgAgg =
+            opponents.reduce((s, p) => s + (p.stats.aggressiveActs + 1) / (p.stats.calls + 1), 0) /
+            opponents.length;
+
+        // Weight adjustments by average hands played to avoid overreacting in early rounds
+        const avgHands = opponents.reduce((s, p) => s + p.stats.hands, 0) / opponents.length;
+        const weight =
+            avgHands < MIN_HANDS_FOR_WEIGHT
+                ? 0
+                : 1 - Math.exp(-(avgHands - MIN_HANDS_FOR_WEIGHT) / WEIGHT_GROWTH);
+
+        if (avgVPIP < 0.25) {
+            raiseThreshold -= 0.5 * weight;
+            aggressiveness += 0.1 * weight;
+        } else if (avgVPIP > 0.5) {
+            raiseThreshold += 0.5 * weight;
+            aggressiveness -= 0.1 * weight;
+        }
+
+        if (avgAgg > 1.5) {
+            aggressiveness -= 0.1 * weight;
+        } else if (avgAgg < 0.7) {
+            aggressiveness += 0.1 * weight;
+        }
+    }
 
     /* -------------------------
        Decision logic with tie-breakers
@@ -280,7 +316,7 @@ export function chooseBotAction(player, ctx) {
         player.cards[1].dataset.value,
         ...communityCards
     ]).name : "preflop";
-    logDecision(`${player.name} [${h1} ${h2}] | strength=${strength.toFixed(2)} potOdds=${potOdds.toFixed(2)} stack=${stackRatio.toFixed(2)} pos=${positionFactor.toFixed(2)} raises=${raisesThisRound} -> ${decision.action} (${handName})`);
+    logDecision(`${player.name} [${h1} ${h2}] hand=${handName} str=${strengthRatio.toFixed(2)} potOdds=${potOdds.toFixed(2)} stack=${stackRatio.toFixed(2)} pos=${positionFactor.toFixed(2)} opp=${activeOpponents} thr=${raiseThreshold.toFixed(2)} aggr=${aggressiveness.toFixed(2)} -> ${decision.action}`);
 
     return decision;
 }
