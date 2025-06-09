@@ -316,7 +316,27 @@ export function chooseBotAction(player, ctx) {
         player.cards[1].dataset.value,
         ...communityCards
     ]).name : "preflop";
-    logDecision(`${player.name} [${h1} ${h2}] hand=${handName} str=${strengthRatio.toFixed(2)} potOdds=${potOdds.toFixed(2)} stack=${stackRatio.toFixed(2)} pos=${positionFactor.toFixed(2)} opp=${activeOpponents} thr=${raiseThreshold.toFixed(2)} aggr=${aggressiveness.toFixed(2)} -> ${decision.action}`);
+
+    // Map aggressiveness to an emoji for logging
+    let aggrEmoji;
+    if (aggressiveness >= 1.5) aggrEmoji = '🔥';
+    else if (aggressiveness >= 1.2) aggrEmoji = '⚡';
+    else if (aggressiveness >= 1.0) aggrEmoji = '👌';
+    else if (aggressiveness >= 0.8) aggrEmoji = '🐌';
+    else aggrEmoji = '❄️';
+
+    console.table([{
+        Hand: handName,
+        Strength: strengthRatio.toFixed(2),
+        'Pot Odds': potOdds.toFixed(2),
+        'Stack Ratio': stackRatio.toFixed(2),
+        Position: positionFactor.toFixed(2),
+        Opponents: activeOpponents,
+        Threshold: raiseThreshold.toFixed(2),
+        Aggressiveness: aggressiveness.toFixed(2),
+        Emoji: aggrEmoji,
+        Action: decision.action
+    }]);
 
     return decision;
 }

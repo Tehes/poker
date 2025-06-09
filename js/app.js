@@ -14,7 +14,6 @@ const notification = document.querySelector("#notification");
 const foldButton = document.querySelector("#fold-button");
 const actionButton = document.querySelector("#action-button");
 const amountSlider = document.querySelector("#amount-slider");
-let communitySlots;
 const Phases = ["preflop", "flop", "turn", "river", "showdown"];
 let currentPhaseIndex = 0;
 let currentBet = 0;
@@ -24,15 +23,12 @@ let dealerOrbitCount = -1;
 let gameStarted = false;
 let openCardsMode = false;
 
-let botCount = 0;
-
 const MAX_ITEMS = 5;
 const notifArr = [];
 const pendingNotif = [];
 let isNotifProcessing = false;
 const NOTIF_INTERVAL = 750;
 
-const MAX_RAISES_PER_ROUND = 3;
 let raisesThisRound = 0;
 
 // Clubs, Diamonds, Hearts, Spades
@@ -155,20 +151,20 @@ function createPlayers() {
 			chips: 2000,
 			allIn: false,
 			totalBet: 0,
-                        roundBet: 0,
-                        stats: {
-                                hands: 0,
-                                handsWon: 0,
-                                vpip: 0,
-                                pfr: 0,
-                                calls: 0,
-                                aggressiveActs: 0,
-                                showdowns: 0,
-                                showdownsWon: 0
-                        },
-                        showTotal: function () {
-                                player.querySelector(".chips .total").textContent = playerObject.chips;
-                        },
+			roundBet: 0,
+			stats: {
+				hands: 0,
+				handsWon: 0,
+				vpip: 0,
+				pfr: 0,
+				calls: 0,
+				aggressiveActs: 0,
+				showdowns: 0,
+				showdownsWon: 0
+			},
+			showTotal: function () {
+				player.querySelector(".chips .total").textContent = playerObject.chips;
+			},
 			placeBet: function (x) {
 				// Clamp bet to available chips → prevents negative stacks
 				const bet = Math.min(x, playerObject.chips);
@@ -317,12 +313,12 @@ function preFlop() {
 			remainingPlayers.push(p);
 		}
 	});
-        players = remainingPlayers;
+	players = remainingPlayers;
 
-        // Start statistics for a new hand
-        players.forEach(p => {
-                p.stats.hands++;
-        });
+	// Start statistics for a new hand
+	players.forEach(p => {
+		p.stats.hands++;
+	});
 
 	// If the original dealer is eliminated, update initialDealerName and reset dealerOrbitCount
 	if (!players.some(p => p.name === initialDealerName) && players.length > 0) {
@@ -473,15 +469,15 @@ function startBettingRound() {
 			document.querySelectorAll(".seat").forEach(s => s.classList.remove("active"));
 			player.seat.classList.add("active");
 
-                        const decision = chooseBotAction(player, {
-                                currentBet,
-                                pot,
-                                smallBlind,
-                                bigBlind,
-                                raisesThisRound,
-                                currentPhaseIndex,
-                                players
-                        });
+			const decision = chooseBotAction(player, {
+				currentBet,
+				pot,
+				smallBlind,
+				bigBlind,
+				raisesThisRound,
+				currentPhaseIndex,
+				players
+			});
 			const needToCall = currentBet - player.roundBet;
 
 			if (decision.action === "fold") {
@@ -678,14 +674,14 @@ function doShowdown() {
 	// Reset round bets now that they are in the pot
 	players.forEach(p => p.resetRoundBet());
 
-        // Filter active players
-        const activePlayers = players.filter(p => !p.folded);
-        const contributors = players.filter(p => p.totalBet > 0);
+	// Filter active players
+	const activePlayers = players.filter(p => !p.folded);
+	const contributors = players.filter(p => p.totalBet > 0);
 
-        const hadShowdown = activePlayers.length > 1;
-        if (hadShowdown) {
-                activePlayers.forEach(p => p.stats.showdowns++);
-        }
+	const hadShowdown = activePlayers.length > 1;
+	if (hadShowdown) {
+		activePlayers.forEach(p => p.stats.showdowns++);
+	}
 
 	// Reveal hole cards of all active players
 	if (activePlayers.length > 1) {
@@ -700,11 +696,11 @@ function doShowdown() {
 
 
 	// Single-player case: immediate win (no hand needed)
-        if (activePlayers.length === 1) {
-                const winner = activePlayers[0];
-                winner.stats.handsWon++;
-                // Animate the chip transfer for the single winner
-                winner.seat.classList.add("winner");
+	if (activePlayers.length === 1) {
+		const winner = activePlayers[0];
+		winner.stats.handsWon++;
+		// Animate the chip transfer for the single winner
+		winner.seat.classList.add("winner");
 		winner.seat.classList.remove("active");
 		winner.qr.hide();                // keep hole cards concealed
 		enqueueNotification(`${winner.name} wins ${pot}!`);
@@ -768,8 +764,8 @@ function doShowdown() {
 	// ------------------------------------------------------------------
 
 	// ---- Collect animated chip transfers ----
-        const transferQueue = [];
-        const winnersSet = new Set();
+	const transferQueue = [];
+	const winnersSet = new Set();
 
 	// ---- Evaluate each side pot ----
 	// Collect results for notification consolidation
@@ -787,39 +783,39 @@ function doShowdown() {
 			});
 
 		// --- If only one player is eligible for this pot, refund/award it immediately ---
-                if (sp.eligible.filter(p => !p.folded).length === 1) {
-                        const solePlayer = sp.eligible.find(p => !p.folded);
-                        transferQueue.push({ player: solePlayer, amount: sp.amount });
-                        if (!winnersSet.has(solePlayer)) {
-                                solePlayer.stats.handsWon++;
-                                if (hadShowdown) solePlayer.stats.showdownsWon++;
-                                winnersSet.add(solePlayer);
-                        }
-                        // Collect for notification consolidation
-                        potResults.push({ players: [solePlayer.name], amount: sp.amount, hand: null });
-                        return;
-                }
+		if (sp.eligible.filter(p => !p.folded).length === 1) {
+			const solePlayer = sp.eligible.find(p => !p.folded);
+			transferQueue.push({ player: solePlayer, amount: sp.amount });
+			if (!winnersSet.has(solePlayer)) {
+				solePlayer.stats.handsWon++;
+				if (hadShowdown) solePlayer.stats.showdownsWon++;
+				winnersSet.add(solePlayer);
+			}
+			// Collect for notification consolidation
+			potResults.push({ players: [solePlayer.name], amount: sp.amount, hand: null });
+			return;
+		}
 
 		const winners = Hand.winners(spHands.map(h => h.handObj));
 		const share = Math.floor(sp.amount / winners.length);
 		let remainder = sp.amount - share * winners.length;
 
-                winners.forEach(w => {
-                        const entry = spHands.find(h => h.handObj === w);
-                        const payout = share + (remainder > 0 ? 1 : 0);
-                        if (remainder > 0) remainder--;
-                        transferQueue.push({ player: entry.player, amount: payout });
-                        if (!winnersSet.has(entry.player)) {
-                                entry.player.stats.handsWon++;
-                                if (hadShowdown) entry.player.stats.showdownsWon++;
-                                winnersSet.add(entry.player);
-                        }
-                        // Highlight winners only for the main pot
-                        if (potIdx === 0) {
-                                entry.player.seat.classList.add("winner");
-                                entry.player.seat.classList.remove("active");
-                        }
-                });
+		winners.forEach(w => {
+			const entry = spHands.find(h => h.handObj === w);
+			const payout = share + (remainder > 0 ? 1 : 0);
+			if (remainder > 0) remainder--;
+			transferQueue.push({ player: entry.player, amount: payout });
+			if (!winnersSet.has(entry.player)) {
+				entry.player.stats.handsWon++;
+				if (hadShowdown) entry.player.stats.showdownsWon++;
+				winnersSet.add(entry.player);
+			}
+			// Highlight winners only for the main pot
+			if (potIdx === 0) {
+				entry.player.seat.classList.add("winner");
+				entry.player.seat.classList.remove("active");
+			}
+		});
 
 		// ---- Build detailed payout message for this pot ----
 		const winnerDescriptions = winners.map(w => {
@@ -899,23 +895,23 @@ function deletePlayer(ev) {
 }
 
 function notifyPlayerAction(player, action, amount) {
-        // Update statistics based on action and phase
-        if (currentPhaseIndex === 0) {
-                if (action === "call" || action === "raise" || action === "allin") {
-                        player.stats.vpip++;
-                }
-                if (action === "raise" || action === "allin") {
-                        player.stats.pfr++;
-                }
-        } else {
-                if (action === "raise" || action === "allin") {
-                        player.stats.aggressiveActs++;
-                } else if (action === "call") {
-                        player.stats.calls++;
-                }
-        }
+	// Update statistics based on action and phase
+	if (currentPhaseIndex === 0) {
+		if (action === "call" || action === "raise" || action === "allin") {
+			player.stats.vpip++;
+		}
+		if (action === "raise" || action === "allin") {
+			player.stats.pfr++;
+		}
+	} else {
+		if (action === "raise" || action === "allin") {
+			player.stats.aggressiveActs++;
+		} else if (action === "call") {
+			player.stats.calls++;
+		}
+	}
 
-        let msg = "";
+	let msg = "";
 	switch (action) {
 		case "fold":
 			msg = `${player.name} folded.`;
