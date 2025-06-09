@@ -168,7 +168,8 @@ function createPlayers() {
                                 showdownsWon: 0,
                                 folds: 0,
                                 foldsPreflop: 0,
-                                foldsPostflop: 0
+                                foldsPostflop: 0,
+                                allIns: 0
                         },
 			showTotal: function () {
 				player.querySelector(".chips .total").textContent = playerObject.chips;
@@ -917,6 +918,10 @@ function notifyPlayerAction(player, action, amount) {
                 } else if (action === "call") {
                         player.stats.calls++;
                 }
+        }
+
+        if (action === "allin") {
+                player.stats.allIns++;
         }
 
         if (action === "fold") {
