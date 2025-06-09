@@ -216,18 +216,22 @@ export function chooseBotAction(player, ctx) {
             return s + (c > 0 ? a / c : a);
         }, 0) / opponents.length;
 
+        // Weight adjustments by average hands played to avoid overreacting in early rounds
+        const avgHands = opponents.reduce((s, p) => s + p.stats.hands, 0) / opponents.length;
+        const weight = Math.min(1, avgHands / 5); // ramp from 0 → 1 over first ~5 hands
+
         if (avgVPIP < 0.25) {
-            raiseThreshold -= 0.5;
-            aggressiveness += 0.1;
+            raiseThreshold -= 0.5 * weight;
+            aggressiveness += 0.1 * weight;
         } else if (avgVPIP > 0.5) {
-            raiseThreshold += 0.5;
-            aggressiveness -= 0.1;
+            raiseThreshold += 0.5 * weight;
+            aggressiveness -= 0.1 * weight;
         }
 
         if (avgAgg > 1.5) {
-            aggressiveness -= 0.1;
+            aggressiveness -= 0.1 * weight;
         } else if (avgAgg < 0.7) {
-            aggressiveness += 0.1;
+            aggressiveness += 0.1 * weight;
         }
     }
 
