@@ -239,7 +239,7 @@ export function chooseBotAction(player, ctx) {
             avgHands < MIN_HANDS_FOR_WEIGHT
                 ? 0
                 : 1 - Math.exp(-(avgHands - MIN_HANDS_FOR_WEIGHT) / WEIGHT_GROWTH);
-        bluffChance = Math.min(0.5, foldRate) * weight;
+        bluffChance = Math.min(0.3, foldRate) * weight;
 
         if (avgVPIP < 0.25) {
             raiseThreshold -= 0.5 * weight;
