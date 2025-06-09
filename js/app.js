@@ -222,7 +222,8 @@ function chooseBotAction(player) {
 
 	const h1 = formatCard(player.cards[0].dataset.value);
 	const h2 = formatCard(player.cards[1].dataset.value);
-	logDecision(`${player.name} [${h1} ${h2}] | strength=${strength.toFixed(2)} potOdds=${potOdds.toFixed(2)} stack=${stackRatio.toFixed(2)} pos=${positionFactor.toFixed(2)} raises=${raisesThisRound} -> ${decision.action}`);
+	const handName = !preflop ? Hand.solve(cards).name : "preflop";
+	logDecision(`${player.name} [${h1} ${h2}] | strength=${strength.toFixed(2)} potOdds=${potOdds.toFixed(2)} stack=${stackRatio.toFixed(2)} pos=${positionFactor.toFixed(2)} raises=${raisesThisRound} -> ${decision.action} (${handName})`);
 
 	return decision;
 }
