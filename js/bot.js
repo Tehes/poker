@@ -198,13 +198,38 @@ export function chooseBotAction(player, ctx) {
         activeOpponents < OPPONENT_THRESHOLD
             ? (OPPONENT_THRESHOLD - activeOpponents) * THRESHOLD_FACTOR
             : 0;
-    const aggressiveness = (preflop
+    let aggressiveness = (preflop
         ? 0.8 + 0.4 * positionFactor
         : 1 + 0.6 * positionFactor) + oppAggAdj;
     let raiseThreshold = preflop
         ? 8 - 2 * positionFactor
         : Math.max(2, 4 - 2 * positionFactor);
     raiseThreshold = Math.max(1, raiseThreshold - thresholdAdj);
+
+    // Adjust based on observed opponent tendencies
+    const opponents = players.filter(p => p !== player);
+    if (opponents.length > 0) {
+        const avgVPIP = opponents.reduce((s, p) => s + (p.stats.hands ? p.stats.vpip / p.stats.hands : 0), 0) / opponents.length;
+        const avgAgg = opponents.reduce((s, p) => {
+            const a = p.stats.aggressiveActs;
+            const c = p.stats.calls;
+            return s + (c > 0 ? a / c : a);
+        }, 0) / opponents.length;
+
+        if (avgVPIP < 0.25) {
+            raiseThreshold -= 0.5;
+            aggressiveness += 0.1;
+        } else if (avgVPIP > 0.5) {
+            raiseThreshold += 0.5;
+            aggressiveness -= 0.1;
+        }
+
+        if (avgAgg > 1.5) {
+            aggressiveness -= 0.1;
+        } else if (avgAgg < 0.7) {
+            aggressiveness += 0.1;
+        }
+    }
 
     /* -------------------------
        Decision logic with tie-breakers

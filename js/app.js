@@ -155,10 +155,20 @@ function createPlayers() {
 			chips: 2000,
 			allIn: false,
 			totalBet: 0,
-			roundBet: 0,
-			showTotal: function () {
-				player.querySelector(".chips .total").textContent = playerObject.chips;
-			},
+                        roundBet: 0,
+                        stats: {
+                                hands: 0,
+                                handsWon: 0,
+                                vpip: 0,
+                                pfr: 0,
+                                calls: 0,
+                                aggressiveActs: 0,
+                                showdowns: 0,
+                                showdownsWon: 0
+                        },
+                        showTotal: function () {
+                                player.querySelector(".chips .total").textContent = playerObject.chips;
+                        },
 			placeBet: function (x) {
 				// Clamp bet to available chips → prevents negative stacks
 				const bet = Math.min(x, playerObject.chips);
@@ -307,7 +317,12 @@ function preFlop() {
 			remainingPlayers.push(p);
 		}
 	});
-	players = remainingPlayers;
+        players = remainingPlayers;
+
+        // Start statistics for a new hand
+        players.forEach(p => {
+                p.stats.hands++;
+        });
 
 	// If the original dealer is eliminated, update initialDealerName and reset dealerOrbitCount
 	if (!players.some(p => p.name === initialDealerName) && players.length > 0) {
@@ -663,9 +678,14 @@ function doShowdown() {
 	// Reset round bets now that they are in the pot
 	players.forEach(p => p.resetRoundBet());
 
-	// Filter active players
-	const activePlayers = players.filter(p => !p.folded);
-	const contributors = players.filter(p => p.totalBet > 0);
+        // Filter active players
+        const activePlayers = players.filter(p => !p.folded);
+        const contributors = players.filter(p => p.totalBet > 0);
+
+        const hadShowdown = activePlayers.length > 1;
+        if (hadShowdown) {
+                activePlayers.forEach(p => p.stats.showdowns++);
+        }
 
 	// Reveal hole cards of all active players
 	if (activePlayers.length > 1) {
@@ -680,10 +700,11 @@ function doShowdown() {
 
 
 	// Single-player case: immediate win (no hand needed)
-	if (activePlayers.length === 1) {
-		const winner = activePlayers[0];
-		// Animate the chip transfer for the single winner
-		winner.seat.classList.add("winner");
+        if (activePlayers.length === 1) {
+                const winner = activePlayers[0];
+                winner.stats.handsWon++;
+                // Animate the chip transfer for the single winner
+                winner.seat.classList.add("winner");
 		winner.seat.classList.remove("active");
 		winner.qr.hide();                // keep hole cards concealed
 		enqueueNotification(`${winner.name} wins ${pot}!`);
@@ -747,7 +768,8 @@ function doShowdown() {
 	// ------------------------------------------------------------------
 
 	// ---- Collect animated chip transfers ----
-	const transferQueue = [];
+        const transferQueue = [];
+        const winnersSet = new Set();
 
 	// ---- Evaluate each side pot ----
 	// Collect results for notification consolidation
@@ -765,29 +787,39 @@ function doShowdown() {
 			});
 
 		// --- If only one player is eligible for this pot, refund/award it immediately ---
-		if (sp.eligible.filter(p => !p.folded).length === 1) {
-			const solePlayer = sp.eligible.find(p => !p.folded);
-			transferQueue.push({ player: solePlayer, amount: sp.amount });
-			// Collect for notification consolidation
-			potResults.push({ players: [solePlayer.name], amount: sp.amount, hand: null });
-			return;
-		}
+                if (sp.eligible.filter(p => !p.folded).length === 1) {
+                        const solePlayer = sp.eligible.find(p => !p.folded);
+                        transferQueue.push({ player: solePlayer, amount: sp.amount });
+                        if (!winnersSet.has(solePlayer)) {
+                                solePlayer.stats.handsWon++;
+                                if (hadShowdown) solePlayer.stats.showdownsWon++;
+                                winnersSet.add(solePlayer);
+                        }
+                        // Collect for notification consolidation
+                        potResults.push({ players: [solePlayer.name], amount: sp.amount, hand: null });
+                        return;
+                }
 
 		const winners = Hand.winners(spHands.map(h => h.handObj));
 		const share = Math.floor(sp.amount / winners.length);
 		let remainder = sp.amount - share * winners.length;
 
-		winners.forEach(w => {
-			const entry = spHands.find(h => h.handObj === w);
-			const payout = share + (remainder > 0 ? 1 : 0);
-			if (remainder > 0) remainder--;
-			transferQueue.push({ player: entry.player, amount: payout });
-			// Highlight winners only for the main pot
-			if (potIdx === 0) {
-				entry.player.seat.classList.add("winner");
-				entry.player.seat.classList.remove("active");
-			}
-		});
+                winners.forEach(w => {
+                        const entry = spHands.find(h => h.handObj === w);
+                        const payout = share + (remainder > 0 ? 1 : 0);
+                        if (remainder > 0) remainder--;
+                        transferQueue.push({ player: entry.player, amount: payout });
+                        if (!winnersSet.has(entry.player)) {
+                                entry.player.stats.handsWon++;
+                                if (hadShowdown) entry.player.stats.showdownsWon++;
+                                winnersSet.add(entry.player);
+                        }
+                        // Highlight winners only for the main pot
+                        if (potIdx === 0) {
+                                entry.player.seat.classList.add("winner");
+                                entry.player.seat.classList.remove("active");
+                        }
+                });
 
 		// ---- Build detailed payout message for this pot ----
 		const winnerDescriptions = winners.map(w => {
@@ -867,7 +899,23 @@ function deletePlayer(ev) {
 }
 
 function notifyPlayerAction(player, action, amount) {
-	let msg = "";
+        // Update statistics based on action and phase
+        if (currentPhaseIndex === 0) {
+                if (action === "call" || action === "raise" || action === "allin") {
+                        player.stats.vpip++;
+                }
+                if (action === "raise" || action === "allin") {
+                        player.stats.pfr++;
+                }
+        } else {
+                if (action === "raise" || action === "allin") {
+                        player.stats.aggressiveActs++;
+                } else if (action === "call") {
+                        player.stats.calls++;
+                }
+        }
+
+        let msg = "";
 	switch (action) {
 		case "fold":
 			msg = `${player.name} folded.`;
