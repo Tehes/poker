@@ -41,6 +41,10 @@ const DEBUG_DECISIONS = true;
 const MAX_RAISES_PER_ROUND = 3;
 let raisesThisRound = 0;
 
+// Thresholds for Entscheidungs-Tiebreaker
+const STRENGTH_TIE_DELTA = 0.25; // Borderline Raise/Stärke
+const ODDS_TIE_DELTA = 0.02;     // Borderline Call/Fold
+
 function logDecision(msg) {
 	if (DEBUG_DECISIONS) console.log(msg);
 }
@@ -192,33 +196,55 @@ function chooseBotAction(player) {
 		? 8 - 2 * positionFactor
 		: Math.max(2, 4 - 2 * positionFactor);
 
-	let decision;
+        let decision;
 
-	// If no bet to call, decide whether to raise or check
-	if (needToCall <= 0) {
-		if (canRaise && strength >= raiseThreshold) {
-			let raiseAmt = Math.min(
-				player.chips,
-				Math.max(currentBet + blindLevel.big, raiseBase * (1 + positionFactor * 0.5))
-			);
-			raiseAmt = Math.min(player.chips, roundTo10(raiseAmt));
-			decision = { action: "raise", amount: raiseAmt };
-		} else {
-			decision = { action: "check" };
-		}
-	} else if (canRaise && strength >= raiseThreshold && stackRatio <= 1 / 3) {
-		let raiseAmt = Math.min(
-			player.chips,
-			Math.max(currentBet + blindLevel.big, raiseBase * (1 + positionFactor * 0.5))
-		);
-		raiseAmt = Math.min(player.chips, roundTo10(raiseAmt));
-		decision = { action: "raise", amount: raiseAmt };
-	} else if (strengthRatio * aggressiveness >= potOdds && stackRatio <= (preflop ? 0.5 : 0.7)) {
-		const callAmt = Math.min(player.chips, needToCall);
-		decision = { action: "call", amount: callAmt };
-	} else {
-		decision = { action: "fold" };
-	}
+        // If no bet to call, decide whether to raise or check
+        if (needToCall <= 0) {
+                if (canRaise && strength >= raiseThreshold) {
+                        let raiseAmt = Math.min(
+                                player.chips,
+                                Math.max(currentBet + blindLevel.big, raiseBase * (1 + positionFactor * 0.5))
+                        );
+                        raiseAmt = Math.min(player.chips, roundTo10(raiseAmt));
+                        if (Math.abs(strength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
+                                decision = Math.random() < 0.5 ?
+                                        { action: "check" } :
+                                        { action: "raise", amount: raiseAmt };
+                        } else {
+                                decision = { action: "raise", amount: raiseAmt };
+                        }
+                } else {
+                        decision = { action: "check" };
+                }
+        } else if (canRaise && strength >= raiseThreshold && stackRatio <= 1 / 3) {
+                let raiseAmt = Math.min(
+                        player.chips,
+                        Math.max(currentBet + blindLevel.big, raiseBase * (1 + positionFactor * 0.5))
+                );
+                raiseAmt = Math.min(player.chips, roundTo10(raiseAmt));
+                if (Math.abs(strength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
+                        const callAmt = Math.min(player.chips, needToCall);
+                        const alt = (strengthRatio * aggressiveness >= potOdds && stackRatio <= (preflop ? 0.5 : 0.7))
+                                ? { action: "call", amount: callAmt }
+                                : { action: "fold" };
+                        decision = Math.random() < 0.5 ?
+                                { action: "raise", amount: raiseAmt } :
+                                alt;
+                } else {
+                        decision = { action: "raise", amount: raiseAmt };
+                }
+        } else if (strengthRatio * aggressiveness >= potOdds && stackRatio <= (preflop ? 0.5 : 0.7)) {
+                const callAmt = Math.min(player.chips, needToCall);
+                if (Math.abs(strengthRatio * aggressiveness - potOdds) <= ODDS_TIE_DELTA) {
+                        decision = Math.random() < 0.5 ?
+                                { action: "call", amount: callAmt } :
+                                { action: "fold" };
+                } else {
+                        decision = { action: "call", amount: callAmt };
+                }
+        } else {
+                decision = { action: "fold" };
+        }
 
 	const h1 = formatCard(player.cards[0].dataset.value);
 	const h2 = formatCard(player.cards[1].dataset.value);
