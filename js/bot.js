@@ -22,7 +22,9 @@ const ODDS_TIE_DELTA = 0.02;     // Threshold for treating pot odds close to exp
 // Opponent-aware aggression tuning
 const OPPONENT_THRESHOLD = 3;    // Consider "few" opponents when fewer than this
 const AGG_FACTOR = 0.1;          // Aggressiveness increase per missing opponent
-const THRESHOLD_FACTOR = 0.5;    // Raise-threshold reduction per missing opponent
+// Lower raise threshold slightly as opponents drop out; using a small factor so
+// heads-up play only reduces it by ~0.6
+const THRESHOLD_FACTOR = 0.3;
 
 const botActionQueue = [];
 let processingBotActions = false;
