@@ -18,6 +18,7 @@ cards, blinds, pot, and betting rounds.
 - **Progressive Blinds**: Blinds automatically double every 2 complete dealer
   orbits to keep the action going.
 - **Side Pot Support**: Accurately resolves complex all-in scenarios.
+- **Dynamic Positioning**: Turn order and bot strategy adapt as players fold.
 - **Supports All Table Sizes**: From heads-up to full-ring games.
 - **Responsive Design**: Optimized for tablets, phones, and desktops.
 - **Fast & Offline-Ready**: Loads fast, works without internet once cached.

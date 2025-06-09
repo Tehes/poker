@@ -129,13 +129,26 @@ export function chooseBotAction(player, ctx) {
     // Check if bot is allowed to raise this round
     const canRaise = raisesThisRound < MAX_RAISES_PER_ROUND && player.chips > blindLevel.big;
 
-    // Compute positional factor based on dealer/blinds
-    const seatIdx = players.indexOf(player);
-    const refIdx = currentPhaseIndex === 0
-        ? (players.findIndex(p => p.bigBlind) + 1) % players.length
-        : (players.findIndex(p => p.dealer) + 1) % players.length;
-    const pos = (seatIdx - refIdx + players.length) % players.length;
-    const positionFactor = pos / (players.length - 1);
+    // Compute positional factor dynamically based on active players
+    const active = players.filter(p => !p.folded);
+
+    // Helper: find the next active player after the given index
+    function nextActive(startIdx) {
+        for (let i = 1; i <= players.length; i++) {
+            const idx = (startIdx + i) % players.length;
+            if (!players[idx].folded) return players[idx];
+        }
+        return players[startIdx];
+    }
+
+    const seatIdx = active.indexOf(player);
+    const firstToAct = currentPhaseIndex === 0
+        ? nextActive(players.findIndex(p => p.bigBlind))
+        : nextActive(players.findIndex(p => p.dealer));
+    const refIdx = active.indexOf(firstToAct);
+
+    const pos = (seatIdx - refIdx + active.length) % active.length;
+    const positionFactor = active.length > 1 ? pos / (active.length - 1) : 0;
 
     // Collect community cards from the board
     const communityCards = Array.from(
