@@ -19,6 +19,10 @@ const MAX_RAISES_PER_ROUND = 3;
 // Tie-breaker thresholds for close decisions
 const STRENGTH_TIE_DELTA = 0.25; // Threshold for treating strength close to the raise threshold as a tie
 const ODDS_TIE_DELTA = 0.02;     // Threshold for treating pot odds close to expected value as a tie
+// Opponent-aware aggression tuning
+const OPPONENT_THRESHOLD = 3;    // Consider "few" opponents when fewer than this
+const AGG_FACTOR = 0.1;          // Aggressiveness increase per missing opponent
+const THRESHOLD_FACTOR = 0.5;    // Raise-threshold reduction per missing opponent
 
 const botActionQueue = [];
 let processingBotActions = false;
@@ -131,6 +135,8 @@ export function chooseBotAction(player, ctx) {
 
     // Compute positional factor dynamically based on active players
     const active = players.filter(p => !p.folded);
+    // Number of opponents still in the hand
+    const activeOpponents = active.length - 1;
 
     // Helper: find the next active player after the given index
     function nextActive(startIdx) {
@@ -181,12 +187,22 @@ export function chooseBotAction(player, ctx) {
     const raiseBase = preflop
         ? Math.max(blindLevel.big * (strength >= 8 ? 3 : 2), pot / 2)
         : Math.max(blindLevel.big * 2, pot * 0.6);
-    const aggressiveness = preflop
+    // When only a few opponents remain, play slightly more aggressively
+    const oppAggAdj =
+        activeOpponents < OPPONENT_THRESHOLD
+            ? (OPPONENT_THRESHOLD - activeOpponents) * AGG_FACTOR
+            : 0;
+    const thresholdAdj =
+        activeOpponents < OPPONENT_THRESHOLD
+            ? (OPPONENT_THRESHOLD - activeOpponents) * THRESHOLD_FACTOR
+            : 0;
+    const aggressiveness = (preflop
         ? 0.8 + 0.4 * positionFactor
-        : 1 + 0.6 * positionFactor;
-    const raiseThreshold = preflop
+        : 1 + 0.6 * positionFactor) + oppAggAdj;
+    let raiseThreshold = preflop
         ? 8 - 2 * positionFactor
         : Math.max(2, 4 - 2 * positionFactor);
+    raiseThreshold = Math.max(1, raiseThreshold - thresholdAdj);
 
     /* -------------------------
        Decision logic with tie-breakers
