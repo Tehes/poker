@@ -316,7 +316,7 @@ export function chooseBotAction(player, ctx) {
         player.cards[1].dataset.value,
         ...communityCards
     ]).name : "preflop";
-    logDecision(`${player.name} [${h1} ${h2}] | strength=${strength.toFixed(2)} potOdds=${potOdds.toFixed(2)} stack=${stackRatio.toFixed(2)} pos=${positionFactor.toFixed(2)} raises=${raisesThisRound} -> ${decision.action} (${handName})`);
+    logDecision(`${player.name} [${h1} ${h2}] hand=${handName} str=${strengthRatio.toFixed(2)} potOdds=${potOdds.toFixed(2)} stack=${stackRatio.toFixed(2)} pos=${positionFactor.toFixed(2)} opp=${activeOpponents} thr=${raiseThreshold.toFixed(2)} aggr=${aggressiveness.toFixed(2)} -> ${decision.action}`);
 
     return decision;
 }
