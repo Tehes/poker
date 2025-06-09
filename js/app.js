@@ -28,6 +28,7 @@ const notifArr = [];
 const pendingNotif = [];
 let isNotifProcessing = false;
 const NOTIF_INTERVAL = 750;
+let HISTORY_LOG = false; // Set to true to enable history logging in the console
 
 let raisesThisRound = 0;
 
@@ -69,6 +70,10 @@ Array.prototype.shuffle = function () {
 	}
 	return this;
 };
+
+function logHistory(msg) {
+	if (HISTORY_LOG) console.log(msg);
+}
 
 function startGame(event) {
 	if (!gameStarted) {
@@ -152,16 +157,19 @@ function createPlayers() {
 			allIn: false,
 			totalBet: 0,
 			roundBet: 0,
-			stats: {
-				hands: 0,
-				handsWon: 0,
-				vpip: 0,
-				pfr: 0,
-				calls: 0,
-				aggressiveActs: 0,
-				showdowns: 0,
-				showdownsWon: 0
-			},
+                        stats: {
+                                hands: 0,
+                                handsWon: 0,
+                                vpip: 0,
+                                pfr: 0,
+                                calls: 0,
+                                aggressiveActs: 0,
+                                showdowns: 0,
+                                showdownsWon: 0,
+                                folds: 0,
+                                foldsPreflop: 0,
+                                foldsPostflop: 0
+                        },
 			showTotal: function () {
 				player.querySelector(".chips .total").textContent = playerObject.chips;
 			},
@@ -896,20 +904,29 @@ function deletePlayer(ev) {
 
 function notifyPlayerAction(player, action, amount) {
 	// Update statistics based on action and phase
-	if (currentPhaseIndex === 0) {
-		if (action === "call" || action === "raise" || action === "allin") {
-			player.stats.vpip++;
-		}
-		if (action === "raise" || action === "allin") {
-			player.stats.pfr++;
-		}
-	} else {
-		if (action === "raise" || action === "allin") {
-			player.stats.aggressiveActs++;
-		} else if (action === "call") {
-			player.stats.calls++;
-		}
-	}
+        if (currentPhaseIndex === 0) {
+                if (action === "call" || action === "raise" || action === "allin") {
+                        player.stats.vpip++;
+                }
+                if (action === "raise" || action === "allin") {
+                        player.stats.pfr++;
+                }
+        } else {
+                if (action === "raise" || action === "allin") {
+                        player.stats.aggressiveActs++;
+                } else if (action === "call") {
+                        player.stats.calls++;
+                }
+        }
+
+        if (action === "fold") {
+                player.stats.folds++;
+                if (currentPhaseIndex === 0) {
+                        player.stats.foldsPreflop++;
+                } else {
+                        player.stats.foldsPostflop++;
+                }
+        }
 
 	let msg = "";
 	switch (action) {
@@ -960,7 +977,7 @@ function showNextNotif() {
 	while (notification.childElementCount > MAX_ITEMS) {
 		notification.removeChild(notification.lastChild);
 	}
-	console.log(msg);
+	logHistory(msg);
 	setTimeout(showNextNotif, NOTIF_INTERVAL);
 }
 

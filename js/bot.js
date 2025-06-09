@@ -81,6 +81,17 @@ function roundTo10(x) {
     return Math.round(x / 10) * 10;
 }
 
+// Calculate how often a player folds
+function calcFoldRate(p) {
+    return p.stats.hands > 0 ? p.stats.folds / p.stats.hands : 0;
+}
+
+// Average fold rate across a set of opponents
+function avgFoldRate(opponents) {
+    if (opponents.length === 0) return 0;
+    return opponents.reduce((s, p) => s + calcFoldRate(p), 0) / opponents.length;
+}
+
 /* ===========================
    Preflop Hand Evaluation
 ========================== */
@@ -209,6 +220,7 @@ export function chooseBotAction(player, ctx) {
         ? 8 - 2 * positionFactor
         : Math.max(2, 4 - 2 * positionFactor);
     raiseThreshold = Math.max(1, raiseThreshold - thresholdAdj);
+    let bluffChance = 0;
 
     // Adjust based on observed opponent tendencies
     const opponents = players.filter(p => p !== player);
@@ -219,6 +231,7 @@ export function chooseBotAction(player, ctx) {
         const avgAgg =
             opponents.reduce((s, p) => s + (p.stats.aggressiveActs + 1) / (p.stats.calls + 1), 0) /
             opponents.length;
+        const foldRate = avgFoldRate(opponents);
 
         // Weight adjustments by average hands played to avoid overreacting in early rounds
         const avgHands = opponents.reduce((s, p) => s + p.stats.hands, 0) / opponents.length;
@@ -226,6 +239,7 @@ export function chooseBotAction(player, ctx) {
             avgHands < MIN_HANDS_FOR_WEIGHT
                 ? 0
                 : 1 - Math.exp(-(avgHands - MIN_HANDS_FOR_WEIGHT) / WEIGHT_GROWTH);
+        bluffChance = Math.min(0.5, foldRate) * weight;
 
         if (avgVPIP < 0.25) {
             raiseThreshold -= 0.5 * weight;
@@ -309,6 +323,18 @@ export function chooseBotAction(player, ctx) {
         decision = { action: "fold" };
     }
 
+    let isBluff = false;
+    if (bluffChance > 0 && canRaise && (decision.action === "check" || decision.action === "fold")) {
+        if (Math.random() < bluffChance) {
+            const bluffAmt = Math.min(
+                player.chips,
+                Math.max(currentBet + blindLevel.big, blindLevel.big * 2)
+            );
+            decision = { action: "raise", amount: roundTo10(bluffAmt) };
+            isBluff = true;
+        }
+    }
+
     const h1 = formatCard(player.cards[0].dataset.value);
     const h2 = formatCard(player.cards[1].dataset.value);
     const handName = !preflop ? Hand.solve([
@@ -326,16 +352,19 @@ export function chooseBotAction(player, ctx) {
     else aggrEmoji = '❄️';
 
     console.table([{
+        Player: player.name,
+        Cards: `${h1} ${h2}`,
         Hand: handName,
         Strength: strengthRatio.toFixed(2),
-        'Pot Odds': potOdds.toFixed(2),
-        'Stack Ratio': stackRatio.toFixed(2),
+        PotOdds: potOdds.toFixed(2),
+        StackRatio: stackRatio.toFixed(2),
         Position: positionFactor.toFixed(2),
         Opponents: activeOpponents,
-        Threshold: raiseThreshold.toFixed(2),
+        RaiseThreshold: (raiseThreshold / 10).toFixed(2),
         Aggressiveness: aggressiveness.toFixed(2),
         Emoji: aggrEmoji,
-        Action: decision.action
+        Action: decision.action,
+        Bluff: isBluff
     }]);
 
     return decision;
