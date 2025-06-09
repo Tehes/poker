@@ -29,6 +29,9 @@ const THRESHOLD_FACTOR = 0.3;
 const MIN_HANDS_FOR_WEIGHT = 10;
 // Controls how quickly stat influence grows as more hands are played
 const WEIGHT_GROWTH = 10;
+const BASE_MIN_PREFLOP_CALL = 0.9;
+const BASE_MIN_POSTFLOP_CALL = 0.5;
+
 
 const botActionQueue = [];
 let processingBotActions = false;
@@ -80,6 +83,11 @@ function formatCard(code) {
 function roundTo10(x) {
     return Math.round(x / 10) * 10;
 }
+// Clamp a value within a range
+function clamp(val, min, max) {
+    return Math.min(max, Math.max(min, val));
+}
+
 
 // Calculate how often a player folds
 function calcFoldRate(p) {
@@ -221,6 +229,8 @@ export function chooseBotAction(player, ctx) {
         : Math.max(2, 4 - 2 * positionFactor);
     raiseThreshold = Math.max(1, raiseThreshold - thresholdAdj);
     let bluffChance = 0;
+    let minPreflopCall = BASE_MIN_PREFLOP_CALL;
+    let minPostflopCall = BASE_MIN_POSTFLOP_CALL;
 
     // Adjust based on observed opponent tendencies
     const opponents = players.filter(p => p !== player);
@@ -232,6 +242,10 @@ export function chooseBotAction(player, ctx) {
             opponents.reduce((s, p) => s + (p.stats.aggressiveActs + 1) / (p.stats.calls + 1), 0) /
             opponents.length;
         const foldRate = avgFoldRate(opponents);
+        const avgAllInRate = opponents.reduce(
+            (s, p) => s + (p.stats.allIns || 0) / Math.max(1, p.stats.hands),
+            0
+        ) / opponents.length;
 
         // Weight adjustments by average hands played to avoid overreacting in early rounds
         const avgHands = opponents.reduce((s, p) => s + p.stats.hands, 0) / opponents.length;
@@ -240,6 +254,16 @@ export function chooseBotAction(player, ctx) {
                 ? 0
                 : 1 - Math.exp(-(avgHands - MIN_HANDS_FOR_WEIGHT) / WEIGHT_GROWTH);
         bluffChance = Math.min(0.3, foldRate) * weight;
+
+        if (avgAllInRate > 0.25) {
+            // Maniacs shove frequently. Loosen up calling but keep raises selective.
+            aggressiveness += 0.2 * weight;
+            raiseThreshold = Math.min(10, raiseThreshold + 0.3 * weight);
+            const callAdjust = 0.2 * weight;
+            minPreflopCall = clamp(BASE_MIN_PREFLOP_CALL - callAdjust, 0, 1);
+            minPostflopCall = clamp(BASE_MIN_POSTFLOP_CALL - callAdjust, 0, 1);
+            bluffChance *= 0.5;
+        }
 
         if (avgVPIP < 0.25) {
             raiseThreshold -= 0.5 * weight;
@@ -298,7 +322,9 @@ export function chooseBotAction(player, ctx) {
         // randomly choose between 'raise' and the alternative (call or fold).
         if (Math.abs(strength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
             const callAmt = Math.min(player.chips, needToCall);
-            const alt = (strengthRatio * aggressiveness >= potOdds && stackRatio <= (preflop ? 0.5 : 0.7))
+            const alt = (strengthRatio >= (preflop ? minPreflopCall : minPostflopCall) &&
+                strengthRatio * aggressiveness >= potOdds &&
+                stackRatio <= (preflop ? 0.5 : 0.7))
                 ? { action: "call", amount: callAmt }
                 : { action: "fold" };
             decision = Math.random() < 0.5
@@ -307,7 +333,7 @@ export function chooseBotAction(player, ctx) {
         } else {
             decision = { action: "raise", amount: raiseAmt };
         }
-    } else if (strengthRatio * aggressiveness >= potOdds && stackRatio <= (preflop ? 0.5 : 0.7)) {
+    } else if (strengthRatio >= (preflop ? minPreflopCall : minPostflopCall) && strengthRatio * aggressiveness >= potOdds && stackRatio <= (preflop ? 0.5 : 0.7)) {
         const callAmt = Math.min(player.chips, needToCall);
         // Odds tie-breaker:
         // When adjusted strength (strengthRatio * aggressiveness) is within ODDS_TIE_DELTA of pot odds,
@@ -323,6 +349,14 @@ export function chooseBotAction(player, ctx) {
         decision = { action: "fold" };
     }
 
+    if (avgAllInRate > 0.25 && decision.action === "call" && strength >= raiseThreshold + 1 && canRaise) {
+        let isoAmt = Math.min(
+            player.chips,
+            Math.max(currentBet + blindLevel.big, raiseBase * (1 + positionFactor))
+        );
+        isoAmt = Math.min(player.chips, roundTo10(isoAmt));
+        decision = { action: "raise", amount: isoAmt };
+    }
     let isBluff = false;
     if (bluffChance > 0 && canRaise && (decision.action === "check" || decision.action === "fold")) {
         if (Math.random() < bluffChance) {

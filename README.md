@@ -24,6 +24,7 @@ cards, blinds, pot, and betting rounds.
 - **Fast & Offline-Ready**: Loads fast, works without internet once cached.
 - **Built‑in Bot Players**: Automatically fills empty seats with bots that use basic hand-strength heuristics to fold, check, call or raise.
 - **Smarter Bots**: Bots now track how often opponents fold and may bluff accordingly.
+- **Maniac Detection**: Bots track opponent all-ins, lower their call thresholds against frequent shoves and only raise with strong hands.
 
 ---
 
