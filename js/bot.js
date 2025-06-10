@@ -332,7 +332,7 @@ export function chooseBotAction(player, ctx) {
     }
 
     let isBluff = false;
-    if (bluffChance > 0 && canRaise && (decision.action === "check" || decision.action === "fold")) {
+    if (bluffChance > 0 && canRaise && (decision.action === "check" || decision.action === "fold") && !facingAllIn) {
         if (Math.random() < bluffChance) {
             const bluffAmt = Math.min(
                 player.chips,
