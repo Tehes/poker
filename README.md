@@ -23,7 +23,8 @@ cards, blinds, pot, and betting rounds.
 - **Responsive Design**: Optimized for tablets, phones, and desktops.
 - **Fast & Offline-Ready**: Loads fast, works without internet once cached.
 - **Built‑in Bot Players**: Automatically fills empty seats with bots that use basic hand-strength heuristics to fold, check, call or raise.
-- **Smarter Bots**: Bots now track how often opponents fold and may bluff accordingly.
+- **Smarter Bots**: Bots track how often opponents fold and may bluff accordingly. They also
+  recognize frequent all-in shoves and won't fold premium hands against them.
 
 ---
 
