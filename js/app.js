@@ -168,7 +168,8 @@ function createPlayers() {
                                 showdownsWon: 0,
                                 folds: 0,
                                 foldsPreflop: 0,
-                                foldsPostflop: 0
+                                foldsPostflop: 0,
+                                allins: 0
                         },
 			showTotal: function () {
 				player.querySelector(".chips .total").textContent = playerObject.chips;
@@ -939,12 +940,13 @@ function notifyPlayerAction(player, action, amount) {
 		case "call":
 			msg = `${player.name} called ${amount}.`;
 			break;
-		case "raise":
-			msg = `${player.name} raised to ${amount}.`;
-			break;
-		case "allin":
-			msg = `${player.name} is all-in.`;
-			break;
+                case "raise":
+                        msg = `${player.name} raised to ${amount}.`;
+                        break;
+                case "allin":
+                        player.stats.allins++;
+                        msg = `${player.name} is all-in.`;
+                        break;
 		default:
 			msg = `${player.name} did something…`;
 	}

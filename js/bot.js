@@ -29,6 +29,10 @@ const THRESHOLD_FACTOR = 0.3;
 const MIN_HANDS_FOR_WEIGHT = 10;
 // Controls how quickly stat influence grows as more hands are played
 const WEIGHT_GROWTH = 10;
+// Detect opponents that shove frequently
+const ALL_IN_FREQ_THRESHOLD = 0.3;
+const GOOD_HAND_PREFLOP = 0.9;
+const GOOD_HAND_POSTFLOP = 0.6;
 
 const botActionQueue = [];
 let processingBotActions = false;
@@ -224,6 +228,12 @@ export function chooseBotAction(player, ctx) {
 
     // Adjust based on observed opponent tendencies
     const opponents = players.filter(p => p !== player);
+    const allInAggressor = opponents.find(p =>
+        p.allIn &&
+        p.stats.hands >= MIN_HANDS_FOR_WEIGHT &&
+        p.stats.allins / p.stats.hands >= ALL_IN_FREQ_THRESHOLD
+    );
+    const facingShove = Boolean(allInAggressor);
     if (opponents.length > 0) {
         const avgVPIP =
             opponents.reduce((s, p) => s + (p.stats.vpip + 1) / (p.stats.hands + 2), 0) /
@@ -321,6 +331,14 @@ export function chooseBotAction(player, ctx) {
         }
     } else {
         decision = { action: "fold" };
+    }
+
+    // If facing an all-in from a shove-happy opponent, do not fold
+    if (decision.action === "fold" && facingShove) {
+        const goodThreshold = preflop ? GOOD_HAND_PREFLOP : GOOD_HAND_POSTFLOP;
+        if (strengthRatio >= goodThreshold) {
+            decision = { action: "call", amount: Math.min(player.chips, needToCall) };
+        }
     }
 
     let isBluff = false;
