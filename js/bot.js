@@ -30,9 +30,8 @@ const MIN_HANDS_FOR_WEIGHT = 10;
 // Controls how quickly stat influence grows as more hands are played
 const WEIGHT_GROWTH = 10;
 // Detect opponents that shove frequently
-const ALL_IN_FREQ_THRESHOLD = 0.3;
-const GOOD_HAND_PREFLOP = 0.9;
-const GOOD_HAND_POSTFLOP = 0.6;
+const ALLIN_HAND_PREFLOP = 0.9;
+const ALLIN_HAND_POSTFLOP = 0.6;
 
 const botActionQueue = [];
 let processingBotActions = false;
@@ -67,10 +66,6 @@ function processBotQueue() {
 /* ===========================
    Logging and Utilities
 ========================== */
-// Debug logging: prints decision details when enabled
-function logDecision(msg) {
-    if (DEBUG_DECISIONS) console.log(msg);
-}
 
 // Card display utilities
 // Map suit codes to their Unicode symbols
@@ -228,12 +223,6 @@ export function chooseBotAction(player, ctx) {
 
     // Adjust based on observed opponent tendencies
     const opponents = players.filter(p => p !== player);
-    const allInAggressor = opponents.find(p =>
-        p.allIn &&
-        p.stats.hands >= MIN_HANDS_FOR_WEIGHT &&
-        p.stats.allins / p.stats.hands >= ALL_IN_FREQ_THRESHOLD
-    );
-    const facingShove = Boolean(allInAggressor);
     if (opponents.length > 0) {
         const avgVPIP =
             opponents.reduce((s, p) => s + (p.stats.vpip + 1) / (p.stats.hands + 2), 0) /
@@ -333,9 +322,10 @@ export function chooseBotAction(player, ctx) {
         decision = { action: "fold" };
     }
 
-    // If facing an all-in from a shove-happy opponent, do not fold
-    if (decision.action === "fold" && facingShove) {
-        const goodThreshold = preflop ? GOOD_HAND_PREFLOP : GOOD_HAND_POSTFLOP;
+    // If facing any all-in, do not fold always
+    const facingAllIn = opponents.some(p => p.allIn);
+    if (decision.action === "fold" && facingAllIn) {
+        const goodThreshold = preflop ? ALLIN_HAND_PREFLOP : ALLIN_HAND_POSTFLOP;
         if (strengthRatio >= goodThreshold) {
             decision = { action: "call", amount: Math.min(player.chips, needToCall) };
         }
@@ -361,29 +351,31 @@ export function chooseBotAction(player, ctx) {
         ...communityCards
     ]).name : "preflop";
 
-    // Map aggressiveness to an emoji for logging
-    let aggrEmoji;
-    if (aggressiveness >= 1.5) aggrEmoji = '🔥';
-    else if (aggressiveness >= 1.2) aggrEmoji = '⚡';
-    else if (aggressiveness >= 1.0) aggrEmoji = '👌';
-    else if (aggressiveness >= 0.8) aggrEmoji = '🐌';
-    else aggrEmoji = '❄️';
+    if (DEBUG_DECISIONS) {
+        // Map aggressiveness to an emoji for logging
+        let aggrEmoji;
+        if (aggressiveness >= 1.5) aggrEmoji = '🔥';
+        else if (aggressiveness >= 1.2) aggrEmoji = '⚡';
+        else if (aggressiveness >= 1.0) aggrEmoji = '👌';
+        else if (aggressiveness >= 0.8) aggrEmoji = '🐌';
+        else aggrEmoji = '❄️';
 
-    console.table([{
-        Player: player.name,
-        Cards: `${h1} ${h2}`,
-        Hand: handName,
-        Strength: strengthRatio.toFixed(2),
-        PotOdds: potOdds.toFixed(2),
-        StackRatio: stackRatio.toFixed(2),
-        Position: positionFactor.toFixed(2),
-        Opponents: activeOpponents,
-        RaiseThreshold: (raiseThreshold / 10).toFixed(2),
-        Aggressiveness: aggressiveness.toFixed(2),
-        Emoji: aggrEmoji,
-        Action: decision.action,
-        Bluff: isBluff
-    }]);
+        console.table([{
+            Player: player.name,
+            Cards: `${h1} ${h2}`,
+            Hand: handName,
+            Strength: strengthRatio.toFixed(2),
+            PotOdds: potOdds.toFixed(2),
+            StackRatio: stackRatio.toFixed(2),
+            Position: positionFactor.toFixed(2),
+            Opponents: activeOpponents,
+            RaiseThreshold: (raiseThreshold / 10).toFixed(2),
+            Aggressiveness: aggressiveness.toFixed(2),
+            Emoji: aggrEmoji,
+            Action: decision.action,
+            Bluff: isBluff
+        }]);
+    }
 
     return decision;
 }
