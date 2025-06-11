@@ -436,7 +436,7 @@ MEDIA QUERIES
 */
 @media (prefers-color-scheme: dark) {
     :root {
-        --blue: hsl(var(--achromatic), 10%);
+        --blue: hsl(220, 40%, 20%);
         --font-color: hsl(var(--achromatic), 80%);
     }
 }

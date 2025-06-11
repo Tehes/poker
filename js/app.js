@@ -456,7 +456,7 @@ function startBettingRound() {
 
 		// Skip folded or all-in players immediately
 		if (player.folded || player.allIn) {
-			return nextPlayer();
+			return setTimeout(nextPlayer, 0); // avoid recursive stack growth
 		}
 
 		// Skip if player already matched the current bet
@@ -468,7 +468,9 @@ function startBettingRound() {
 			) {
 				// within first cycle: let them act
 			} else {
-				if (anyUncalled()) return nextPlayer();
+				if (anyUncalled()) {
+					return setTimeout(nextPlayer, 0); // schedule asynchronously to break call chain
+				}
 				return setPhase();
 			}
 		}

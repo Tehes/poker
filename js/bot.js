@@ -91,6 +91,85 @@ function avgFoldRate(opponents) {
     return opponents.reduce((s, p) => s + calcFoldRate(p), 0) / opponents.length;
 }
 
+/* -----------------------------
+   Post-flop Board Evaluation
+----------------------------- */
+
+// Determine if the two hole cards form a pocket pair
+function isPocketPair(hole) {
+    return new Card(hole[0]).rank === new Card(hole[1]).rank;
+}
+
+// Analyze hand context using pokersolver. Returns whether the bot has
+// top pair (pair made with the highest board card) or over pair (pocket
+// pair higher than any board card).
+function analyzeHandContext(hole, board) {
+    const hand = Hand.solve([...hole, ...board]);
+
+    const boardRanks = board.map(c => new Card(c).rank);
+    const highestBoard = Math.max(...boardRanks);
+    const pocketPair = isPocketPair(hole);
+
+    let isTopPair = false;
+    let isOverPair = false;
+
+    if (hand.name === 'Pair') {
+        const pairRank = hand.cards[0].rank;
+        isTopPair = pairRank === highestBoard;
+        isOverPair = pocketPair && pairRank > highestBoard;
+    }
+
+    return { isTopPair, isOverPair };
+}
+
+// Detect draw potential after the flop. Straight draws should not trigger when
+// a made straight already exists.
+function analyzeDrawPotential(hole, board) {
+    const allCards = [...hole, ...board];
+
+    const draws = {
+        flushDraw: false,
+        straightDraw: false,
+        outs: 0
+    };
+
+    // Count suits for flush draws
+    const suits = {};
+    allCards.forEach(c => {
+        const suit = c[1];
+        suits[suit] = (suits[suit] || 0) + 1;
+    });
+    const suitCounts = Object.values(suits);
+    const hasFlush = suitCounts.some(c => c >= 5);
+    if (!hasFlush) {
+        draws.flushDraw = suitCounts.some(c => c === 4);
+    }
+
+    // Straight draw check
+    const ranks = allCards.map(c => new Card(c).rank);
+    if (ranks.includes(14)) ranks.push(1); // allow A-2-3-4-5
+    const unique = [...new Set(ranks)].sort((a, b) => a - b);
+
+    const straights = [];
+    for (let start = 1; start <= 10; start++) {
+        straights.push([start, start + 1, start + 2, start + 3, start + 4]);
+    }
+    for (const seq of straights) {
+        const count = seq.filter(r => unique.includes(r)).length;
+        if (count === 5) {
+            // Already a straight; no draw
+            draws.straightDraw = false;
+            break;
+        }
+        if (count === 4) {
+            draws.straightDraw = true;
+            break;
+        }
+    }
+
+    return draws;
+}
+
 /* ===========================
    Preflop Hand Evaluation
 ========================== */
@@ -196,6 +275,25 @@ export function chooseBotAction(player, ctx) {
         strength = Hand.solve(cards).rank;
     }
 
+    // Post-flop board context
+    let topPair = false;
+    let overPair = false;
+    let drawChance = false;
+    if (!preflop && communityCards.length >= 3) {
+        const ctxInfo = analyzeHandContext(
+            [player.cards[0].dataset.value, player.cards[1].dataset.value],
+            communityCards
+        );
+        topPair = ctxInfo.isTopPair;
+        overPair = ctxInfo.isOverPair;
+
+        const draws = analyzeDrawPotential(
+            [player.cards[0].dataset.value, player.cards[1].dataset.value],
+            communityCards
+        );
+        drawChance = draws.flushDraw || draws.straightDraw;
+    }
+
     // Normalize strength to [0,1]
     const strengthRatio = strength / 10;
 
@@ -219,6 +317,21 @@ export function chooseBotAction(player, ctx) {
         ? 8 - 2 * positionFactor
         : Math.max(2, 4 - 2 * positionFactor);
     raiseThreshold = Math.max(1, raiseThreshold - thresholdAdj);
+
+    if (!preflop) {
+        if (overPair) {
+            aggressiveness += 0.2;
+            raiseThreshold -= 0.5;
+        } else if (topPair) {
+            aggressiveness += 0.1;
+            raiseThreshold -= 0.3;
+        }
+        if (drawChance) {
+            aggressiveness += 0.05;
+            raiseThreshold -= 0.25;
+        }
+    }
+
     let bluffChance = 0;
 
     // Adjust based on observed opponent tendencies
@@ -371,6 +484,7 @@ export function chooseBotAction(player, ctx) {
             Opponents: activeOpponents,
             RaiseThreshold: (raiseThreshold / 10).toFixed(2),
             Aggressiveness: aggressiveness.toFixed(2),
+            BoardCtx: overPair ? 'overpair' : (topPair ? 'top pair' : (drawChance ? 'draw' : '-')),
             Emoji: aggrEmoji,
             Action: decision.action,
             Bluff: isBluff
