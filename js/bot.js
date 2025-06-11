@@ -95,32 +95,35 @@ function avgFoldRate(opponents) {
    Post-flop Board Evaluation
 ----------------------------- */
 
-// Determine if hole cards form a pocket pair
+// Determine if the two hole cards form a pocket pair
 function isPocketPair(hole) {
     return new Card(hole[0]).rank === new Card(hole[1]).rank;
 }
 
-// Analyze hand context using pokersolver
+// Analyze hand context using pokersolver. Returns whether the bot has
+// top pair (pair made with the highest board card) or over pair (pocket
+// pair higher than any board card).
 function analyzeHandContext(hole, board) {
     const hand = Hand.solve([...hole, ...board]);
 
-    if (hand.name === 'Pair') {
-        const pairCard = hand.cards[0];
-        const boardRanks = board.map(c => new Card(c).rank).sort((a, b) => b - a);
-        const highestBoard = boardRanks[0];
+    const boardRanks = board.map(c => new Card(c).rank);
+    const highestBoard = Math.max(...boardRanks);
+    const pocketPair = isPocketPair(hole);
 
-        return {
-            isTopPair: pairCard.rank === highestBoard,
-            isOverPair: isPocketPair(hole) && pairCard.rank > highestBoard,
-            isPocketPair: true,
-            pairRank: pairCard.rank
-        };
+    let isTopPair = false;
+    let isOverPair = false;
+
+    if (hand.name === 'Pair') {
+        const pairRank = hand.cards[0].rank;
+        isTopPair = pairRank === highestBoard;
+        isOverPair = pocketPair && pairRank > highestBoard;
     }
 
-    return { isTopPair: false, isOverPair: false, isPocketPair: isPocketPair(hole) };
+    return { isTopPair, isOverPair };
 }
 
-// Detect simple draw potential
+// Detect draw potential after the flop. Straight draws should not trigger when
+// a made straight already exists.
 function analyzeDrawPotential(hole, board) {
     const allCards = [...hole, ...board];
 
@@ -130,21 +133,35 @@ function analyzeDrawPotential(hole, board) {
         outs: 0
     };
 
-    // Simplified flush draw check
+    // Count suits for flush draws
     const suits = {};
     allCards.forEach(c => {
         const suit = c[1];
         suits[suit] = (suits[suit] || 0) + 1;
     });
-    draws.flushDraw = Object.values(suits).some(count => count === 4);
+    const suitCounts = Object.values(suits);
+    const hasFlush = suitCounts.some(c => c >= 5);
+    if (!hasFlush) {
+        draws.flushDraw = suitCounts.some(c => c === 4);
+    }
 
-    // Basic straight draw detection
-    let ranks = allCards.map(c => new Card(c).rank);
-    if (ranks.includes(14)) ranks.push(1); // Ace low
-    ranks = [...new Set(ranks)].sort((a, b) => a - b);
-    for (let i = 0; i <= ranks.length - 4; i++) {
-        const diff = ranks[i + 3] - ranks[i];
-        if (diff <= 4) {
+    // Straight draw check
+    const ranks = allCards.map(c => new Card(c).rank);
+    if (ranks.includes(14)) ranks.push(1); // allow A-2-3-4-5
+    const unique = [...new Set(ranks)].sort((a, b) => a - b);
+
+    const straights = [];
+    for (let start = 1; start <= 10; start++) {
+        straights.push([start, start + 1, start + 2, start + 3, start + 4]);
+    }
+    for (const seq of straights) {
+        const count = seq.filter(r => unique.includes(r)).length;
+        if (count === 5) {
+            // Already a straight; no draw
+            draws.straightDraw = false;
+            break;
+        }
+        if (count === 4) {
             draws.straightDraw = true;
             break;
         }
