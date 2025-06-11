@@ -22,9 +22,13 @@ cards, blinds, pot, and betting rounds.
 - **Supports All Table Sizes**: From heads-up to full-ring games.
 - **Responsive Design**: Optimized for tablets, phones, and desktops.
 - **Fast & Offline-Ready**: Loads fast, works without internet once cached.
-- **Built‑in Bot Players**: Automatically fills empty seats with bots that use basic hand-strength heuristics to fold, check, call or raise.
-- **Smarter Bots**: Bots track how often opponents fold and may bluff accordingly. They also
-  recognize frequent all-in shoves and won't fold premium hands against them.
+- **Built‑in Bots**: Empty player slots are automatically filled with bots.
+- **Bot Intelligence**: Bots evaluate hand strength, pot odds, stack size, and
+  position to make informed decisions.
+- **Adaptive Behavior**: Bots track how often opponents fold, detect frequent
+  all-ins, and adjust their bluffing frequency accordingly.
+- **Context Awareness**: Bots recognize top pair, overpairs, and draw potential
+  to decide between check, call, raise, or fold.
 
 ---
 
