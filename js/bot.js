@@ -170,6 +170,57 @@ function analyzeDrawPotential(hole, board) {
     return draws;
 }
 
+// Evaluate board "texture" based on connectedness, suitedness and pairing.
+// Returns a number between 0 (dry) and 1 (very wet).
+function evaluateBoardTexture(board) {
+    if (!board || board.length < 3) return 0;
+
+    const rankMap = {
+        '2': 2, '3': 3, '4': 4, '5': 5, '6': 6,
+        '7': 7, '8': 8, '9': 9, 'T': 10,
+        'J': 11, 'Q': 12, 'K': 13, 'A': 14
+    };
+    const suitMap = { '♣': 'C', '♦': 'D', '♥': 'H', '♠': 'S' };
+
+    const ranks = [];
+    const rankCounts = {};
+    const suitCounts = {};
+
+    board.forEach(card => {
+        const r = card[0];
+        let s = card[1];
+        s = suitMap[s] || s;
+        ranks.push(rankMap[r]);
+        rankCounts[r] = (rankCounts[r] || 0) + 1;
+        suitCounts[s] = (suitCounts[s] || 0) + 1;
+    });
+
+    // ----- Pairing -----
+    const maxRankCount = Math.max(...Object.values(rankCounts));
+    const pairRisk = maxRankCount > 1 ? (maxRankCount - 1) / (board.length - 1) : 0;
+
+    // ----- Suitedness -----
+    const maxSuitCount = Math.max(...Object.values(suitCounts));
+    const suitRisk = (maxSuitCount - 1) / (board.length - 1);
+
+    // ----- Connectedness -----
+    const ranksForStraight = ranks.slice();
+    if (ranksForStraight.includes(14)) ranksForStraight.push(1); // wheel
+    const unique = [...new Set(ranksForStraight)].sort((a, b) => a - b);
+    let maxCluster = 1;
+    for (let i = 0; i < unique.length; i++) {
+        let j = i;
+        while (j + 1 < unique.length && unique[j + 1] - unique[i] <= 4) {
+            j++;
+        }
+        maxCluster = Math.max(maxCluster, j - i + 1);
+    }
+    const connectedness = Math.max(0, (maxCluster - 2) / (board.length - 2));
+
+    const textureRisk = (connectedness + suitRisk + pairRisk) / 3;
+    return Math.max(0, Math.min(1, textureRisk));
+}
+
 /* ===========================
    Preflop Hand Evaluation
 ========================== */
@@ -279,6 +330,7 @@ export function chooseBotAction(player, ctx) {
     let topPair = false;
     let overPair = false;
     let drawChance = false;
+    let textureRisk = 0;
     if (!preflop && communityCards.length >= 3) {
         const ctxInfo = analyzeHandContext(
             [player.cards[0].dataset.value, player.cards[1].dataset.value],
@@ -292,6 +344,8 @@ export function chooseBotAction(player, ctx) {
             communityCards
         );
         drawChance = draws.flushDraw || draws.straightDraw;
+
+        textureRisk = evaluateBoardTexture(communityCards);
     }
 
     // Normalize strength to [0,1]
@@ -330,6 +384,10 @@ export function chooseBotAction(player, ctx) {
             aggressiveness += 0.05;
             raiseThreshold -= 0.25;
         }
+
+        // Reduce aggression on wet boards
+        aggressiveness *= 1 - textureRisk * 0.5;
+        raiseThreshold = Math.min(10, raiseThreshold + textureRisk);
     }
 
     let bluffChance = 0;
@@ -352,6 +410,7 @@ export function chooseBotAction(player, ctx) {
                 ? 0
                 : 1 - Math.exp(-(avgHands - MIN_HANDS_FOR_WEIGHT) / WEIGHT_GROWTH);
         bluffChance = Math.min(0.3, foldRate) * weight;
+        bluffChance *= (1 - textureRisk * 0.5);
 
         if (avgVPIP < 0.25) {
             raiseThreshold -= 0.5 * weight;
@@ -485,6 +544,7 @@ export function chooseBotAction(player, ctx) {
             RaiseThreshold: (raiseThreshold / 10).toFixed(2),
             Aggressiveness: aggressiveness.toFixed(2),
             BoardCtx: overPair ? 'overpair' : (topPair ? 'top pair' : (drawChance ? 'draw' : '-')),
+            Texture: textureRisk.toFixed(2),
             Emoji: aggrEmoji,
             Action: decision.action,
             Bluff: isBluff
