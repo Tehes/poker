@@ -437,6 +437,13 @@ MEDIA QUERIES
 @media (prefers-color-scheme: dark) {
     :root {
         --blue: hsl(220, 40%, 20%);
+        --blue-darker: hsl(220, 40%, 15%);
+        --yellow: hsl(40, 90%, 50%);
+        --yellow-active: hsl(40, 100%, 40%);
         --font-color: hsl(var(--achromatic), 80%);
+    }
+
+    img {
+        filter: brightness(0.8);
     }
 }
