@@ -207,15 +207,20 @@ function evaluateBoardTexture(board) {
     const ranksForStraight = ranks.slice();
     if (ranksForStraight.includes(14)) ranksForStraight.push(1); // wheel
     const unique = [...new Set(ranksForStraight)].sort((a, b) => a - b);
-    let maxCluster = 1;
-    for (let i = 0; i < unique.length; i++) {
-        let j = i;
-        while (j + 1 < unique.length && unique[j + 1] - unique[i] <= 4) {
-            j++;
+    let maxConsecutive = 1;
+    let currentRun = 1;
+    for (let i = 1; i < unique.length; i++) {
+        if (unique[i] === unique[i - 1] + 1) {
+            currentRun += 1;
+        } else {
+            currentRun = 1;
         }
-        maxCluster = Math.max(maxCluster, j - i + 1);
+        if (currentRun > maxConsecutive) maxConsecutive = currentRun;
     }
-    const connectedness = Math.max(0, (maxCluster - 2) / (board.length - 2));
+    const connectedness =
+        maxConsecutive >= 3
+            ? Math.max(0, (maxConsecutive - 2) / (board.length - 2))
+            : 0;
 
     const textureRisk = (connectedness + suitRisk + pairRisk) / 3;
     return Math.max(0, Math.min(1, textureRisk));
