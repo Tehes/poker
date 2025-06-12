@@ -269,6 +269,10 @@ TABLE-MIDDLE
     align-items: center;
 }
 
+.hidden {
+    display: none;
+}
+
 /*
 -------------------------------------------------------------------
 PLAYER

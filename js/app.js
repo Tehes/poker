@@ -14,6 +14,7 @@ const notification = document.querySelector("#notification");
 const foldButton = document.querySelector("#fold-button");
 const actionButton = document.querySelector("#action-button");
 const amountSlider = document.querySelector("#amount-slider");
+const sliderOutput = document.querySelector("output");
 const Phases = ["preflop", "flop", "turn", "river", "showdown"];
 let currentPhaseIndex = 0;
 let currentBet = 0;
@@ -479,6 +480,10 @@ function startBettingRound() {
 		if (player.isBot) {
 			document.querySelectorAll(".seat").forEach(s => s.classList.remove("active"));
 			player.seat.classList.add("active");
+			actionButton.classList.add("hidden");
+			foldButton.classList.add("hidden");
+			amountSlider.classList.add("hidden");
+			sliderOutput.classList.add("hidden");
 
 			const decision = chooseBotAction(player, {
 				currentBet,
@@ -532,6 +537,10 @@ function startBettingRound() {
 		// remove previous highlight
 		document.querySelectorAll(".seat").forEach(s => s.classList.remove("active"));
 		player.seat.classList.add("active");
+		actionButton.classList.remove("hidden");
+		foldButton.classList.remove("hidden");
+		amountSlider.classList.remove("hidden");
+		sliderOutput.classList.remove("hidden");
 
 		const needToCall = currentBet - player.roundBet;
 
@@ -543,7 +552,7 @@ function startBettingRound() {
 			// Step equals big blind (or entire stack if less than big blind)
 			amountSlider.step = (player.chips >= bigBlind) ? bigBlind : player.chips;
 			amountSlider.value = 0;
-			amountSlider.nextElementSibling.value = 0;
+			sliderOutput.value = 0;
 		} else {
 			// Determine minimum bet as the lesser of needToCall and player chips
 			const minBet = Math.min(needToCall, player.chips);
@@ -551,7 +560,7 @@ function startBettingRound() {
 			amountSlider.max = player.chips;
 			amountSlider.step = 10;
 			amountSlider.value = minBet;
-			amountSlider.nextElementSibling.value = minBet;
+			sliderOutput.value = minBet;
 		}
 
 		// Update button label on slider input
@@ -891,6 +900,7 @@ function doShowdown() {
 		animateChipTransfer(t.amount, t.player, () => runTransfers(index + 1));
 	}
 	runTransfers(0);
+	actionButton.classList.remove("hidden");
 	return; // exit doShowdown early because UI flow continues in animation
 }
 
