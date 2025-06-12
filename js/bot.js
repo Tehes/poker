@@ -30,8 +30,8 @@ const MIN_HANDS_FOR_WEIGHT = 10;
 // Controls how quickly stat influence grows as more hands are played
 const WEIGHT_GROWTH = 10;
 // Detect opponents that shove frequently
-const ALLIN_HAND_PREFLOP = 0.9;
-const ALLIN_HAND_POSTFLOP = 0.6;
+const ALLIN_HAND_PREFLOP = 0.85;
+const ALLIN_HAND_POSTFLOP = 0.5;
 
 const botActionQueue = [];
 let processingBotActions = false;
