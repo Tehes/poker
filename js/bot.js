@@ -280,6 +280,8 @@ export function chooseBotAction(player, ctx) {
     const potOdds = needToCall / (pot + needToCall);
     // Compute risk as fraction of stack required
     const stackRatio = needToCall / player.chips;
+    // Stack-to-pot ratio used for shove decisions
+    const spr = player.chips / Math.max(1, pot + needToCall);
     const blindLevel = { small: smallBlind, big: bigBlind };
     // Check if bot is allowed to raise this round
     const canRaise = raisesThisRound < MAX_RAISES_PER_ROUND && player.chips > blindLevel.big;
@@ -356,10 +358,7 @@ export function chooseBotAction(player, ctx) {
     // Normalize strength to [0,1]
     const strengthRatio = strength / 10;
 
-    // Calculate dynamic thresholds for raising
-    const raiseBase = preflop
-        ? Math.max(blindLevel.big * (strength >= 8 ? 3 : 2), pot / 2)
-        : Math.max(blindLevel.big * 2, pot * 0.6);
+    // Base thresholds for raising depend on stage and pot size
     // When only a few opponents remain, play slightly more aggressively
     const oppAggAdj =
         activeOpponents < OPPONENT_THRESHOLD
@@ -396,6 +395,61 @@ export function chooseBotAction(player, ctx) {
     }
 
     let bluffChance = 0;
+
+    function valueBetSize() {
+        let base;
+        if (preflop) {
+            base = 0.55;
+            if (strengthRatio >= 0.9) base += 0.15;
+            base += activeOpponents * 0.04;
+            base += (1 - positionFactor) * 0.05;
+            if (positionFactor < 0.3 && strengthRatio >= 0.8) {
+                base += 0.1; // bigger open from early position
+            }
+        } else {
+            base = textureRisk > 0.6 ? 0.7 : textureRisk > 0.3 ? 0.6 : 0.45;
+            if (strengthRatio > 0.95) base += 0.1; // polarise with very strong hands
+            base += activeOpponents * 0.03;
+            base += (1 - positionFactor) * 0.05;
+        }
+        if (spr < 2) base += 0.1;
+        else if (spr < 4) base += 0.05;
+        else if (spr > 6) base -= 0.05;
+        const rand = Math.random() * 0.2 - 0.1;
+        const factor = Math.min(1, Math.max(0.35, base + rand));
+        return roundTo10(Math.min(player.chips, (pot + needToCall) * factor));
+    }
+
+    function bluffBetSize() {
+        let base = 0.25 + textureRisk * 0.05;
+        base += activeOpponents * 0.02;
+        base += (1 - positionFactor) * 0.03;
+        if (spr < 3) base += 0.05;
+        else if (spr > 5) base -= 0.05;
+        const rand = Math.random() * 0.08 - 0.04;
+        const factor = Math.min(0.45, Math.max(0.2, base + rand));
+        return roundTo10(Math.min(player.chips, (pot + needToCall) * factor));
+    }
+
+    function protectionBetSize() {
+        let base = 0.45 + textureRisk * 0.25;
+        base += activeOpponents * 0.03;
+        base += (1 - positionFactor) * 0.04;
+        if (spr < 3) base += 0.1;
+        else if (spr > 5) base -= 0.05;
+        const rand = Math.random() * 0.1 - 0.05;
+        const factor = Math.min(0.8, Math.max(0.35, base + rand));
+        return roundTo10(Math.min(player.chips, (pot + needToCall) * factor));
+    }
+
+    function overBetSize() {
+        let base = 1.2 - textureRisk * 0.1;
+        base += activeOpponents * 0.05;
+        if (spr < 2) base += 0.3;
+        const rand = Math.random() * 0.15 - 0.05;
+        const factor = Math.max(1.1, Math.min(1.5, base + rand));
+        return roundTo10(Math.min(player.chips, (pot + needToCall) * factor));
+    }
 
     // Adjust based on observed opponent tendencies
     const opponents = players.filter(p => p !== player);
@@ -443,60 +497,54 @@ export function chooseBotAction(player, ctx) {
      */
     let decision;
 
-    if (needToCall <= 0) {
-        if (canRaise && strength >= raiseThreshold) {
-            let raiseAmt = Math.min(
-                player.chips,
-                Math.max(currentBet + blindLevel.big, raiseBase * (1 + positionFactor * 0.5))
-            );
-            raiseAmt = Math.min(player.chips, roundTo10(raiseAmt));
-            // Strength tie-breaker:
-            // When hand strength is within STRENGTH_TIE_DELTA of the raise threshold,
-            // randomly choose between 'check' and 'raise' to break ties.
+    // Automatic shove logic when stacks are shallow
+    if (spr <= 1.2 && strengthRatio >= 0.65) {
+        decision = { action: "raise", amount: player.chips };
+    } else if (preflop && player.chips <= blindLevel.big * 10 && strengthRatio >= 0.75) {
+        decision = { action: "raise", amount: player.chips };
+    }
+
+    if (!decision) {
+        if (needToCall <= 0) {
+            if (canRaise && strength >= raiseThreshold) {
+                let raiseAmt = valueBetSize();
+                raiseAmt = Math.max(currentBet + blindLevel.big, raiseAmt);
+                if (Math.abs(strength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
+                    decision = Math.random() < 0.5
+                        ? { action: "check" }
+                        : { action: "raise", amount: raiseAmt };
+                } else {
+                    decision = { action: "raise", amount: raiseAmt };
+                }
+            } else {
+                decision = { action: "check" };
+            }
+        } else if (canRaise && strength >= raiseThreshold && stackRatio <= 1 / 3) {
+            let raiseAmt = protectionBetSize();
+            raiseAmt = Math.max(currentBet + blindLevel.big, raiseAmt);
             if (Math.abs(strength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
+                const callAmt = Math.min(player.chips, needToCall);
+                const alt = (strengthRatio * aggressiveness >= potOdds && stackRatio <= (preflop ? 0.5 : 0.7))
+                    ? { action: "call", amount: callAmt }
+                    : { action: "fold" };
                 decision = Math.random() < 0.5
-                    ? { action: "check" }
-                    : { action: "raise", amount: raiseAmt };
+                    ? { action: "raise", amount: raiseAmt }
+                    : alt;
             } else {
                 decision = { action: "raise", amount: raiseAmt };
             }
-        } else {
-            decision = { action: "check" };
-        }
-    } else if (canRaise && strength >= raiseThreshold && stackRatio <= 1 / 3) {
-        let raiseAmt = Math.min(
-            player.chips,
-            Math.max(currentBet + blindLevel.big, raiseBase * (1 + positionFactor * 0.5))
-        );
-        raiseAmt = Math.min(player.chips, roundTo10(raiseAmt));
-        // Raise vs. alternative tie-breaker:
-        // When strength is near the threshold in this branch,
-        // randomly choose between 'raise' and the alternative (call or fold).
-        if (Math.abs(strength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
+        } else if (strengthRatio * aggressiveness >= potOdds && stackRatio <= (preflop ? 0.5 : 0.7)) {
             const callAmt = Math.min(player.chips, needToCall);
-            const alt = (strengthRatio * aggressiveness >= potOdds && stackRatio <= (preflop ? 0.5 : 0.7))
-                ? { action: "call", amount: callAmt }
-                : { action: "fold" };
-            decision = Math.random() < 0.5
-                ? { action: "raise", amount: raiseAmt }
-                : alt;
+            if (Math.abs(strengthRatio * aggressiveness - potOdds) <= ODDS_TIE_DELTA) {
+                decision = Math.random() < 0.5
+                    ? { action: "call", amount: callAmt }
+                    : { action: "fold" };
+            } else {
+                decision = { action: "call", amount: callAmt };
+            }
         } else {
-            decision = { action: "raise", amount: raiseAmt };
+            decision = { action: "fold" };
         }
-    } else if (strengthRatio * aggressiveness >= potOdds && stackRatio <= (preflop ? 0.5 : 0.7)) {
-        const callAmt = Math.min(player.chips, needToCall);
-        // Odds tie-breaker:
-        // When adjusted strength (strengthRatio * aggressiveness) is within ODDS_TIE_DELTA of pot odds,
-        // randomly decide between 'call' and 'fold' to break ties.
-        if (Math.abs(strengthRatio * aggressiveness - potOdds) <= ODDS_TIE_DELTA) {
-            decision = Math.random() < 0.5
-                ? { action: "call", amount: callAmt }
-                : { action: "fold" };
-        } else {
-            decision = { action: "call", amount: callAmt };
-        }
-    } else {
-        decision = { action: "fold" };
     }
 
     // If facing any all-in, do not fold always
@@ -511,13 +559,23 @@ export function chooseBotAction(player, ctx) {
     let isBluff = false;
     if (bluffChance > 0 && canRaise && (decision.action === "check" || decision.action === "fold") && !facingAllIn) {
         if (Math.random() < bluffChance) {
-            const bluffAmt = Math.min(
-                player.chips,
-                Math.max(currentBet + blindLevel.big, blindLevel.big * 2)
-            );
-            decision = { action: "raise", amount: roundTo10(bluffAmt) };
+            const bluffAmt = Math.max(currentBet + blindLevel.big, bluffBetSize());
+            decision = { action: "raise", amount: bluffAmt };
             isBluff = true;
         }
+    }
+
+    if (!preflop && decision.action === "raise" && strengthRatio >= 0.95 && spr <= 2 && Math.random() < 0.3) {
+        decision.amount = Math.max(decision.amount, overBetSize());
+    }
+
+    if (!preflop && strengthRatio >= 0.9 && decision.action === "raise" && Math.random() < 0.3) {
+        decision = { action: "check" };
+    }
+
+    if (!preflop && currentBet === 0 && decision.action === "check" && Math.random() < 0.3) {
+        const betAmt = protectionBetSize();
+        decision = { action: "raise", amount: Math.max(blindLevel.big, betAmt) };
     }
 
     const h1 = formatCard(player.cards[0].dataset.value);
