@@ -900,7 +900,6 @@ function doShowdown() {
 		animateChipTransfer(t.amount, t.player, () => runTransfers(index + 1));
 	}
 	runTransfers(0);
-	actionButton.classList.remove("hidden");
 	return; // exit doShowdown early because UI flow continues in animation
 }
 
