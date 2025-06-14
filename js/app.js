@@ -24,7 +24,7 @@ let dealerOrbitCount = -1;
 let gameStarted = false;
 let openCardsMode = false;
 
-const MAX_ITEMS = 5;
+const MAX_ITEMS = 6;
 const notifArr = [];
 const pendingNotif = [];
 let isNotifProcessing = false;
@@ -295,7 +295,7 @@ function preFlop() {
 		p.folded = false;
 		p.allIn = false;
 		p.totalBet = 0;
-		p.seat.classList.remove("folded");
+		p.seat.classList.remove("folded", "called", "raised", "checked", "allin");
 	});
 
 	// Remove any previous winner highlighting
@@ -404,6 +404,9 @@ function dealCommunityCards(amount) {
 }
 
 function startBettingRound() {
+	// Clear action indicators from the previous betting round
+	players.forEach(p => p.seat.classList.remove("checked", "called", "raised", "allin"));
+
 	// ------------------------------------------------------------------
 	// EARLY EXIT: If zero or only one player still has chips to act,
 	// no betting round is possible. Skip straight to the next phase.
@@ -501,6 +504,7 @@ function startBettingRound() {
 				notifyPlayerAction(player, "fold");
 				player.qr.hide();
 				player.seat.classList.add("folded");
+				player.seat.classList.remove("checked", "called", "raised", "allin");
 			} else if (decision.action === "check") {
 				notifyPlayerAction(player, "check");
 			} else if (decision.action === "call") {
@@ -952,15 +956,19 @@ function notifyPlayerAction(player, action, amount) {
 			msg = `${player.name} folded.`;
 			break;
 		case "check":
+			player.seat.classList.add("checked");
 			msg = `${player.name} checked.`;
 			break;
 		case "call":
+			player.seat.classList.add("called");
 			msg = `${player.name} called ${amount}.`;
 			break;
 		case "raise":
+			player.seat.classList.add("raised");
 			msg = `${player.name} raised to ${amount}.`;
 			break;
 		case "allin":
+			player.seat.classList.add("allin");
 			msg = `${player.name} is all-in.`;
 			break;
 		default:

@@ -311,6 +311,22 @@ h3:focus::before {
     content: "❌ ";
 }
 
+.checked h3::before {
+    content: "✅ ";
+}
+
+.called h3::before {
+    content: "📞 ";
+}
+
+.raised h3::before {
+    content: "⬆️ ";
+}
+
+.allin h3::before {
+    content: "💥 ";
+}
+
 .winner h3 {
     border: 3px solid var(--yellow);
 }
