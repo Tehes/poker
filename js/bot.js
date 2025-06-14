@@ -5,6 +5,8 @@
  * action selection based on game context, and managing delayed execution of bot actions.
  */
 
+import { Card, Hand } from './pokersolver.js';
+
 /* ===========================
    Configuration
 ========================== */

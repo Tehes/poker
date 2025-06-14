@@ -2,10 +2,9 @@
  * pokersolver v2.1.2
  * Copyright (c) 2016, James Simpson of GoldFire Studios
  * http://goldfirestudios.com
- */
+*/
 
-(function() {
-  'use strict';
+'use strict';
 
   // NOTE: The 'joker' will be denoted with a value of 'O' and any suit.
   var values = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
@@ -1824,39 +1823,27 @@
     }
   }
 
-  function exportToGlobal(global) {
-    global.Card = Card;
-    global.Hand = Hand;
-    global.Game = Game;
-    global.RoyalFlush = RoyalFlush;
-    global.NaturalRoyalFlush = NaturalRoyalFlush;
-    global.WildRoyalFlush = WildRoyalFlush;
-    global.FiveOfAKind = FiveOfAKind;
-    global.StraightFlush = StraightFlush;
-    global.FourOfAKindPairPlus = FourOfAKindPairPlus;
-    global.FourOfAKind = FourOfAKind;
-    global.FourWilds = FourWilds;
-    global.TwoThreeOfAKind = TwoThreeOfAKind;
-    global.ThreeOfAKindTwoPair = ThreeOfAKindTwoPair;
-    global.FullHouse = FullHouse;
-    global.Flush = Flush;
-    global.Straight = Straight;
-    global.ThreeOfAKind = ThreeOfAKind;
-    global.ThreePair = ThreePair;
-    global.TwoPair = TwoPair;
-    global.OnePair = OnePair;
-    global.HighCard = HighCard;
-    global.PaiGowPokerHelper = PaiGowPokerHelper;
-  }
-
-  // Export the classes for node.js use.
-  if (typeof exports !== 'undefined') {
-    exportToGlobal(exports);
-  }
-
-  // Add the classes to the window for browser use.
-  if (typeof window !== 'undefined') {
-    exportToGlobal(window);
-  }
-
-})();
+export {
+  Card,
+  Hand,
+  Game,
+  RoyalFlush,
+  NaturalRoyalFlush,
+  WildRoyalFlush,
+  FiveOfAKind,
+  StraightFlush,
+  FourOfAKindPairPlus,
+  FourOfAKind,
+  FourWilds,
+  TwoThreeOfAKind,
+  ThreeOfAKindTwoPair,
+  FullHouse,
+  Flush,
+  Straight,
+  ThreeOfAKind,
+  ThreePair,
+  TwoPair,
+  OnePair,
+  HighCard,
+  PaiGowPokerHelper
+};
