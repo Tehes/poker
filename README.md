@@ -1,34 +1,31 @@
 # Digital Poker Table
 
-A browser-based, zero-setup poker table to play Texas Hold'em with friends using
-only your devices. Scan a QR code to see your hole cards privately on your
-phone, while the shared table (e.g., on a tablet or laptop) handles community
-cards, blinds, pot, and betting rounds.
+A browser-based, zero-setup poker table to play Texas Hold'em with friends using only your devices.
+Scan a QR code to see your hole cards privately on your phone, while the shared table (e.g., on a
+tablet or laptop) handles community cards, blinds, pot, and betting rounds.
 
 ---
 
 ## 🎯 Key Features
 
-- **No Setup Required**: Just open the table in your browser and start playing.
-  No app install, no sign-ups.
-- **Device Pairing via QR**: Each player scans a code to privately view their
-  cards on their phone.
-- **Automatic Game Logic**: Handles blinds, bets, pots, side pots, and showdown
-  evaluations.
-- **Progressive Blinds**: Blinds automatically double every 2 complete dealer
-  orbits to keep the action going.
+- **No Setup Required**: Just open the table in your browser and start playing. No app install, no
+  sign-ups.
+- **Device Pairing via QR**: Each player scans a code to privately view their cards on their phone.
+- **Automatic Game Logic**: Handles blinds, bets, pots, side pots, and showdown evaluations.
+- **Progressive Blinds**: Blinds automatically double every 2 complete dealer orbits to keep the
+  action going.
 - **Side Pot Support**: Accurately resolves complex all-in scenarios.
 - **Dynamic Positioning**: Turn order and bot strategy adapt as players fold.
 - **Supports All Table Sizes**: From heads-up to full-ring games.
 - **Responsive Design**: Optimized for tablets, phones, and desktops.
 - **Fast & Offline-Ready**: Loads fast, works without internet once cached.
 - **Built‑in Bots**: Empty player slots are automatically filled with bots.
-- **Bot Intelligence**: Bots evaluate hand strength, pot odds, stack size, and
-  position to make informed decisions.
-- **Adaptive Behavior**: Bots track how often opponents fold, detect frequent
-  all-ins, and adjust their bluffing frequency accordingly.
-- **Context Awareness**: Bots recognize top pair, overpairs, and draw potential
-  to decide between check, call, raise, or fold.
+- **Bot Intelligence**: Bots evaluate hand strength, pot odds, stack size, and position to make
+  informed decisions.
+- **Adaptive Behavior**: Bots track how often opponents fold, detect frequent all-ins, and adjust
+  their bluffing frequency accordingly.
+- **Context Awareness**: Bots recognize top pair, overpairs, and draw potential to decide between
+  check, call, raise, or fold.
 
 ---
 
@@ -42,6 +39,18 @@ cards, blinds, pot, and betting rounds.
 3. Start the game — each player scans their QR code to get their cards.
 
 4. The table handles dealing, blinds, betting, and showdown.
+
+---
+
+## 📶 Offline Use
+
+Once the table has been loaded online for the first time, it also works completely offline.
+
+- **Load once, then go offline** – Open the page once while you have an internet connection; all
+  assets (HTML, JS, CSS, card SVGs, fonts) are stored permanently in your browser cache.
+- **Service Worker** – Serves these files from the cache whenever the network is unavailable.
+- **Updates** – A new version is installed quietly in the background; simply refresh the page to
+  switch to the latest build.
 
 ---
 
@@ -63,12 +72,11 @@ cards, blinds, pot, and betting rounds.
 - Game flow logic ensures proper handling of:
 
   - **Dealer rotation** and automatic blind posting
-  - **Progressive blinds** that double every 2 complete orbits (e.g., 10/20 →
-    20/40 → 40/80)
+  - **Progressive blinds** that double every 2 complete orbits (e.g., 10/20 → 20/40 → 40/80)
   - Side pots and all-ins
   - Automatic showdown resolution
-  - **Bot Support**: Empty seats without a player name are assigned bots that
-    play automatically using simple hand-strength logic.
+  - **Bot Support**: Empty seats without a player name are assigned bots that play automatically
+    using simple hand-strength logic.
 
 ---
 
@@ -77,8 +85,7 @@ cards, blinds, pot, and betting rounds.
 - **Local-first**: Works without network once loaded.
 - **No back-end**: All state is client-side only.
 - **Zero footprint**: No accounts, no tracking, no cloud sync.
-- **Focus on flow**: The app enforces rules and turn order so you can focus on
-  the game.
+- **Focus on flow**: The app enforces rules and turn order so you can focus on the game.
 - **Tournament-style**: Progressive blinds keep games from stalling.
 
 ---

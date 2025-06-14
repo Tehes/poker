@@ -1,4 +1,4 @@
-const CACHE_NAME = "--poker-cache-v1"; // Name of the dynamic cache
+const CACHE_NAME = "--poker-cache-v2"; // Name of the dynamic cache
 
 // Install event
 self.addEventListener("install", () => {
