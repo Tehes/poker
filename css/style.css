@@ -398,6 +398,10 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
     color: var(--yellow);
 }
 
+.chips .total {
+    margin-right: 2vmin;
+}
+
 .hole-cards .blind-icons {
     width: 45px;
     border-radius: 50%;
