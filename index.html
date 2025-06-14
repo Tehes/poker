@@ -126,11 +126,11 @@
 			</section>
 			<section class="actions">
 				<button type="button" id="start-button" name="button">Start</button>
-				<button type="button" id="fold-button" name="button">Fold</button>
-				<button type="button" id="action-button" name="button">Check</button>
-				<input type="range" id="amount-slider" name="amount" value="0" min="0" max="2000" step="10"
-					oninput="this.nextElementSibling.value = this.value">
-				<output>0</output>
+				<button type="button" id="fold-button" class="hidden" name="button">Fold</button>
+				<button type="button" id="action-button" class="hidden" name="button">Check</button>
+				<input type="range" id="amount-slider" class="hidden" name="amount" value="0" min="0" max="2000"
+					step="10" oninput="this.nextElementSibling.value = this.value">
+				<output class="hidden">0</output>
 			</section>
 		</div>
 	</main>

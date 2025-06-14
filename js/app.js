@@ -838,11 +838,6 @@ function doShowdown() {
 		});
 
 		// ---- Build detailed payout message for this pot ----
-		const winnerDescriptions = winners.map(w => {
-			const e = spHands.find(h => h.handObj === w);
-			return `${e.player.name} (${w.name})`;
-		}).join(" & ");
-
 		if (winners.length === 1 && sidePots.length === 1) {
 			// Only one pot in the hand and a single winner → concise wording
 			const entry = spHands.find(h => h.handObj === winners[0]);
@@ -892,7 +887,12 @@ function doShowdown() {
 			pot = 0;
 			document.getElementById("pot").textContent = pot;
 
+			players.forEach(p => { p.seat.classList.remove("active"); });
 			startButton.textContent = "New Round";
+			foldButton.classList.add("hidden");
+			actionButton.classList.add("hidden");
+			amountSlider.classList.add("hidden");
+			sliderOutput.classList.add("hidden");
 			startButton.classList.remove("hidden");
 			return;
 		}
