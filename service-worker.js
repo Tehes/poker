@@ -1,9 +1,33 @@
-const CACHE_NAME = "--poker-cache-v2"; // Name of the dynamic cache
+const CACHE_NAME = "--poker-cache-v5"; // Name of the dynamic cache
 
-// Install event
-self.addEventListener("install", () => {
-	// Skip waiting to activate the service worker immediately
-	self.skipWaiting();
+// Build list of all card SVGs according to their actual filenames, e.g. "AS.svg", "TD.svg".
+const SUITS = ["C", "D", "H", "S"];
+const RANKS = ["A", "K", "Q", "J", "T", "9", "8", "7", "6", "5", "4", "3", "2"];
+
+const CORE_ASSETS = [
+	"./", // resolves to index.html
+	"./index.html",
+	"./js/app.js",
+	"./css/style.css",
+	"./cards/1B.svg",
+	"./icons/rotate.svg",
+	"./icons/dealer.svg",
+	"./icons/small-blind.svg",
+	"./icons/big-blind.svg",
+	"./icons/close.svg",
+	"./manifest.json",
+	"./js/bot.js",
+	"./js/pokersolver.js",
+	...SUITS.flatMap((suit) => RANKS.map((rank) => `./cards/${rank}${suit}.svg`)),
+];
+
+// Install event – precache core assets so that everything required for a round of poker
+// is already available before the player goes offline.
+self.addEventListener("install", (event) => {
+	event.waitUntil(
+		caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS)),
+	);
+	self.skipWaiting(); // activate immediately
 });
 
 // Fetch event
@@ -12,16 +36,19 @@ self.addEventListener("fetch", (event) => {
 	if (event.request.method === "GET") {
 		// Respond with cache-first strategy and stale-while-revalidate
 		event.respondWith(
-			caches.match(event.request).then((cachedResponse) => {
+			caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
 				if (cachedResponse) {
 					// Return cached response immediately and update in the background
 					event.waitUntil(
-						fetch(event.request).then((networkResponse) => {
-							// Open the cache and update the requested resource
-							caches.open(CACHE_NAME).then((cache) => {
-								cache.put(event.request, networkResponse.clone());
-							});
-						}),
+						fetch(event.request)
+							.then((networkResponse) =>
+								caches.open(CACHE_NAME).then((cache) => {
+									cache.put(event.request, networkResponse.clone());
+								})
+							)
+							// If we're offline or the update fails, swallow the error so we don't get
+							// an unhandled promise rejection in the console.
+							.catch(() => {}),
 					);
 					return cachedResponse; // Return stale (cached) response
 				} else {
@@ -32,9 +59,21 @@ self.addEventListener("fetch", (event) => {
 							cache.put(event.request, networkResponse.clone());
 							return networkResponse; // Return the fresh network response
 						});
-					}).catch(() => {
-						// Optionally handle offline scenario for dynamic requests
-					});
+					})
+						.catch(() => {
+							// Offline fallback: try cache again; if nothing found and it's a navigation request,
+							// return the cached index.html so the SPA can render.
+							return caches.match(event.request, { ignoreSearch: true }).then(
+								(resp) => {
+									if (resp) return resp;
+									if (event.request.mode === "navigate") {
+										return caches.match("./");
+									}
+									// As a last resort, give an empty 503 response to silence uncaught promise rejections
+									return new Response("", { status: 503, statusText: "Offline" });
+								},
+							);
+						});
 				}
 			}),
 		);
