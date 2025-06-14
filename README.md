@@ -50,7 +50,7 @@ cards, blinds, pot, and betting rounds.
 - **HTML/CSS/JavaScript** only – no frameworks
 - **Vanilla JS Game Engine**
 - **QR Code API** – generates links to reveal hole cards on phone
-- **pokersolver.js** – for hand evaluation at showdown
+- **pokersolver** (ES module) – for hand evaluation at showdown
 
 ---
 
