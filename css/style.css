@@ -200,9 +200,9 @@ TABLE-MIDDLE
 
 .infos {
     display: flex;
-    gap: 20px;
+    gap: 2vmin;
     justify-content: center;
-    width: 100%;
+    width: 96vmin;
 }
 
 .infos div {
@@ -213,17 +213,16 @@ TABLE-MIDDLE
     border-radius: 30px;
     min-width: 85px;
     text-align: center;
-    flex: 0 1 auto;
+    flex: 0 0 auto;
 }
 
 #notification {
     color: var(--blue-lightest);
-    flex: 1 0 auto;
+    flex: 1 1 auto;
     text-align: left;
     text-overflow: ellipsis;
     overflow-x: hidden;
     white-space: nowrap;
-    max-width: 70vmin;
 }
 
 #notification span::after {
@@ -407,15 +406,21 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
 }
 
 .chips {
-    text-align: center;
+    display: flex;
+    justify-content: center;
+    gap: 2vmin;
 }
 
 .chips .bet {
     color: var(--yellow);
 }
 
-.chips .total {
-    margin-right: 2vmin;
+.chips .bet::before {
+    content: "🎯 ";
+}
+
+.chips .total::before {
+    content: "💰 ";
 }
 
 .hole-cards .blind-icons {
