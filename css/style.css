@@ -120,7 +120,7 @@ GRID
 */
 main {
     width: 100vw;
-    height: 100vh;
+    height: 100dvh;
     place-items: center;
     display: grid;
     grid-template-columns: repeat(3, 1fr);
