@@ -32,55 +32,53 @@ self.addEventListener("install", (event) => {
 
 // Fetch event
 self.addEventListener("fetch", (event) => {
-	// Only handle GET requests
-	if (event.request.method === "GET") {
-		// Respond with cache-first strategy and stale-while-revalidate
-		event.respondWith(
-			caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
-				if (cachedResponse) {
-					// Return cached response immediately and update in the background
-					event.waitUntil(
-						fetch(event.request)
-							.then((networkResponse) =>
-								caches.open(CACHE_NAME).then((cache) => {
-									cache.put(event.request, networkResponse.clone());
-								})
-							)
-							// If we're offline or the update fails, swallow the error so we don't get
-							// an unhandled promise rejection in the console.
-							.catch(() => {}),
-					);
-					return cachedResponse; // Return stale (cached) response
-				} else {
-					// If not in cache, fetch from network and cache dynamically
-					return fetch(event.request).then((networkResponse) => {
-						return caches.open(CACHE_NAME).then((cache) => {
-							// Cache the new network response dynamically
-							cache.put(event.request, networkResponse.clone());
-							return networkResponse; // Return the fresh network response
-						});
-					})
-						.catch(() => {
-							// Offline fallback: try cache again; if nothing found and it's a navigation request,
-							// return the cached index.html so the SPA can render.
-							return caches.match(event.request, { ignoreSearch: true }).then(
-								(resp) => {
-									if (resp) return resp;
-									if (event.request.mode === "navigate") {
-										return caches.match("./");
-									}
-									// As a last resort, give an empty 503 response to silence uncaught promise rejections
-									return new Response("", { status: 503, statusText: "Offline" });
-								},
-							);
-						});
-				}
-			}),
-		);
-	} else {
-		// For non-GET requests, just fetch from the network
-		event.respondWith(fetch(event.request));
+	// Ignore everything that's not a simple GET (POST, WebSocket, etc.)
+	if (event.request.method !== "GET") {
+		return; // do not intercept non‑GET requests
 	}
+	// Respond with cache-first strategy and stale-while-revalidate
+	event.respondWith(
+		caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
+			if (cachedResponse) {
+				// Return cached response immediately and update in the background
+				event.waitUntil(
+					fetch(event.request)
+						.then((networkResponse) =>
+							caches.open(CACHE_NAME).then((cache) => {
+								cache.put(event.request, networkResponse.clone());
+							})
+						)
+						// If we're offline or the update fails, swallow the error so we don't get
+						// an unhandled promise rejection in the console.
+						.catch(() => {}),
+				);
+				return cachedResponse; // Return stale (cached) response
+			} else {
+				// If not in cache, fetch from network and cache dynamically
+				return fetch(event.request).then((networkResponse) => {
+					return caches.open(CACHE_NAME).then((cache) => {
+						// Cache the new network response dynamically
+						cache.put(event.request, networkResponse.clone());
+						return networkResponse; // Return the fresh network response
+					});
+				})
+					.catch(() => {
+						// Offline fallback: try cache again; if nothing found and it's a navigation request,
+						// return the cached index.html so the SPA can render.
+						return caches.match(event.request, { ignoreSearch: true }).then(
+							(resp) => {
+								if (resp) return resp;
+								if (event.request.mode === "navigate") {
+									return caches.match("./");
+								}
+								// As a last resort, give an empty 503 response to silence uncaught promise rejections
+								return new Response("", { status: 503, statusText: "Offline" });
+							},
+						);
+					});
+			}
+		}),
+	);
 });
 
 // Activate event to clear old caches
