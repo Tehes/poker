@@ -305,22 +305,27 @@ h3:focus::before {
 
 .folded h3::before {
     content: "❌ ";
+    font-size: 0.9rem;
 }
 
 .checked h3::before {
     content: "✅ ";
+    font-size: 0.95rem;
 }
 
 .called h3::before {
     content: "📞 ";
+    font-size: 1rem;
 }
 
 .raised h3::before {
     content: "⬆️ ";
+    font-size: 0.95rem;
 }
 
 .allin h3::before {
     content: "💥 ";
+    font-size: 1rem;
 }
 
 .winner h3 {
