@@ -405,7 +405,7 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
     aspect-ratio: 1/1;
     min-width: 55px;
     z-index: 2000;
-    border-radius: 50%;
+    border-radius: 1vmin;
 }
 
 .chips {
@@ -486,7 +486,7 @@ MEDIA QUERIES
         gap: 0.5vmin;
     }
 
-    h3::before {
+    h3:not(:empty):before {
         display: none;
     }
 }
