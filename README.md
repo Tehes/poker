@@ -1,5 +1,7 @@
 # Digital Poker Table
 
+![Demo screenshot](img/demo.jpeg)
+
 A browser-based, zero-setup poker table to play Texas Hold'em with friends using only your devices.
 Scan a QR code to see your hole cards privately on your phone, while the shared table (e.g., on a
 tablet or laptop) handles community cards, blinds, pot, and betting rounds.
