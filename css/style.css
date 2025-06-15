@@ -330,6 +330,7 @@ h3:focus::before {
 
 .winner h3 {
     border: 3px solid var(--yellow);
+    font-size: 1rem;
 }
 
 
@@ -426,12 +427,14 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
 }
 
 .hole-cards .blind-icons {
-    width: 45px;
+    width: 4vmin;
+    min-width: 35px;
     border-radius: 50%;
     background-color: var(--yellow);
     position: absolute;
     right: 0px;
     bottom: 0px;
+    z-index: 1100;
 }
 
 .hole-cards .close {
@@ -481,5 +484,9 @@ MEDIA QUERIES
         flex-direction: column;
         align-items: center;
         gap: 0.5vmin;
+    }
+
+    h3::before {
+        display: none;
     }
 }
