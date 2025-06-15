@@ -25,7 +25,7 @@ let dealerOrbitCount = -1;
 let gameStarted = false;
 let openCardsMode = false;
 
-const MAX_ITEMS = 7;
+const MAX_ITEMS = 8;
 const notifArr = [];
 const pendingNotif = [];
 let isNotifProcessing = false;

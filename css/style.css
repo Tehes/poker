@@ -12,6 +12,7 @@
     --shadow-light: rgba(0, 0, 0, 0.2) 0px 3px 8px;
     --yellow: hsl(40, 90%, 60%);
     --yellow-active: hsl(40, 100%, 50%);
+
 }
 
 * {
@@ -130,12 +131,8 @@ main {
 
 main .seat {
     width: 22vmin;
-    min-width: 110px;
+    min-width: 120px;
     transition: all 0.5s;
-}
-
-main .seat .hole-cards img {
-    transition: all 0.3s;
 }
 
 main .seat .hole-cards img {
@@ -195,7 +192,7 @@ TABLE-MIDDLE
     align-items: center;
     justify-content: center;
     gap: 3vh;
-    margin: 1vh 0;
+    margin: 3vh 0;
 }
 
 .infos {
@@ -352,13 +349,13 @@ h3:focus::before {
 
 .hole-cards img:nth-of-type(1) {
     transform: rotate(-2deg);
-    min-width: 80px;
+    min-width: 70px;
 }
 
 .hole-cards img:nth-of-type(2) {
     transform: rotate(3deg);
     position: absolute;
-    min-width: 80px;
+    min-width: 70px;
     right: 0;
 }
 
@@ -400,7 +397,7 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
     background-color: #fff;
     width: 8vmin;
     aspect-ratio: 1/1;
-    min-width: 65px;
+    min-width: 55px;
     z-index: 2000;
     border-radius: 50%;
 }
@@ -433,7 +430,8 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
 }
 
 .hole-cards .close {
-    width: 45px;
+    width: 4vmin;
+    min-width: 35px;
     border-radius: 50%;
     background-color: #fff;
     position: absolute;
@@ -470,5 +468,13 @@ MEDIA QUERIES
 
     img {
         filter: brightness(0.8);
+    }
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+    .chips {
+        flex-direction: column;
+        align-items: center;
+        gap: 0.5vmin;
     }
 }
