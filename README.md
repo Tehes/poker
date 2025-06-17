@@ -46,13 +46,15 @@ tablet or laptop) handles community cards, blinds, pot, and betting rounds.
 
 ## 📶 Offline Use
 
-Once the table has been loaded online for the first time, it also works completely offline.
+The table works fully offline after the first complete load.
 
-- **Load once, then go offline** – Open the page once while you have an internet connection; all
-  assets (HTML, JS, CSS, card SVGs, fonts) are stored permanently in your browser cache.
-- **Service Worker** – Serves these files from the cache whenever the network is unavailable.
-- **Updates** – A new version is installed quietly in the background; simply refresh the page to
-  switch to the latest build.
+- **First visit online** – When opened once with an internet connection, all necessary assets (HTML,
+  JS, CSS, SVGs, icons) are cached in the browser.
+- **Service Worker** – Handles cache-first requests and serves offline content when the network is
+  unavailable.
+- **No asset list needed** – All resources are cached dynamically as they are used.
+- **Updates** – A new version is fetched in the background if online; just refresh the page to
+  switch.
 
 ---
 
