@@ -610,7 +610,15 @@ function startBettingRound() {
 				notifyPlayerAction(player, "allin", bet);
 				foldButton.removeEventListener("click", onFold);
 				actionButton.removeEventListener("click", onAction);
-				return nextPlayer();
+				// Decide whether to continue the betting loop or advance the phase
+				if (cycles < players.length) {
+					nextPlayer();
+				} else if (anyUncalled()) {
+					nextPlayer();
+				} else {
+					setPhase();
+				}
+				return;
 			} else if (bet === needToCall) {
 				// Call
 				player.placeBet(bet);
@@ -629,7 +637,15 @@ function startBettingRound() {
 
 			foldButton.removeEventListener("click", onFold);
 			actionButton.removeEventListener("click", onAction);
-			nextPlayer();
+
+			// Decide whether to continue the betting loop or advance the phase
+			if (cycles < players.length) {
+				nextPlayer();
+			} else if (anyUncalled()) {
+				nextPlayer();
+			} else {
+				setPhase();
+			}
 		}
 		function onFold() {
 			player.folded = true;
@@ -641,7 +657,14 @@ function startBettingRound() {
 			amountSlider.removeEventListener("input", onSliderInput);
 			foldButton.removeEventListener("click", onFold);
 			actionButton.removeEventListener("click", onAction);
-			nextPlayer();
+			// Decide whether to continue the betting loop or advance the phase
+			if (cycles < players.length) {
+				nextPlayer();
+			} else if (anyUncalled()) {
+				nextPlayer();
+			} else {
+				setPhase();
+			}
 		}
 
 		foldButton.addEventListener("click", onFold);
@@ -895,28 +918,29 @@ function doShowdown() {
 		}
 	}
 
-	// Run queued chip transfers sequentially with animation
-	function runTransfers(index) {
-		if (index >= transferQueue.length) {
-			// All animations done – reset pot, show New Round button
-			pot = 0;
-			document.getElementById("pot").textContent = pot;
+	// run all chip transfers in parallel
+	Promise.all(
+		transferQueue.map((t) =>
+			new Promise((resolve) => {
+				animateChipTransfer(t.amount, t.player, resolve);
+			})
+		),
+	).then(() => {
+		// All animations done – reset pot, show New Round button
+		pot = 0;
+		document.getElementById("pot").textContent = pot;
 
-			players.forEach((p) => {
-				p.seat.classList.remove("active");
-			});
-			startButton.textContent = "New Round";
-			foldButton.classList.add("hidden");
-			actionButton.classList.add("hidden");
-			amountSlider.classList.add("hidden");
-			sliderOutput.classList.add("hidden");
-			startButton.classList.remove("hidden");
-			return;
-		}
-		const t = transferQueue[index];
-		animateChipTransfer(t.amount, t.player, () => runTransfers(index + 1));
-	}
-	runTransfers(0);
+		players.forEach((p) => {
+			p.seat.classList.remove("active");
+		});
+
+		startButton.textContent = "New Round";
+		foldButton.classList.add("hidden");
+		actionButton.classList.add("hidden");
+		amountSlider.classList.add("hidden");
+		sliderOutput.classList.add("hidden");
+		startButton.classList.remove("hidden");
+	});
 	return; // exit doShowdown early because UI flow continues in animation
 }
 
