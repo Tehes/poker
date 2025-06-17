@@ -297,8 +297,8 @@ function preflopHandScore(cardA, cardB) {
    Decision Engine: Bot Action Selection
 ========================== */
 export function chooseBotAction(player, ctx) {
-	const { currentBet, pot, smallBlind, bigBlind, raisesThisRound, currentPhaseIndex, players } =
-		ctx;
+        const { currentBet, pot, smallBlind, bigBlind, raisesThisRound, currentPhaseIndex, players, lastRaise } =
+                ctx;
 	// Determine amount needed to call the current bet
 	const needToCall = currentBet - player.roundBet;
 
@@ -527,8 +527,8 @@ export function chooseBotAction(player, ctx) {
 	if (!decision) {
 		if (needToCall <= 0) {
 			if (canRaise && strength >= raiseThreshold) {
-				let raiseAmt = valueBetSize();
-				raiseAmt = Math.max(currentBet + blindLevel.big, raiseAmt);
+                                let raiseAmt = valueBetSize();
+                                raiseAmt = Math.max(currentBet + lastRaise, raiseAmt);
 				if (Math.abs(strength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
 					decision = Math.random() < 0.5
 						? { action: "check" }
@@ -540,8 +540,8 @@ export function chooseBotAction(player, ctx) {
 				decision = { action: "check" };
 			}
 		} else if (canRaise && strength >= raiseThreshold && stackRatio <= 1 / 3) {
-			let raiseAmt = protectionBetSize();
-			raiseAmt = Math.max(currentBet + blindLevel.big, raiseAmt);
+                        let raiseAmt = protectionBetSize();
+                        raiseAmt = Math.max(currentBet + lastRaise, raiseAmt);
 			if (Math.abs(strength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
 				const callAmt = Math.min(player.chips, needToCall);
 				const alt =
@@ -584,7 +584,7 @@ export function chooseBotAction(player, ctx) {
 		(decision.action === "check" || decision.action === "fold") && !facingAllIn
 	) {
 		if (Math.random() < bluffChance) {
-			const bluffAmt = Math.max(currentBet + blindLevel.big, bluffBetSize());
+                        const bluffAmt = Math.max(currentBet + lastRaise, bluffBetSize());
 			decision = { action: "raise", amount: bluffAmt };
 			isBluff = true;
 		}
@@ -601,10 +601,10 @@ export function chooseBotAction(player, ctx) {
 		decision = { action: "check" };
 	}
 
-	if (!preflop && currentBet === 0 && decision.action === "check" && Math.random() < 0.3) {
-		const betAmt = protectionBetSize();
-		decision = { action: "raise", amount: Math.max(blindLevel.big, betAmt) };
-	}
+        if (!preflop && currentBet === 0 && decision.action === "check" && Math.random() < 0.3) {
+                const betAmt = protectionBetSize();
+                decision = { action: "raise", amount: Math.max(lastRaise, betAmt) };
+        }
 
 	const h1 = formatCard(player.cards[0].dataset.value);
 	const h2 = formatCard(player.cards[1].dataset.value);

@@ -59,6 +59,8 @@ let players = [];
 
 let smallBlind = 10;
 let bigBlind = 20;
+// Tracks the size of the most recent raise. Used to enforce minimum raise rules
+let lastRaise = bigBlind;
 
 /* --------------------------------------------------------------------------------------------------
 functions
@@ -257,9 +259,10 @@ function setBlinds() {
 	pot += sbBet + bbBet;
 	document.getElementById("pot").textContent = pot;
 	// Assign new blinds
-	players[sbIdx].assignRole("small-blind");
-	players[bbIdx].assignRole("big-blind");
-	currentBet = bigBlind;
+        players[sbIdx].assignRole("small-blind");
+        players[bbIdx].assignRole("big-blind");
+        currentBet = bigBlind;
+        lastRaise = bigBlind; // minimum raise equals the big blind at hand start
 }
 
 function dealCards() {
@@ -422,19 +425,21 @@ function startBettingRound() {
 
 	// 2) Determine start index
 	let startIdx;
-	if (currentPhaseIndex === 0) {
-		// UTG: first player left of big blind
-		const bbIdx = players.findIndex((p) => p.bigBlind);
-		startIdx = (bbIdx + 1) % players.length;
-	} else {
-		// first player left of dealer
-		const dealerIdx = players.findIndex((p) => p.dealer);
-		startIdx = (dealerIdx + 1) % players.length;
-		// Reset currentBet for post-Flop rounds
-		currentBet = 0;
-		// Reset bets only for post-flop rounds
-		players.forEach((p) => p.resetRoundBet());
-	}
+        if (currentPhaseIndex === 0) {
+                // UTG: first player left of big blind
+                const bbIdx = players.findIndex((p) => p.bigBlind);
+                startIdx = (bbIdx + 1) % players.length;
+        } else {
+                // first player left of dealer
+                const dealerIdx = players.findIndex((p) => p.dealer);
+                startIdx = (dealerIdx + 1) % players.length;
+                // Reset currentBet for post-Flop rounds
+                currentBet = 0;
+                // Reset minimum raise for new betting round
+                lastRaise = bigBlind;
+                // Reset bets only for post-flop rounds
+                players.forEach((p) => p.resetRoundBet());
+        }
 
 	raisesThisRound = 0;
 	let idx = startIdx;
@@ -491,16 +496,17 @@ function startBettingRound() {
 			amountSlider.classList.add("hidden");
 			sliderOutput.classList.add("hidden");
 
-			const decision = chooseBotAction(player, {
-				currentBet,
-				pot,
-				smallBlind,
-				bigBlind,
-				raisesThisRound,
-				currentPhaseIndex,
-				players,
-			});
-			const needToCall = currentBet - player.roundBet;
+                        const decision = chooseBotAction(player, {
+                                currentBet,
+                                pot,
+                                smallBlind,
+                                bigBlind,
+                                raisesThisRound,
+                                currentPhaseIndex,
+                                players,
+                                lastRaise,
+                        });
+                        const needToCall = currentBet - player.roundBet;
 
 			if (decision.action === "fold") {
 				player.folded = true;
@@ -510,21 +516,29 @@ function startBettingRound() {
 				player.seat.classList.remove("checked", "called", "raised", "allin");
 			} else if (decision.action === "check") {
 				notifyPlayerAction(player, "check");
-			} else if (decision.action === "call") {
-				const actual = player.placeBet(decision.amount);
-				pot += actual;
-				document.querySelector("#pot").textContent = pot;
-				notifyPlayerAction(player, "call", actual);
-			} else if (decision.action === "raise") {
-				const amt = player.placeBet(decision.amount);
-				if (amt > needToCall) {
-					currentBet = player.roundBet;
-				}
-				pot += amt;
-				document.getElementById("pot").textContent = pot;
-				notifyPlayerAction(player, "raise", player.roundBet);
-				raisesThisRound++;
-			}
+                        } else if (decision.action === "call") {
+                                const actual = player.placeBet(decision.amount);
+                                pot += actual;
+                                document.querySelector("#pot").textContent = pot;
+                                notifyPlayerAction(player, "call", actual);
+                        } else if (decision.action === "raise") {
+                                let bet = decision.amount;
+                                const minRaise = needToCall + lastRaise;
+                                let customMsg = null;
+                                if (bet < minRaise && bet < player.chips) {
+                                        bet = Math.min(player.chips, minRaise);
+                                        customMsg = `Min-raise is ${minRaise}. ${player.name}'s bet has been adjusted to ${bet}.`;
+                                }
+                                const amt = player.placeBet(bet);
+                                if (amt > needToCall) {
+                                        currentBet = player.roundBet;
+                                        lastRaise = amt - needToCall;
+                                        raisesThisRound++;
+                                }
+                                pot += amt;
+                                document.getElementById("pot").textContent = pot;
+                                notifyPlayerAction(player, "raise", player.roundBet, customMsg);
+                        }
 
 			enqueueBotAction(() => {
 				if (cycles < players.length) {
@@ -586,28 +600,32 @@ function startBettingRound() {
 
 		// Event handlers
 		function onAction() {
-			const bet = parseInt(amountSlider.value, 10);
-			const needToCall = currentBet - player.roundBet;
+                        let bet = parseInt(amountSlider.value, 10);
+                        const needToCall = currentBet - player.roundBet;
+                        const minRaise = needToCall + lastRaise;
 
 			// Remove active highlight and slider listener
 			player.seat.classList.remove("active");
 			amountSlider.removeEventListener("input", onSliderInput);
 
-			// Handle action types
-			if (bet === 0) {
-				// Check
-				notifyPlayerAction(player, "check");
-			} else if (bet === player.chips) {
-				// All-In
-				player.placeBet(bet);
-				pot += bet;
-				document.getElementById("pot").textContent = pot;
-				// If this all-in meets or exceeds the call amount, treat it as a raise
-				if (bet >= needToCall) {
-					currentBet = player.roundBet;
-					raisesThisRound++;
-				}
-				notifyPlayerAction(player, "allin", bet);
+                        // Handle action types
+                        if (bet === 0) {
+                                // Check
+                                notifyPlayerAction(player, "check");
+                        } else if (bet === player.chips) {
+                                // All-In
+                                player.placeBet(bet);
+                                pot += bet;
+                                document.getElementById("pot").textContent = pot;
+                                // If this all-in meets or exceeds the call amount, treat it as a raise
+                                if (bet >= minRaise) {
+                                        currentBet = player.roundBet;
+                                        lastRaise = bet - needToCall;
+                                        raisesThisRound++;
+                                } else if (bet >= needToCall) {
+                                        currentBet = Math.max(currentBet, player.roundBet);
+                                }
+                                notifyPlayerAction(player, "allin", bet);
 				foldButton.removeEventListener("click", onFold);
 				actionButton.removeEventListener("click", onAction);
 				// Decide whether to continue the betting loop or advance the phase
@@ -619,21 +637,27 @@ function startBettingRound() {
 					setPhase();
 				}
 				return;
-			} else if (bet === needToCall) {
-				// Call
-				player.placeBet(bet);
-				pot += bet;
-				document.getElementById("pot").textContent = pot;
-				notifyPlayerAction(player, "call", player.roundBet);
-			} else {
-				// Raise
-				player.placeBet(bet);
-				currentBet = player.roundBet;
-				pot += bet;
-				document.getElementById("pot").textContent = pot;
-				notifyPlayerAction(player, "raise", player.roundBet);
-				raisesThisRound++;
-			}
+                        } else if (bet === needToCall) {
+                                // Call
+                                player.placeBet(bet);
+                                pot += bet;
+                                document.getElementById("pot").textContent = pot;
+                                notifyPlayerAction(player, "call", player.roundBet);
+                        } else {
+                                // Raise
+                                let customMsg = null;
+                                if (bet < minRaise && bet < player.chips) {
+                                        bet = Math.min(player.chips, minRaise);
+                                        customMsg = `Min-raise is ${minRaise}. ${player.name}'s bet has been adjusted to ${bet}.`;
+                                }
+                                player.placeBet(bet);
+                                currentBet = player.roundBet;
+                                pot += bet;
+                                document.getElementById("pot").textContent = pot;
+                                notifyPlayerAction(player, "raise", player.roundBet, customMsg);
+                                lastRaise = bet - needToCall;
+                                raisesThisRound++;
+                        }
 
 			foldButton.removeEventListener("click", onFold);
 			actionButton.removeEventListener("click", onAction);
@@ -955,7 +979,7 @@ function deletePlayer(ev) {
 	seat.classList.add("hidden");
 }
 
-function notifyPlayerAction(player, action, amount) {
+function notifyPlayerAction(player, action, amount, overrideMsg) {
 	// Update statistics based on action and phase
 	if (currentPhaseIndex === 0) {
 		if (action === "call" || action === "raise" || action === "allin") {
@@ -986,7 +1010,7 @@ function notifyPlayerAction(player, action, amount) {
 		}
 	}
 
-	let msg = "";
+        let msg = "";
 	switch (action) {
 		case "fold":
 			msg = `${player.name} folded.`;
@@ -1010,7 +1034,7 @@ function notifyPlayerAction(player, action, amount) {
 		default:
 			msg = `${player.name} did something…`;
 	}
-	enqueueNotification(msg);
+        enqueueNotification(overrideMsg || msg);
 }
 
 function enqueueNotification(msg) {
