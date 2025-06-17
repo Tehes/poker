@@ -1,9 +1,9 @@
 :root {
     --achromatic: 0, 0%;
     --blue: hsl(220, 40%, 30%);
-    --blue-darker: hsl(220, 40%, 20%);
+    --blue-darker: hsl(221, 39%, 20%);
     --blue-lighter: hsl(220, 40%, 40%);
-    --blue-lightest: hsl(220, 20%, 60%);
+    --blue-lightest: hsl(221, 20%, 60%);
     --font-color: hsl(220, 14%, 95%);
     --red-suit: hsl(0, 100%, 50%);
     --black-suit: hsl(var(--achromatic), 0%);
