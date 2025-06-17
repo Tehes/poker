@@ -59,6 +59,8 @@ let players = [];
 
 let smallBlind = 10;
 let bigBlind = 20;
+// Tracks the size of the most recent raise. Used to enforce minimum raise rules
+let lastRaise = bigBlind;
 
 /* --------------------------------------------------------------------------------------------------
 functions
@@ -260,6 +262,7 @@ function setBlinds() {
 	players[sbIdx].assignRole("small-blind");
 	players[bbIdx].assignRole("big-blind");
 	currentBet = bigBlind;
+	lastRaise = bigBlind; // minimum raise equals the big blind at hand start
 }
 
 function dealCards() {
@@ -432,6 +435,8 @@ function startBettingRound() {
 		startIdx = (dealerIdx + 1) % players.length;
 		// Reset currentBet for post-Flop rounds
 		currentBet = 0;
+		// Reset minimum raise for new betting round
+		lastRaise = bigBlind;
 		// Reset bets only for post-flop rounds
 		players.forEach((p) => p.resetRoundBet());
 	}
@@ -499,6 +504,7 @@ function startBettingRound() {
 				raisesThisRound,
 				currentPhaseIndex,
 				players,
+				lastRaise,
 			});
 			const needToCall = currentBet - player.roundBet;
 
@@ -516,14 +522,22 @@ function startBettingRound() {
 				document.querySelector("#pot").textContent = pot;
 				notifyPlayerAction(player, "call", actual);
 			} else if (decision.action === "raise") {
-				const amt = player.placeBet(decision.amount);
+				let bet = decision.amount;
+				const minRaise = needToCall + lastRaise;
+				let customMsg = null;
+				if (bet < minRaise && bet < player.chips) {
+					bet = Math.min(player.chips, minRaise);
+					customMsg = `${player.name} raised to ${bet} (auto min-raise)`;
+				}
+				const amt = player.placeBet(bet);
 				if (amt > needToCall) {
 					currentBet = player.roundBet;
+					lastRaise = amt - needToCall;
+					raisesThisRound++;
 				}
 				pot += amt;
 				document.getElementById("pot").textContent = pot;
-				notifyPlayerAction(player, "raise", player.roundBet);
-				raisesThisRound++;
+				notifyPlayerAction(player, "raise", player.roundBet, customMsg);
 			}
 
 			enqueueBotAction(() => {
@@ -586,8 +600,9 @@ function startBettingRound() {
 
 		// Event handlers
 		function onAction() {
-			const bet = parseInt(amountSlider.value, 10);
+			let bet = parseInt(amountSlider.value, 10);
 			const needToCall = currentBet - player.roundBet;
+			const minRaise = needToCall + lastRaise;
 
 			// Remove active highlight and slider listener
 			player.seat.classList.remove("active");
@@ -603,9 +618,12 @@ function startBettingRound() {
 				pot += bet;
 				document.getElementById("pot").textContent = pot;
 				// If this all-in meets or exceeds the call amount, treat it as a raise
-				if (bet >= needToCall) {
+				if (bet >= minRaise) {
 					currentBet = player.roundBet;
+					lastRaise = bet - needToCall;
 					raisesThisRound++;
+				} else if (bet >= needToCall) {
+					currentBet = Math.max(currentBet, player.roundBet);
 				}
 				notifyPlayerAction(player, "allin", bet);
 				foldButton.removeEventListener("click", onFold);
@@ -627,11 +645,17 @@ function startBettingRound() {
 				notifyPlayerAction(player, "call", player.roundBet);
 			} else {
 				// Raise
+				let customMsg = null;
+				if (bet < minRaise && bet < player.chips) {
+					bet = Math.min(player.chips, minRaise);
+					customMsg = `${player.name} raised to ${bet} (auto min-raise)`;
+				}
 				player.placeBet(bet);
 				currentBet = player.roundBet;
 				pot += bet;
 				document.getElementById("pot").textContent = pot;
-				notifyPlayerAction(player, "raise", player.roundBet);
+				notifyPlayerAction(player, "raise", player.roundBet, customMsg);
+				lastRaise = bet - needToCall;
 				raisesThisRound++;
 			}
 
@@ -955,7 +979,7 @@ function deletePlayer(ev) {
 	seat.classList.add("hidden");
 }
 
-function notifyPlayerAction(player, action, amount) {
+function notifyPlayerAction(player, action, amount, overrideMsg) {
 	// Update statistics based on action and phase
 	if (currentPhaseIndex === 0) {
 		if (action === "call" || action === "raise" || action === "allin") {
@@ -1010,7 +1034,7 @@ function notifyPlayerAction(player, action, amount) {
 		default:
 			msg = `${player.name} did something…`;
 	}
-	enqueueNotification(msg);
+	enqueueNotification(overrideMsg || msg);
 }
 
 function enqueueNotification(msg) {
@@ -1068,7 +1092,7 @@ poker.init();
 /* --------------------------------------------------------------------------------------------------
 Service Worker configuration. Toggle 'useServiceWorker' to enable or disable the Service Worker.
 ---------------------------------------------------------------------------------------------------*/
-const useServiceWorker = true; // Set to "true" if you want to register the Service Worker, "false" to unregister
+const useServiceWorker = false; // Set to "true" if you want to register the Service Worker, "false" to unregister
 
 async function registerServiceWorker() {
 	try {
