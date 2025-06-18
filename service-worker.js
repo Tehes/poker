@@ -1,4 +1,4 @@
-const CACHE_NAME = "--poker-cache-v14"; // Name of the dynamic cache
+const CACHE_NAME = "--poker-cache-v15"; // Name of the dynamic cache
 
 // Build list of all card SVGs according to their actual filenames, e.g. "AS.svg", "TD.svg".
 const SUITS = ["C", "D", "H", "S"];
@@ -38,6 +38,14 @@ self.addEventListener("fetch", (event) => {
 	if (event.request.method !== "GET") {
 		return; // do not intercept non‑GET requests
 	}
+
+	const url = new URL(event.request.url);
+
+	// Requests for hole-cards.html are network-only to avoid unnecessary caching
+	if (url.pathname.endsWith("hole-cards.html")) {
+		return; // let the browser handle it normally
+	}
+
 	// Respond with cache-first strategy and stale-while-revalidate
 	event.respondWith(
 		caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
@@ -87,8 +95,9 @@ self.addEventListener("fetch", (event) => {
 self.addEventListener("activate", (event) => {
 	const cacheWhitelist = [CACHE_NAME]; // Only keep the current cache
 	event.waitUntil(
-		caches.keys().then((cacheNames) => {
-			return Promise.all(
+		(async () => {
+			const cacheNames = await caches.keys();
+			await Promise.all(
 				cacheNames.map((cacheName) => {
 					if (!cacheWhitelist.includes(cacheName)) {
 						// Delete old caches
@@ -96,7 +105,7 @@ self.addEventListener("activate", (event) => {
 					}
 				}),
 			);
-		}),
+		})(),
 	);
 	self.clients.claim(); // Ensure service worker takes control of the page immediately
 });
