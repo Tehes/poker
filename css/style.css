@@ -110,7 +110,7 @@ output {
 }
 
 .hidden {
-    display: none;
+    display: none !important;
 }
 
 /*
@@ -378,6 +378,9 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
 }
 
 .hole-cards .qr {
+    display: flex;
+    justify-content: center;
+    align-items: center;
     position: absolute;
     top: 50%;
     left: 50%;
@@ -390,6 +393,11 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
     min-width: 80px;
     z-index: 1000;
     border-radius: 5%;
+}
+
+.qr svg {
+    width: 100% !important;
+    height: auto !important;
 }
 
 .hole-cards .rotate {

@@ -62,7 +62,7 @@ The table works fully offline after the first complete load.
 
 - **HTML/CSS/JavaScript** only – no frameworks
 - **Vanilla JS Game Engine**
-- **QR Code API** – generates links to reveal hole cards on phone
+ - **kjua** – lightweight QR code generation for offline play
 - **pokersolver** (ES module) – for hand evaluation at showdown
 
 ---
@@ -111,5 +111,5 @@ MIT License. Do whatever you want, just don't sue me.
 
 ## 🙌 Credits
 
-- [pokersolver](https://github.com/goldfire/pokersolver) for hand ranking logic
-- QR codes by [https://goqr.me/api/](https://goqr.me/api/)
+ - [pokersolver](https://github.com/goldfire/pokersolver) for hand ranking logic
+ - [kjua](https://github.com/lrsjng/kjua) for QR code generation
