@@ -778,6 +778,10 @@ function doShowdown() {
 			document.getElementById("pot").textContent = pot;
 			startButton.textContent = "New Round";
 			startButton.classList.remove("hidden");
+			foldButton.classList.add("hidden");
+			actionButton.classList.add("hidden");
+			amountSlider.classList.add("hidden");
+			sliderOutput.classList.add("hidden");
 		});
 		return;
 	}
