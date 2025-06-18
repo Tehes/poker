@@ -140,7 +140,7 @@ function createPlayers() {
 					const url =
 						`${base}hole-cards.html?params=${card1}-${card2}-${playerObject.name}-${playerObject.chips}&t=${Date.now()}`;
 					qrContainer.innerHTML = "";
-					const qrEl = window.kjua({
+					const qrEl = globalThis.kjua({
 						text: url,
 						render: "svg",
 						fill: "#333",
