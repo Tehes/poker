@@ -129,7 +129,7 @@ function createPlayers() {
 	for (const player of activePlayers) {
 		const playerObject = {
 			name: player.querySelector("h3").textContent,
-			isBot: player.querySelector("h3").textContent.startsWith("Bot"),
+			isBot: player.classList.contains("bot"),
 			seat: player,
 			qr: {
 				show: function (card1, card2) {
