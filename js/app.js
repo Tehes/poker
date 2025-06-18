@@ -412,7 +412,7 @@ function dealCommunityCards(amount) {
 
 function startBettingRound() {
 	// Clear action indicators from the previous betting round
-	players.forEach((p) => p.seat.classList.remove("checked", "called", "raised", "allin"));
+	players.forEach((p) => p.seat.classList.remove("checked", "called", "raised"));
 
 	// EARLY EXIT: If only one player remains after folds, skip straight to next phase
 	const activePlayers = players.filter((p) => !p.folded);
