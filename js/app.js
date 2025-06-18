@@ -367,7 +367,7 @@ function preFlop() {
 }
 
 function setPhase() {
-	// If only one player remains, skip community deals and go straight to showdown
+	// EARLY EXIT: If only one player remains, skip straight to showdown
 	const activePlayers = players.filter((p) => !p.folded);
 	if (activePlayers.length <= 1) {
 		return doShowdown();
@@ -414,14 +414,10 @@ function startBettingRound() {
 	// Clear action indicators from the previous betting round
 	players.forEach((p) => p.seat.classList.remove("checked", "called", "raised"));
 
-	// EARLY EXIT: If only one player remains after folds, skip straight to next phase
+	// EARLY EXIT: Skip betting if only one player remains or all are all-in
 	const activePlayers = players.filter((p) => !p.folded);
-	if (activePlayers.length <= 1) {
-		return setPhase();
-	}
-	// EARLY EXIT: If no one left to act (all are all-in), skip straight to next phase
 	const actionable = activePlayers.filter((p) => !p.allIn);
-	if (actionable.length === 0) {
+	if (activePlayers.length <= 1 || actionable.length === 0) {
 		return setPhase();
 	}
 
