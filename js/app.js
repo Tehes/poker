@@ -131,30 +131,29 @@ function createPlayers() {
 			name: player.querySelector("h3").textContent,
 			isBot: player.classList.contains("bot"),
 			seat: player,
-                        qr: {
-                                show: function (card1, card2) {
-                                        const qrContainer = player.querySelector(".qr");
-                                        qrContainer.classList.remove("hidden");
-                                        const base =
-                                                globalThis.location.origin +
-                                                globalThis.location.pathname.replace(/[^/]*$/, "");
-                                        const url =
-                                                `${base}hole-cards.html?params=${card1}-${card2}-${playerObject.name}-${playerObject.chips}&t=${Date.now()}`;
-                                        qrContainer.innerHTML = "";
-                                        const qrEl = window.kjua({
-                                                text: url,
-                                                render: "svg",
-                                                fill: "#333",
-                                                crisp: true,
-                                        });
-                                        qrContainer.appendChild(qrEl);
-                                },
-                                hide: function () {
-                                        const qrContainer = player.querySelector(".qr");
-                                        qrContainer.classList.add("hidden");
-                                        qrContainer.innerHTML = "";
-                                },
-                        },
+			qr: {
+				show: function (card1, card2) {
+					const qrContainer = player.querySelector(".qr");
+					qrContainer.classList.remove("hidden");
+					const base = globalThis.location.origin +
+						globalThis.location.pathname.replace(/[^/]*$/, "");
+					const url =
+						`${base}hole-cards.html?params=${card1}-${card2}-${playerObject.name}-${playerObject.chips}&t=${Date.now()}`;
+					qrContainer.innerHTML = "";
+					const qrEl = window.kjua({
+						text: url,
+						render: "svg",
+						fill: "#333",
+						crisp: true,
+					});
+					qrContainer.appendChild(qrEl);
+				},
+				hide: function () {
+					const qrContainer = player.querySelector(".qr");
+					qrContainer.classList.add("hidden");
+					qrContainer.innerHTML = "";
+				},
+			},
 			cards: player.querySelectorAll(".card"),
 			dealer: false,
 			smallBlind: false,
@@ -429,7 +428,7 @@ function startBettingRound() {
 	// EARLY EXIT: Skip betting if only one player remains or all are all-in
 	const activePlayers = players.filter((p) => !p.folded);
 	const actionable = activePlayers.filter((p) => !p.allIn);
-	if (activePlayers.length <= 1 || actionable.length === 0) {
+	if (activePlayers.length <= 1 || actionable.length <= 1) {
 		return setPhase();
 	}
 
