@@ -137,7 +137,7 @@ function createPlayers() {
 					const base = globalThis.location.origin +
 						globalThis.location.pathname.replace(/[^/]*$/, "");
 					player.querySelector(".qr").src =
-						`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${base}hole-cards.html?params=${card1}-${card2}-${playerObject.name}-${playerObject.chips}`;
+						`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${base}hole-cards.html?params=${card1}-${card2}-${playerObject.name}-${playerObject.chips}&t=${Date.now()}`;
 				},
 				hide: function () {
 					player.querySelector(".qr").classList.add("hidden");
