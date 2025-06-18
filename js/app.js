@@ -514,8 +514,6 @@ function startBettingRound() {
 				player.folded = true;
 				notifyPlayerAction(player, "fold");
 				player.qr.hide();
-				player.seat.classList.add("folded");
-				player.seat.classList.remove("checked", "called", "raised", "allin");
 			} else if (decision.action === "check") {
 				notifyPlayerAction(player, "check");
 			} else if (decision.action === "call") {
@@ -675,8 +673,6 @@ function startBettingRound() {
 			player.folded = true;
 			notifyPlayerAction(player, "fold");
 			player.qr.hide();
-			// Visually mark folded player
-			player.seat.classList.add("folded");
 			player.seat.classList.remove("active");
 			amountSlider.removeEventListener("input", onSliderInput);
 			foldButton.removeEventListener("click", onFold);
@@ -1019,6 +1015,7 @@ function notifyPlayerAction(player, action, amount, autoMin = false) {
 	let msg = "";
 	switch (action) {
 		case "fold":
+			player.seat.classList.add("folded");
 			msg = `${player.name} folded.`;
 			break;
 		case "check":
