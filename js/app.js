@@ -984,6 +984,8 @@ function deletePlayer(ev) {
 }
 
 function notifyPlayerAction(player, action, amount, autoMin = false) {
+	// Remove any previous action indicator before adding a new one
+	player.seat.classList.remove("checked", "called", "raised", "allin");
 	// Update statistics based on action and phase
 	if (currentPhaseIndex === 0) {
 		if (action === "call" || action === "raise" || action === "allin") {
