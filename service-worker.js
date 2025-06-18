@@ -1,4 +1,4 @@
-const CACHE_NAME = "--poker-cache-v16"; // Name of the dynamic cache
+const CACHE_NAME = "--poker-cache-v17"; // Name of the dynamic cache
 
 // Build list of all card SVGs according to their actual filenames, e.g. "AS.svg", "TD.svg".
 const SUITS = ["C", "D", "H", "S"];
@@ -18,6 +18,7 @@ const CORE_ASSETS = [
 	"./icons/close.svg",
 	"./icons/180x180.png",
 	"./icons/favicon.png",
+	"./icons/poker-chip.svg",
 	"./manifest.json",
 	"./js/bot.js",
 	"./js/pokersolver.js",
