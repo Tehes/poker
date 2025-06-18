@@ -34,13 +34,21 @@ self.addEventListener("install", (event) => {
 
 // Fetch event
 self.addEventListener("fetch", (event) => {
-	// Ignore everything that's not a simple GET (POST, WebSocket, etc.)
-	if (event.request.method !== "GET") {
-		return; // do not intercept non‑GET requests
-	}
-	// Respond with cache-first strategy and stale-while-revalidate
-	event.respondWith(
-		caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
+        // Ignore everything that's not a simple GET (POST, WebSocket, etc.)
+        if (event.request.method !== "GET") {
+                return; // do not intercept non‑GET requests
+        }
+
+        const url = new URL(event.request.url);
+
+        // Requests for hole-cards.html are network-only to avoid unnecessary caching
+        if (url.pathname.endsWith("hole-cards.html")) {
+                return; // let the browser handle it normally
+        }
+
+        // Respond with cache-first strategy and stale-while-revalidate
+        event.respondWith(
+                caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
 			if (cachedResponse) {
 				// Return cached response immediately and update in the background
 				event.waitUntil(
@@ -67,7 +75,7 @@ self.addEventListener("fetch", (event) => {
 					.catch(() => {
 						// Offline fallback: try cache again; if nothing found and it's a navigation request,
 						// return the cached index.html so the SPA can render.
-						return caches.match(event.request, { ignoreSearch: true }).then(
+                                                return caches.match(event.request, { ignoreSearch: true }).then(
 							(resp) => {
 								if (resp) return resp;
 								if (event.request.mode === "navigate") {
@@ -85,18 +93,19 @@ self.addEventListener("fetch", (event) => {
 
 // Activate event to clear old caches
 self.addEventListener("activate", (event) => {
-	const cacheWhitelist = [CACHE_NAME]; // Only keep the current cache
-	event.waitUntil(
-		caches.keys().then((cacheNames) => {
-			return Promise.all(
-				cacheNames.map((cacheName) => {
-					if (!cacheWhitelist.includes(cacheName)) {
-						// Delete old caches
-						return caches.delete(cacheName);
-					}
-				}),
-			);
-		}),
-	);
-	self.clients.claim(); // Ensure service worker takes control of the page immediately
+        const cacheWhitelist = [CACHE_NAME]; // Only keep the current cache
+        event.waitUntil(
+                (async () => {
+                        const cacheNames = await caches.keys();
+                        await Promise.all(
+                                cacheNames.map((cacheName) => {
+                                        if (!cacheWhitelist.includes(cacheName)) {
+                                                // Delete old caches
+                                                return caches.delete(cacheName);
+                                        }
+                                }),
+                        );
+                })(),
+        );
+        self.clients.claim(); // Ensure service worker takes control of the page immediately
 });
