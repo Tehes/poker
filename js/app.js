@@ -414,14 +414,16 @@ function startBettingRound() {
 	// Clear action indicators from the previous betting round
 	players.forEach((p) => p.seat.classList.remove("checked", "called", "raised", "allin"));
 
-	// ------------------------------------------------------------------
-	// EARLY EXIT: If zero or only one player still has chips to act,
-	// no betting round is possible. Skip straight to the next phase.
-	const actionable = players.filter((p) => !p.folded && !p.allIn);
-	if (actionable.length <= 1) {
+	// EARLY EXIT: If only one player remains after folds, skip straight to next phase
+	const activePlayers = players.filter((p) => !p.folded);
+	if (activePlayers.length <= 1) {
 		return setPhase();
 	}
-	// ------------------------------------------------------------------
+	// EARLY EXIT: If no one left to act (all are all-in), skip straight to next phase
+	const actionable = activePlayers.filter((p) => !p.allIn);
+	if (actionable.length === 0) {
+		return setPhase();
+	}
 
 	// 2) Determine start index
 	let startIdx;
