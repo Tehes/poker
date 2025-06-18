@@ -131,18 +131,30 @@ function createPlayers() {
 			name: player.querySelector("h3").textContent,
 			isBot: player.classList.contains("bot"),
 			seat: player,
-			qr: {
-				show: function (card1, card2) {
-					player.querySelector(".qr").classList.remove("hidden");
-					const base = globalThis.location.origin +
-						globalThis.location.pathname.replace(/[^/]*$/, "");
-					player.querySelector(".qr").src =
-						`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${base}hole-cards.html?params=${card1}-${card2}-${playerObject.name}-${playerObject.chips}&t=${Date.now()}`;
-				},
-				hide: function () {
-					player.querySelector(".qr").classList.add("hidden");
-				},
-			},
+                        qr: {
+                                show: function (card1, card2) {
+                                        const qrContainer = player.querySelector(".qr");
+                                        qrContainer.classList.remove("hidden");
+                                        const base =
+                                                globalThis.location.origin +
+                                                globalThis.location.pathname.replace(/[^/]*$/, "");
+                                        const url =
+                                                `${base}hole-cards.html?params=${card1}-${card2}-${playerObject.name}-${playerObject.chips}&t=${Date.now()}`;
+                                        qrContainer.innerHTML = "";
+                                        const qrEl = window.kjua({
+                                                text: url,
+                                                render: "svg",
+                                                fill: "#333",
+                                                crisp: true,
+                                        });
+                                        qrContainer.appendChild(qrEl);
+                                },
+                                hide: function () {
+                                        const qrContainer = player.querySelector(".qr");
+                                        qrContainer.classList.add("hidden");
+                                        qrContainer.innerHTML = "";
+                                },
+                        },
 			cards: player.querySelectorAll(".card"),
 			dealer: false,
 			smallBlind: false,
