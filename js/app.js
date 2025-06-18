@@ -524,10 +524,9 @@ function startBettingRound() {
 			} else if (decision.action === "raise") {
 				let bet = decision.amount;
 				const minRaise = needToCall + lastRaise;
-				let customMsg = null;
-				if (bet < minRaise && bet < player.chips) {
+				const autoMin = bet < minRaise && bet < player.chips;
+				if (autoMin) {
 					bet = Math.min(player.chips, minRaise);
-					customMsg = `${player.name} raised to ${bet} (auto min-raise)`;
 				}
 				const amt = player.placeBet(bet);
 				if (amt > needToCall) {
@@ -537,7 +536,7 @@ function startBettingRound() {
 				}
 				pot += amt;
 				document.getElementById("pot").textContent = pot;
-				notifyPlayerAction(player, "raise", player.roundBet, customMsg);
+				notifyPlayerAction(player, "raise", player.roundBet, autoMin);
 			}
 
 			enqueueBotAction(() => {
@@ -645,16 +644,15 @@ function startBettingRound() {
 				notifyPlayerAction(player, "call", player.roundBet);
 			} else {
 				// Raise
-				let customMsg = null;
-				if (bet < minRaise && bet < player.chips) {
+				const autoMin = bet < minRaise && bet < player.chips;
+				if (autoMin) {
 					bet = Math.min(player.chips, minRaise);
-					customMsg = `${player.name} raised to ${bet} (auto min-raise)`;
 				}
 				player.placeBet(bet);
 				currentBet = player.roundBet;
 				pot += bet;
 				document.getElementById("pot").textContent = pot;
-				notifyPlayerAction(player, "raise", player.roundBet, customMsg);
+				notifyPlayerAction(player, "raise", player.roundBet, autoMin);
 				lastRaise = bet - needToCall;
 				raisesThisRound++;
 			}
@@ -979,7 +977,7 @@ function deletePlayer(ev) {
 	seat.classList.add("hidden");
 }
 
-function notifyPlayerAction(player, action, amount, overrideMsg) {
+function notifyPlayerAction(player, action, amount, autoMin = false) {
 	// Update statistics based on action and phase
 	if (currentPhaseIndex === 0) {
 		if (action === "call" || action === "raise" || action === "allin") {
@@ -1025,7 +1023,7 @@ function notifyPlayerAction(player, action, amount, overrideMsg) {
 			break;
 		case "raise":
 			player.seat.classList.add("raised");
-			msg = `${player.name} raised to ${amount}.`;
+			msg = `${player.name} raised to ${amount}${autoMin ? " (auto min-raise)" : ""}.`;
 			break;
 		case "allin":
 			player.seat.classList.add("allin");
@@ -1034,7 +1032,7 @@ function notifyPlayerAction(player, action, amount, overrideMsg) {
 		default:
 			msg = `${player.name} did something…`;
 	}
-	enqueueNotification(overrideMsg || msg);
+	enqueueNotification(msg);
 }
 
 function enqueueNotification(msg) {
