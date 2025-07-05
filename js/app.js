@@ -35,6 +35,10 @@ const DEBUG_FLOW = false; // Set to true for verbose game-flow logging
 
 let raisesThisRound = 0;
 
+// --- Analytics --------------------------------------------------------------
+let totalHands = 0;
+let startTimestamp = 0;
+
 // Clubs, Diamonds, Hearts, Spades
 // 2,3,4,5,6,7,8,9,T,J,Q,K,A
 // deno-fmt-ignore-start
@@ -313,6 +317,11 @@ function dealCards() {
  * Execute the standard pre-flop steps: rotate dealer, post blinds, deal cards, start betting.
  */
 function preFlop() {
+	// Analytics: count hands and mark start time
+	totalHands++;
+	if (totalHands === 1) {
+		startTimestamp = Date.now();
+	}
 	// Reset phase to preflop
 	currentPhaseIndex = 0;
 
@@ -374,6 +383,13 @@ function preFlop() {
 		champion.showTotal();
 		champion.seat.classList.add("winner");
 		logFlow("tournament_end", { champion: champion.name });
+		if (typeof umami !== "undefined") {
+			umami.track("tournament_end", {
+				champion: champion.name,
+				totalHands,
+				durationMs: Date.now() - startTimestamp,
+			});
+		}
 		return; // skip the rest of preFlop()
 	}
 	// ----------------------------------------------------------
@@ -386,6 +402,14 @@ function preFlop() {
 
 	// Shuffle and deal new hole cards
 	dealCards();
+	if (totalHands === 1 && typeof umami !== "undefined") {
+		umami.track("start_game", {
+			players: players.length,
+			bots: players.filter((p) => p.isBot).length,
+			smallBlind,
+			bigBlind,
+		});
+	}
 
 	// Start first betting round (preflop)
 	startBettingRound();
@@ -393,13 +417,21 @@ function preFlop() {
 
 function setPhase() {
 	logFlow("setPhase", { phase: Phases[currentPhaseIndex] });
+	const from = Phases[currentPhaseIndex];
 	// EARLY EXIT: If only one player remains, skip straight to showdown
 	const activePlayers = players.filter((p) => !p.folded);
 	if (activePlayers.length <= 1) {
+		if (typeof umami !== "undefined") {
+			umami.track("phase_transition", { from, to: "showdown" });
+		}
 		return doShowdown();
 	}
 
 	currentPhaseIndex++;
+	const to = Phases[currentPhaseIndex];
+	if (typeof umami !== "undefined") {
+		umami.track("phase_transition", { from, to });
+	}
 	switch (Phases[currentPhaseIndex]) {
 		case "flop":
 			dealCommunityCards(3);
@@ -562,15 +594,15 @@ function startBettingRound() {
 
 			if (decision.action === "fold") {
 				player.folded = true;
-				notifyPlayerAction(player, "fold");
+				notifyPlayerAction(player, "fold", 0, false, needToCall);
 				player.qr.hide();
 			} else if (decision.action === "check") {
-				notifyPlayerAction(player, "check");
+				notifyPlayerAction(player, "check", 0, false, needToCall);
 			} else if (decision.action === "call") {
 				const actual = player.placeBet(decision.amount);
 				pot += actual;
 				document.querySelector("#pot").textContent = pot;
-				notifyPlayerAction(player, "call", actual);
+				notifyPlayerAction(player, "call", actual, false, needToCall);
 			} else if (decision.action === "raise") {
 				let bet = decision.amount;
 				const minRaise = needToCall + lastRaise;
@@ -586,7 +618,7 @@ function startBettingRound() {
 				}
 				pot += amt;
 				document.getElementById("pot").textContent = pot;
-				notifyPlayerAction(player, "raise", player.roundBet, autoMin);
+				notifyPlayerAction(player, "raise", amt, autoMin, needToCall);
 			}
 
 			enqueueBotAction(() => {
@@ -663,7 +695,7 @@ function startBettingRound() {
 			// Handle action types
 			if (bet === 0) {
 				// Check
-				notifyPlayerAction(player, "check");
+				notifyPlayerAction(player, "check", 0, false, needToCall);
 			} else if (bet === player.chips) {
 				// All-In
 				player.placeBet(bet);
@@ -677,7 +709,7 @@ function startBettingRound() {
 				} else if (bet >= needToCall) {
 					currentBet = Math.max(currentBet, player.roundBet);
 				}
-				notifyPlayerAction(player, "allin", bet);
+				notifyPlayerAction(player, "allin", bet, false, needToCall);
 				foldButton.removeEventListener("click", onFold);
 				actionButton.removeEventListener("click", onAction);
 				// Decide whether to continue the betting loop or advance the phase
@@ -697,7 +729,7 @@ function startBettingRound() {
 				player.placeBet(bet);
 				pot += bet;
 				document.getElementById("pot").textContent = pot;
-				notifyPlayerAction(player, "call", player.roundBet);
+				notifyPlayerAction(player, "call", bet, false, needToCall);
 			} else {
 				// Raise
 				const autoMin = bet < minRaise && bet < player.chips;
@@ -708,7 +740,7 @@ function startBettingRound() {
 				currentBet = player.roundBet;
 				pot += bet;
 				document.getElementById("pot").textContent = pot;
-				notifyPlayerAction(player, "raise", player.roundBet, autoMin);
+				notifyPlayerAction(player, "raise", bet, autoMin, needToCall);
 				lastRaise = bet - needToCall;
 				raisesThisRound++;
 			}
@@ -730,7 +762,8 @@ function startBettingRound() {
 		}
 		function onFold() {
 			player.folded = true;
-			notifyPlayerAction(player, "fold");
+			const needToCall = currentBet - player.roundBet;
+			notifyPlayerAction(player, "fold", 0, false, needToCall);
 			player.qr.hide();
 			player.seat.classList.remove("active");
 			amountSlider.removeEventListener("input", onSliderInput);
@@ -1041,7 +1074,7 @@ function deletePlayer(ev) {
 	seat.classList.add("hidden");
 }
 
-function notifyPlayerAction(player, action, amount, autoMin = false) {
+function notifyPlayerAction(player, action = "", amount = 0, autoMin = false, needToCall = 0) {
 	// Remove any previous action indicator before adding a new one
 	player.seat.classList.remove("checked", "called", "raised", "allin");
 	// Update statistics based on action and phase
@@ -1100,6 +1133,17 @@ function notifyPlayerAction(player, action, amount, autoMin = false) {
 			msg = `${player.name} did something…`;
 	}
 	enqueueNotification(msg);
+	if (typeof umami !== "undefined") {
+		umami.track("player_action", {
+			name: player.name,
+			action,
+			amount,
+			phase: Phases[currentPhaseIndex],
+			needToCall,
+			betAfterAction: player.roundBet,
+			potSize: pot,
+		});
+	}
 }
 
 function enqueueNotification(msg) {
