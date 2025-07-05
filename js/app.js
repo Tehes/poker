@@ -343,13 +343,14 @@ function preFlop() {
 	// Remove players with zero chips from the table
 	const remainingPlayers = [];
 	players.forEach((p) => {
-		if (p.chips <= 0) {
-			p.chips = 0;
-			p.seat.classList.add("hidden");
-			enqueueNotification(`${p.name} is out of the game!`);
-		} else {
-			remainingPlayers.push(p);
-		}
+               if (p.chips <= 0) {
+                        p.chips = 0;
+                        p.seat.classList.add("hidden");
+                        enqueueNotification(`${p.name} is out of the game!`);
+                        logFlow("player_bust", { name: p.name });
+                } else {
+                        remainingPlayers.push(p);
+                }
 	});
 	players = remainingPlayers;
 
@@ -372,7 +373,7 @@ function preFlop() {
                 // Reveal champion's stack
                 champion.showTotal();
                 champion.seat.classList.add("winner");
-               logFlow("preFlop: champion");
+               logFlow("tournament_end", { champion: champion.name });
                return; // skip the rest of preFlop()
         }
 	// ----------------------------------------------------------
