@@ -81,14 +81,7 @@ function logHistory(msg) {
        if (HISTORY_LOG) console.log(msg);
 }
 
-function logFlow(msg, data, isBotLoop = false) {
-       if (!isBotLoop && typeof umami !== "undefined") {
-               try {
-                       umami.track(msg, data);
-               } catch (_) {
-                       /* ignore analytics errors */
-               }
-       }
+function logFlow(msg, data) {
        if (DEBUG_FLOW) {
                const ts = new Date().toISOString().slice(11, 23);
                if (data !== undefined) {
@@ -503,30 +496,29 @@ function startBettingRound() {
 		// -------------------------------------------------------------------
 		// Find next player who still owes action
 		const player = players[idx % players.length];
-               logFlow(
-                       "nextPlayer",
-                       {
-                               index: idx % players.length,
-                               cycles,
-                               name: player.name,
-                               folded: player.folded,
-                               allIn: player.allIn,
-                               roundBet: player.roundBet,
+                       logFlow(
+                               "nextPlayer",
+                               {
+                                       index: idx % players.length,
+                                       cycles,
+                                       name: player.name,
+                                       folded: player.folded,
+                                       allIn: player.allIn,
+                                       roundBet: player.roundBet,
                        },
-                       true,
                );
 		idx++;
 		cycles++;
 
 		// Skip folded or all-in players immediately
 				if (player.folded || player.allIn) {
-                                logFlow("skip folded/allin", { name: player.name }, true);
+                                logFlow("skip folded/allin", { name: player.name });
 				return setTimeout(nextPlayer, 0); // avoid recursive stack growth
 				}
 
 		// Skip if player already matched the current bet
 		if (player.roundBet >= currentBet) {
-                logFlow("already matched bet", { name: player.name, cycles }, true);
+                logFlow("already matched bet", { name: player.name, cycles });
 							// Allow one pass-through for Big Blind pre-flop or Check post-flop
 					if (
 						(currentPhaseIndex === 0 && cycles <= players.length) ||
@@ -535,10 +527,10 @@ function startBettingRound() {
 						// within first cycle: let them act
 					} else {
 										if (anyUncalled()) {
-                                                                               logFlow("wait uncalled", { name: player.name }, true);
+                                                                               logFlow("wait uncalled", { name: player.name });
 										return setTimeout(nextPlayer, 0); // schedule asynchronously to break call chain
 										}
-                                        logFlow("advance phase", { name: player.name }, true);
+                                        logFlow("advance phase", { name: player.name });
 					return setPhase();
 					}
 				}
@@ -595,13 +587,13 @@ function startBettingRound() {
 
                        enqueueBotAction(() => {
                                if (cycles < players.length) {
-                                       logFlow("bot next", { name: player.name }, true);
+                                       logFlow("bot next", { name: player.name });
                                        nextPlayer();
                                } else if (anyUncalled()) {
-                                       logFlow("bot wait", { name: player.name }, true);
+                                       logFlow("bot wait", { name: player.name });
                                        nextPlayer();
                                } else {
-                                       logFlow("bot advance", { name: player.name }, true);
+                                       logFlow("bot advance", { name: player.name });
                                        setPhase();
                                }
                        });
@@ -686,13 +678,13 @@ function startBettingRound() {
 				actionButton.removeEventListener("click", onAction);
 				// Decide whether to continue the betting loop or advance the phase
                                if (cycles < players.length) {
-                                       logFlow("human next", { name: player.name }, true);
+                                       logFlow("human next", { name: player.name });
                                        nextPlayer();
                                } else if (anyUncalled()) {
-                                       logFlow("human wait", { name: player.name }, true);
+                                       logFlow("human wait", { name: player.name });
                                        nextPlayer();
                                } else {
-                                       logFlow("human advance", { name: player.name }, true);
+                                       logFlow("human advance", { name: player.name });
                                        setPhase();
                                }
 				return;
@@ -722,13 +714,13 @@ function startBettingRound() {
 
 			// Decide whether to continue the betting loop or advance the phase
                        if (cycles < players.length) {
-                               logFlow("human next", { name: player.name }, true);
+                               logFlow("human next", { name: player.name });
                                nextPlayer();
                        } else if (anyUncalled()) {
-                               logFlow("human wait", { name: player.name }, true);
+                               logFlow("human wait", { name: player.name });
                                nextPlayer();
                        } else {
-                               logFlow("human advance", { name: player.name }, true);
+                               logFlow("human advance", { name: player.name });
                                setPhase();
                        }
 		}
@@ -742,13 +734,13 @@ function startBettingRound() {
 			actionButton.removeEventListener("click", onAction);
 			// Decide whether to continue the betting loop or advance the phase
                         if (cycles < players.length) {
-                                logFlow("fold next", { name: player.name }, true);
+                                logFlow("fold next", { name: player.name });
                                 nextPlayer();
                         } else if (anyUncalled()) {
-                                logFlow("fold wait", { name: player.name }, true);
+                                logFlow("fold wait", { name: player.name });
                                 nextPlayer();
                         } else {
-                                logFlow("fold advance", { name: player.name }, true);
+                                logFlow("fold advance", { name: player.name });
                                 setPhase();
                         }
 		}
