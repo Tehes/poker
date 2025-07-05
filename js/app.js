@@ -324,6 +324,10 @@ function preFlop() {
 	}
 	// Reset phase to preflop
 	currentPhaseIndex = 0;
+	// Analytics: mark entry into the Pre‑Flop phase
+	if (typeof umami !== "undefined") {
+		umami.track("phase_transition", { phase: "preflop" });
+	}
 
 	startButton.classList.add("hidden");
 
@@ -386,6 +390,7 @@ function preFlop() {
 		if (typeof umami !== "undefined") {
 			umami.track("tournament_end", {
 				champion: champion.name,
+				bot: champion.isBot,
 				totalHands,
 				durationMs: Date.now() - startTimestamp,
 			});
@@ -406,8 +411,6 @@ function preFlop() {
 		umami.track("start_game", {
 			players: players.length,
 			bots: players.filter((p) => p.isBot).length,
-			smallBlind,
-			bigBlind,
 		});
 	}
 
@@ -417,20 +420,19 @@ function preFlop() {
 
 function setPhase() {
 	logFlow("setPhase", { phase: Phases[currentPhaseIndex] });
-	const from = Phases[currentPhaseIndex];
 	// EARLY EXIT: If only one player remains, skip straight to showdown
 	const activePlayers = players.filter((p) => !p.folded);
 	if (activePlayers.length <= 1) {
 		if (typeof umami !== "undefined") {
-			umami.track("phase_transition", { from, to: "showdown" });
+			umami.track("phase_transition", { phase: "showdown" });
 		}
 		return doShowdown();
 	}
 
 	currentPhaseIndex++;
-	const to = Phases[currentPhaseIndex];
+	const phase = Phases[currentPhaseIndex];
 	if (typeof umami !== "undefined") {
-		umami.track("phase_transition", { from, to });
+		umami.track("phase_transition", { phase });
 	}
 	switch (Phases[currentPhaseIndex]) {
 		case "flop":
@@ -1081,7 +1083,7 @@ function deletePlayer(ev) {
 	seat.classList.add("hidden");
 }
 
-function notifyPlayerAction(player, action = "", amount = 0, autoMin = false, needToCall = 0) {
+function notifyPlayerAction(player, action = "", amount = 0, autoMin = false) {
 	// Remove any previous action indicator before adding a new one
 	player.seat.classList.remove("checked", "called", "raised", "allin");
 	// Update statistics based on action and phase
@@ -1142,13 +1144,8 @@ function notifyPlayerAction(player, action = "", amount = 0, autoMin = false, ne
 	enqueueNotification(msg);
 	if (typeof umami !== "undefined") {
 		umami.track("player_action", {
-			name: player.name,
 			action,
-			amount,
 			phase: Phases[currentPhaseIndex],
-			needToCall,
-			betAfterAction: player.roundBet,
-			potSize: pot,
 		});
 	}
 }
