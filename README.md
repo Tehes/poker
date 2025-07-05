@@ -96,8 +96,10 @@ The table works fully offline after the first complete load.
 
 ## 🐞 Debug Logging
 
-Set `DEBUG_FLOW` to `true` in `js/app.js` to enable verbose console logs and
-[Umami](https://umami.is/) event tracking for each step of the betting loop.
+Set `DEBUG_FLOW` to `true` in `js/app.js` to print detailed, timestamped
+messages about the betting flow. Most of these logs are ignored by Umami using
+an internal `isBotLoop` flag so analytics aren't flooded. Only high level
+events like phase changes are tracked.
 Use this when investigating hangs or unexpected behavior.
 
 ---
