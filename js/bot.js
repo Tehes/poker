@@ -297,8 +297,16 @@ function preflopHandScore(cardA, cardB) {
    Decision Engine: Bot Action Selection
 ========================== */
 export function chooseBotAction(player, ctx) {
-        const { currentBet, pot, smallBlind, bigBlind, raisesThisRound, currentPhaseIndex, players, lastRaise } =
-                ctx;
+	const {
+		currentBet,
+		pot,
+		smallBlind,
+		bigBlind,
+		raisesThisRound,
+		currentPhaseIndex,
+		players,
+		lastRaise,
+	} = ctx;
 	// Determine amount needed to call the current bet
 	const needToCall = currentBet - player.roundBet;
 
@@ -527,8 +535,8 @@ export function chooseBotAction(player, ctx) {
 	if (!decision) {
 		if (needToCall <= 0) {
 			if (canRaise && strength >= raiseThreshold) {
-                                let raiseAmt = valueBetSize();
-                                raiseAmt = Math.max(currentBet + lastRaise, raiseAmt);
+				let raiseAmt = valueBetSize();
+				raiseAmt = Math.max(currentBet + lastRaise, raiseAmt);
 				if (Math.abs(strength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
 					decision = Math.random() < 0.5
 						? { action: "check" }
@@ -540,15 +548,14 @@ export function chooseBotAction(player, ctx) {
 				decision = { action: "check" };
 			}
 		} else if (canRaise && strength >= raiseThreshold && stackRatio <= 1 / 3) {
-                        let raiseAmt = protectionBetSize();
-                        raiseAmt = Math.max(currentBet + lastRaise, raiseAmt);
+			let raiseAmt = protectionBetSize();
+			raiseAmt = Math.max(currentBet + lastRaise, raiseAmt);
 			if (Math.abs(strength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
 				const callAmt = Math.min(player.chips, needToCall);
-				const alt =
-					(strengthRatio * aggressiveness >= potOdds &&
-							stackRatio <= (preflop ? 0.5 : 0.7))
-						? { action: "call", amount: callAmt }
-						: { action: "fold" };
+				const alt = (strengthRatio * aggressiveness >= potOdds &&
+						stackRatio <= (preflop ? 0.5 : 0.7))
+					? { action: "call", amount: callAmt }
+					: { action: "fold" };
 				decision = Math.random() < 0.5 ? { action: "raise", amount: raiseAmt } : alt;
 			} else {
 				decision = { action: "raise", amount: raiseAmt };
@@ -584,7 +591,7 @@ export function chooseBotAction(player, ctx) {
 		(decision.action === "check" || decision.action === "fold") && !facingAllIn
 	) {
 		if (Math.random() < bluffChance) {
-                        const bluffAmt = Math.max(currentBet + lastRaise, bluffBetSize());
+			const bluffAmt = Math.max(currentBet + lastRaise, bluffBetSize());
 			decision = { action: "raise", amount: bluffAmt };
 			isBluff = true;
 		}
@@ -601,10 +608,10 @@ export function chooseBotAction(player, ctx) {
 		decision = { action: "check" };
 	}
 
-        if (!preflop && currentBet === 0 && decision.action === "check" && Math.random() < 0.3) {
-                const betAmt = protectionBetSize();
-                decision = { action: "raise", amount: Math.max(lastRaise, betAmt) };
-        }
+	if (!preflop && currentBet === 0 && decision.action === "check" && Math.random() < 0.3) {
+		const betAmt = protectionBetSize();
+		decision = { action: "raise", amount: Math.max(lastRaise, betAmt) };
+	}
 
 	const h1 = formatCard(player.cards[0].dataset.value);
 	const h2 = formatCard(player.cards[1].dataset.value);
@@ -615,6 +622,17 @@ export function chooseBotAction(player, ctx) {
 			...communityCards,
 		]).name
 		: "preflop";
+
+	// --- Ensure raises meet the minimum requirements ---
+	if (decision.action === "raise") {
+		const minRaise = needToCall + lastRaise; // minimum legal raise
+		if (decision.amount < minRaise) {
+			// Downgrade to call (or check if nothing to call)
+			decision = needToCall > 0
+				? { action: "call", amount: Math.min(player.chips, needToCall) }
+				: { action: "check" };
+		}
+	}
 
 	if (DEBUG_DECISIONS) {
 		// Map aggressiveness to an emoji for logging

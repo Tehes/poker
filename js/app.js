@@ -596,15 +596,15 @@ function startBettingRound() {
 
 			if (decision.action === "fold") {
 				player.folded = true;
-				notifyPlayerAction(player, "fold", 0, false, needToCall);
+				notifyPlayerAction(player, "fold", 0);
 				player.qr.hide();
 			} else if (decision.action === "check") {
-				notifyPlayerAction(player, "check", 0, false, needToCall);
+				notifyPlayerAction(player, "check", 0);
 			} else if (decision.action === "call") {
 				const actual = player.placeBet(decision.amount);
 				pot += actual;
 				document.querySelector("#pot").textContent = pot;
-				notifyPlayerAction(player, "call", actual, false, needToCall);
+				notifyPlayerAction(player, "call", actual);
 			} else if (decision.action === "raise") {
 				let bet = decision.amount;
 				const minRaise = needToCall + lastRaise;
@@ -620,7 +620,7 @@ function startBettingRound() {
 				}
 				pot += amt;
 				document.getElementById("pot").textContent = pot;
-				notifyPlayerAction(player, "raise", amt, autoMin, needToCall);
+				notifyPlayerAction(player, "raise", amt);
 			}
 
 			enqueueBotAction(() => {
@@ -688,7 +688,20 @@ function startBettingRound() {
 				actionButton.textContent = "Raise";
 			}
 		}
+		// Snap slider to min-raise on change if needed
+		function onSliderChange() {
+			const val = parseInt(amountSlider.value, 10);
+			const minRaise = needToCall + lastRaise;
+			// If value is between Call and Min‑Raise, snap to minRaise
+			if (val > needToCall && val < minRaise) {
+				amountSlider.value = minRaise;
+				sliderOutput.value = minRaise;
+				sliderOutput.classList.remove("invalid");
+				onSliderInput(); // refresh button label & invalid state
+			}
+		}
 		amountSlider.addEventListener("input", onSliderInput);
+		amountSlider.addEventListener("change", onSliderChange);
 		onSliderInput();
 
 		// Event handlers
@@ -700,11 +713,12 @@ function startBettingRound() {
 			// Remove active highlight and slider listener
 			player.seat.classList.remove("active");
 			amountSlider.removeEventListener("input", onSliderInput);
+			amountSlider.removeEventListener("change", onSliderChange);
 
 			// Handle action types
 			if (bet === 0) {
 				// Check
-				notifyPlayerAction(player, "check", 0, false, needToCall);
+				notifyPlayerAction(player, "check", 0);
 			} else if (bet === player.chips) {
 				// All-In
 				player.placeBet(bet);
@@ -718,7 +732,7 @@ function startBettingRound() {
 				} else if (bet >= needToCall) {
 					currentBet = Math.max(currentBet, player.roundBet);
 				}
-				notifyPlayerAction(player, "allin", bet, false, needToCall);
+				notifyPlayerAction(player, "allin", bet);
 				foldButton.removeEventListener("click", onFold);
 				actionButton.removeEventListener("click", onAction);
 				// Decide whether to continue the betting loop or advance the phase
@@ -738,7 +752,7 @@ function startBettingRound() {
 				player.placeBet(bet);
 				pot += bet;
 				document.getElementById("pot").textContent = pot;
-				notifyPlayerAction(player, "call", bet, false, needToCall);
+				notifyPlayerAction(player, "call", bet);
 			} else {
 				// Raise
 				const autoMin = bet < minRaise && bet < player.chips;
@@ -749,7 +763,7 @@ function startBettingRound() {
 				currentBet = player.roundBet;
 				pot += bet;
 				document.getElementById("pot").textContent = pot;
-				notifyPlayerAction(player, "raise", bet, autoMin, needToCall);
+				notifyPlayerAction(player, "raise", bet);
 				lastRaise = bet - needToCall;
 				raisesThisRound++;
 			}
@@ -771,11 +785,11 @@ function startBettingRound() {
 		}
 		function onFold() {
 			player.folded = true;
-			const needToCall = currentBet - player.roundBet;
-			notifyPlayerAction(player, "fold", 0, false, needToCall);
+			notifyPlayerAction(player, "fold", 0);
 			player.qr.hide();
 			player.seat.classList.remove("active");
 			amountSlider.removeEventListener("input", onSliderInput);
+			amountSlider.removeEventListener("change", onSliderChange);
 			foldButton.removeEventListener("click", onFold);
 			actionButton.removeEventListener("click", onAction);
 			// Decide whether to continue the betting loop or advance the phase
@@ -1083,7 +1097,7 @@ function deletePlayer(ev) {
 	seat.classList.add("hidden");
 }
 
-function notifyPlayerAction(player, action = "", amount = 0, autoMin = false) {
+function notifyPlayerAction(player, action = "", amount = 0) {
 	// Remove any previous action indicator before adding a new one
 	player.seat.classList.remove("checked", "called", "raised", "allin");
 	// Update statistics based on action and phase
@@ -1132,7 +1146,7 @@ function notifyPlayerAction(player, action = "", amount = 0, autoMin = false) {
 			break;
 		case "raise":
 			player.seat.classList.add("raised");
-			msg = `${player.name} raised to ${amount}${autoMin ? " (auto min-raise)" : ""}.`;
+			msg = `${player.name} raised to ${amount}.`;
 			break;
 		case "allin":
 			player.seat.classList.add("allin");
