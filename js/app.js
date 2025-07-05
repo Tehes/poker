@@ -652,8 +652,7 @@ function startBettingRound() {
 			// First bet post-flop: allow Check (0) or at least big blind
 			amountSlider.min = 0;
 			amountSlider.max = player.chips;
-			// Step equals big blind (or entire stack if less than big blind)
-			amountSlider.step = (player.chips >= bigBlind) ? bigBlind : player.chips;
+			amountSlider.step = 10;
 			amountSlider.value = 0;
 			sliderOutput.value = 0;
 		} else {
@@ -669,6 +668,14 @@ function startBettingRound() {
 		// Update button label on slider input
 		function onSliderInput() {
 			const val = parseInt(amountSlider.value, 10);
+			const minRaise = needToCall + lastRaise;
+			// Only flag *raises* that fall below the minimum‑raise threshold
+			const isInvalidRaise = val > needToCall && val < minRaise && val < player.chips;
+			if (isInvalidRaise) {
+				sliderOutput.classList.add("invalid");
+			} else {
+				sliderOutput.classList.remove("invalid");
+			}
 			if (val === 0) {
 				actionButton.textContent = "Check";
 			} else if (val === player.chips) {
@@ -1201,7 +1208,7 @@ poker.init();
 /* --------------------------------------------------------------------------------------------------
 Service Worker configuration. Toggle 'useServiceWorker' to enable or disable the Service Worker.
 ---------------------------------------------------------------------------------------------------*/
-const useServiceWorker = true; // Set to "true" if you want to register the Service Worker, "false" to unregister
+const useServiceWorker = false; // Set to "true" if you want to register the Service Worker, "false" to unregister
 // Don't forget to update the service-worker.js file if you change this setting!
 
 async function registerServiceWorker() {
