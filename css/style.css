@@ -52,7 +52,7 @@ body {
 }
 
 button {
-    width: clamp(71px, 18vw, 115px);
+    width: clamp(71px, 18vw, 138px);
     background-color: var(--yellow);
     color: var(--blue-darker);
     border: none;
