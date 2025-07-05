@@ -82,14 +82,15 @@ function logHistory(msg) {
 }
 
 function logFlow(msg, data, isBotLoop = false) {
-       if (!DEBUG_FLOW) return;
-       const ts = new Date().toISOString().slice(11, 23);
-       if (data !== undefined) {
-               console.log("%c" + ts, "color:#888", msg, data);
-       } else {
-               console.log("%c" + ts, "color:#888", msg);
+       if (DEBUG_FLOW) {
+               const ts = new Date().toISOString().slice(11, 23);
+               if (data !== undefined) {
+                       console.log("%c" + ts, "color:#888", msg, data);
+               } else {
+                       console.log("%c" + ts, "color:#888", msg);
+               }
        }
-       if (isBotLoop) return;
+       if (isBotLoop) return; // avoid analytics spam from loops
        if (window.umami && typeof window.umami.track === "function") {
                const name = msg.slice(0, 50);
                try {
