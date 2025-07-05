@@ -35,6 +35,10 @@ const DEBUG_FLOW = false; // Set to true for verbose game-flow logging
 
 let raisesThisRound = 0;
 
+// --- Analytics --------------------------------------------------------------
+let totalHands = 0;
+let startTimestamp = 0;
+
 // Clubs, Diamonds, Hearts, Spades
 // 2,3,4,5,6,7,8,9,T,J,Q,K,A
 // deno-fmt-ignore-start
@@ -313,8 +317,13 @@ function dealCards() {
  * Execute the standard pre-flop steps: rotate dealer, post blinds, deal cards, start betting.
  */
 function preFlop() {
-	// Reset phase to preflop
-	currentPhaseIndex = 0;
+        // Analytics: count hands and mark start time
+        totalHands++;
+        if (totalHands === 1) {
+                startTimestamp = Date.now();
+        }
+        // Reset phase to preflop
+        currentPhaseIndex = 0;
 
 	startButton.classList.add("hidden");
 
@@ -367,15 +376,22 @@ function preFlop() {
 
 	// ----------------------------------------------------------
 	// GAME OVER: only one player left at the table
-	if (players.length === 1) {
-		const champion = players[0];
-		enqueueNotification(`${champion.name} wins the game! 🏆`);
-		// Reveal champion's stack
-		champion.showTotal();
-		champion.seat.classList.add("winner");
-		logFlow("tournament_end", { champion: champion.name });
-		return; // skip the rest of preFlop()
-	}
+        if (players.length === 1) {
+                const champion = players[0];
+                enqueueNotification(`${champion.name} wins the game! 🏆`);
+                // Reveal champion's stack
+                champion.showTotal();
+                champion.seat.classList.add("winner");
+                logFlow("tournament_end", { champion: champion.name });
+                if (typeof umami !== "undefined") {
+                        umami.track("tournament_end", {
+                                champion: champion.name,
+                                totalHands,
+                                durationMs: Date.now() - startTimestamp,
+                        });
+                }
+                return; // skip the rest of preFlop()
+        }
 	// ----------------------------------------------------------
 
 	// Assign dealer
@@ -384,23 +400,39 @@ function preFlop() {
 	// post blinds
 	setBlinds();
 
-	// Shuffle and deal new hole cards
-	dealCards();
+        // Shuffle and deal new hole cards
+        dealCards();
+        if (totalHands === 1 && typeof umami !== "undefined") {
+                umami.track("start_game", {
+                        players: players.length,
+                        bots: players.filter((p) => p.isBot).length,
+                        smallBlind,
+                        bigBlind,
+                });
+        }
 
-	// Start first betting round (preflop)
-	startBettingRound();
+        // Start first betting round (preflop)
+        startBettingRound();
 }
 
 function setPhase() {
-	logFlow("setPhase", { phase: Phases[currentPhaseIndex] });
-	// EARLY EXIT: If only one player remains, skip straight to showdown
-	const activePlayers = players.filter((p) => !p.folded);
-	if (activePlayers.length <= 1) {
-		return doShowdown();
-	}
+        logFlow("setPhase", { phase: Phases[currentPhaseIndex] });
+        const from = Phases[currentPhaseIndex];
+        // EARLY EXIT: If only one player remains, skip straight to showdown
+        const activePlayers = players.filter((p) => !p.folded);
+        if (activePlayers.length <= 1) {
+                if (typeof umami !== "undefined") {
+                        umami.track("phase_transition", { from, to: "showdown" });
+                }
+                return doShowdown();
+        }
 
-	currentPhaseIndex++;
-	switch (Phases[currentPhaseIndex]) {
+        currentPhaseIndex++;
+        const to = Phases[currentPhaseIndex];
+        if (typeof umami !== "undefined") {
+                umami.track("phase_transition", { from, to });
+        }
+        switch (Phases[currentPhaseIndex]) {
 		case "flop":
 			dealCommunityCards(3);
 			enqueueNotification("Flop (3 cards) dealt.");
@@ -560,34 +592,34 @@ function startBettingRound() {
 			});
 			const needToCall = currentBet - player.roundBet;
 
-			if (decision.action === "fold") {
-				player.folded = true;
-				notifyPlayerAction(player, "fold");
-				player.qr.hide();
-			} else if (decision.action === "check") {
-				notifyPlayerAction(player, "check");
-			} else if (decision.action === "call") {
-				const actual = player.placeBet(decision.amount);
-				pot += actual;
-				document.querySelector("#pot").textContent = pot;
-				notifyPlayerAction(player, "call", actual);
-			} else if (decision.action === "raise") {
-				let bet = decision.amount;
-				const minRaise = needToCall + lastRaise;
-				const autoMin = bet < minRaise && bet < player.chips;
-				if (autoMin) {
-					bet = Math.min(player.chips, minRaise);
-				}
-				const amt = player.placeBet(bet);
-				if (amt > needToCall) {
-					currentBet = player.roundBet;
-					lastRaise = amt - needToCall;
-					raisesThisRound++;
-				}
-				pot += amt;
-				document.getElementById("pot").textContent = pot;
-				notifyPlayerAction(player, "raise", player.roundBet, autoMin);
-			}
+                        if (decision.action === "fold") {
+                                player.folded = true;
+                                notifyPlayerAction(player, "fold", 0, false, needToCall);
+                                player.qr.hide();
+                        } else if (decision.action === "check") {
+                                notifyPlayerAction(player, "check", 0, false, needToCall);
+                        } else if (decision.action === "call") {
+                                const actual = player.placeBet(decision.amount);
+                                pot += actual;
+                                document.querySelector("#pot").textContent = pot;
+                                notifyPlayerAction(player, "call", actual, false, needToCall);
+                        } else if (decision.action === "raise") {
+                                let bet = decision.amount;
+                                const minRaise = needToCall + lastRaise;
+                                const autoMin = bet < minRaise && bet < player.chips;
+                                if (autoMin) {
+                                        bet = Math.min(player.chips, minRaise);
+                                }
+                                const amt = player.placeBet(bet);
+                                if (amt > needToCall) {
+                                        currentBet = player.roundBet;
+                                        lastRaise = amt - needToCall;
+                                        raisesThisRound++;
+                                }
+                                pot += amt;
+                                document.getElementById("pot").textContent = pot;
+                                notifyPlayerAction(player, "raise", amt, autoMin, needToCall);
+                        }
 
 			enqueueBotAction(() => {
 				if (cycles < players.length) {
@@ -661,14 +693,14 @@ function startBettingRound() {
 			amountSlider.removeEventListener("input", onSliderInput);
 
 			// Handle action types
-			if (bet === 0) {
-				// Check
-				notifyPlayerAction(player, "check");
-			} else if (bet === player.chips) {
-				// All-In
-				player.placeBet(bet);
-				pot += bet;
-				document.getElementById("pot").textContent = pot;
+                        if (bet === 0) {
+                                // Check
+                                notifyPlayerAction(player, "check", 0, false, needToCall);
+                        } else if (bet === player.chips) {
+                                // All-In
+                                player.placeBet(bet);
+                                pot += bet;
+                                document.getElementById("pot").textContent = pot;
 				// If this all-in meets or exceeds the call amount, treat it as a raise
 				if (bet >= minRaise) {
 					currentBet = player.roundBet;
@@ -677,7 +709,7 @@ function startBettingRound() {
 				} else if (bet >= needToCall) {
 					currentBet = Math.max(currentBet, player.roundBet);
 				}
-				notifyPlayerAction(player, "allin", bet);
+                                notifyPlayerAction(player, "allin", bet, false, needToCall);
 				foldButton.removeEventListener("click", onFold);
 				actionButton.removeEventListener("click", onAction);
 				// Decide whether to continue the betting loop or advance the phase
@@ -692,23 +724,23 @@ function startBettingRound() {
 					setPhase();
 				}
 				return;
-			} else if (bet === needToCall) {
-				// Call
-				player.placeBet(bet);
-				pot += bet;
-				document.getElementById("pot").textContent = pot;
-				notifyPlayerAction(player, "call", player.roundBet);
-			} else {
-				// Raise
-				const autoMin = bet < minRaise && bet < player.chips;
-				if (autoMin) {
-					bet = Math.min(player.chips, minRaise);
-				}
-				player.placeBet(bet);
-				currentBet = player.roundBet;
-				pot += bet;
-				document.getElementById("pot").textContent = pot;
-				notifyPlayerAction(player, "raise", player.roundBet, autoMin);
+                        } else if (bet === needToCall) {
+                                // Call
+                                player.placeBet(bet);
+                                pot += bet;
+                                document.getElementById("pot").textContent = pot;
+                                notifyPlayerAction(player, "call", bet, false, needToCall);
+                        } else {
+                                // Raise
+                                const autoMin = bet < minRaise && bet < player.chips;
+                                if (autoMin) {
+                                        bet = Math.min(player.chips, minRaise);
+                                }
+                                player.placeBet(bet);
+                                currentBet = player.roundBet;
+                                pot += bet;
+                                document.getElementById("pot").textContent = pot;
+                                notifyPlayerAction(player, "raise", bet, autoMin, needToCall);
 				lastRaise = bet - needToCall;
 				raisesThisRound++;
 			}
@@ -728,12 +760,13 @@ function startBettingRound() {
 				setPhase();
 			}
 		}
-		function onFold() {
-			player.folded = true;
-			notifyPlayerAction(player, "fold");
-			player.qr.hide();
-			player.seat.classList.remove("active");
-			amountSlider.removeEventListener("input", onSliderInput);
+                function onFold() {
+                        player.folded = true;
+                        const needToCall = currentBet - player.roundBet;
+                        notifyPlayerAction(player, "fold", 0, false, needToCall);
+                        player.qr.hide();
+                        player.seat.classList.remove("active");
+                        amountSlider.removeEventListener("input", onSliderInput);
 			foldButton.removeEventListener("click", onFold);
 			actionButton.removeEventListener("click", onAction);
 			// Decide whether to continue the betting loop or advance the phase
@@ -1041,7 +1074,7 @@ function deletePlayer(ev) {
 	seat.classList.add("hidden");
 }
 
-function notifyPlayerAction(player, action, amount, autoMin = false) {
+function notifyPlayerAction(player, action = "", amount = 0, autoMin = false, needToCall = 0) {
 	// Remove any previous action indicator before adding a new one
 	player.seat.classList.remove("checked", "called", "raised", "allin");
 	// Update statistics based on action and phase
@@ -1099,7 +1132,18 @@ function notifyPlayerAction(player, action, amount, autoMin = false) {
 		default:
 			msg = `${player.name} did something…`;
 	}
-	enqueueNotification(msg);
+        enqueueNotification(msg);
+        if (typeof umami !== "undefined") {
+                umami.track("player_action", {
+                        name: player.name,
+                        action,
+                        amount,
+                        phase: Phases[currentPhaseIndex],
+                        needToCall,
+                        betAfterAction: player.roundBet,
+                        potSize: pot,
+                });
+        }
 }
 
 function enqueueNotification(msg) {
