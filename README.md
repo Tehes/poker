@@ -94,6 +94,14 @@ The table works fully offline after the first complete load.
 
 ---
 
+## 🐞 Debug Logging
+
+Set `DEBUG_FLOW` to `true` in `js/app.js` to print detailed, timestamped
+messages about the betting flow. Enable this flag when investigating hangs or
+unexpected behavior.
+
+---
+
 ## 📋 Known Limitations
 
 - No live syncing between devices — players act only via the shared table.
