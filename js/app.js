@@ -1157,7 +1157,7 @@ poker.init();
 /* --------------------------------------------------------------------------------------------------
 Service Worker configuration. Toggle 'useServiceWorker' to enable or disable the Service Worker.
 ---------------------------------------------------------------------------------------------------*/
-const useServiceWorker = false; // Set to "true" if you want to register the Service Worker, "false" to unregister
+const useServiceWorker = true; // Set to "true" if you want to register the Service Worker, "false" to unregister
 // Don't forget to update the service-worker.js file if you change this setting!
 
 async function registerServiceWorker() {
