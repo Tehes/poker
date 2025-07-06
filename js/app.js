@@ -1222,31 +1222,31 @@ Service Worker configuration. Toggle 'useServiceWorker' to enable or disable the
 const useServiceWorker = true; // Set to "true" if you want to register the Service Worker, "false" to unregister
 // Increment to bust Safari's service-worker cache. Also update CACHE_NAME in
 // service-worker.js to keep versions aligned.
-const serviceWorkerVersion = "2025-07-06-1";
+const serviceWorkerVersion = "2025-07-06-v1";
 // Don't forget to update the service-worker.js file if you change this setting!
 
 async function registerServiceWorker() {
-        try {
-                // Force bypassing the HTTP cache so even Safari checks for a new
-                // service-worker.js on every load.
+	try {
+		// Force bypassing the HTTP cache so even Safari checks for a new
+		// service-worker.js on every load.
 		const registration = await navigator.serviceWorker.register(
-		`./service-worker.js?v=${serviceWorkerVersion}`,
-		{
-		scope: "./",
-		// updateViaCache is ignored by Safari but helps other browsers
-		updateViaCache: "none",
-		},
+			`./service-worker.js?v=${serviceWorkerVersion}`,
+			{
+				scope: "./",
+				// updateViaCache is ignored by Safari but helps other browsers
+				updateViaCache: "none",
+			},
 		);
-                // Immediately ping for an update to catch fresh versions that may
-                // have been cached by the browser.
-                registration.update();
-                console.log(
-                        "Service Worker registered with scope:",
-                        registration.scope,
-                );
-        } catch (error) {
-                console.log("Service Worker registration failed:", error);
-        }
+		// Immediately ping for an update to catch fresh versions that may
+		// have been cached by the browser.
+		registration.update();
+		console.log(
+			"Service Worker registered with scope:",
+			registration.scope,
+		);
+	} catch (error) {
+		console.log("Service Worker registration failed:", error);
+	}
 }
 
 async function unregisterServiceWorkers() {
