@@ -71,6 +71,10 @@ button:active {
     transform: translateY(1px);
 }
 
+#start-button {
+    width: min(151px, 29vw);
+}
+
 input[type=range] {
     width: 36vmin;
     margin: 2vmin;
@@ -106,7 +110,6 @@ input[type=range]::-moz-range-thumb {
 output {
     width: 58px;
     text-align: center;
-    min-width: 6vmin;
     color: var(--yellow);
     font-size: 1.2em;
 }
