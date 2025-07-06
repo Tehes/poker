@@ -1252,7 +1252,7 @@ async function unregisterServiceWorkers() {
 
 	await Promise.all(registrations.map((r) => r.unregister()));
 	console.log("All service workers unregistered – reloading page…");
-	// Hard reload, um garantiert ohne Cache zu starten
+	// Hard reload to ensure starting without cache
 	globalThis.location.reload();
 }
 
