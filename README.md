@@ -20,6 +20,8 @@ tablet or laptop) handles community cards, blinds, pot, and betting rounds.
 - **Dynamic Positioning**: Turn order and bot strategy adapt as players fold.
 - **Supports All Table Sizes**: From heads-up to full-ring games.
 - **Responsive Design**: Optimized for tablets, phones, and desktops.
+- **Smart Bet Slider**: The bet slider highlights invalid amounts in red while dragging and snaps to
+  the minimum legal raise when released.
 - **Fast & Offline-Ready**: Loads fast, works without internet once cached.
 - **Built‑in Bots**: Empty player slots are automatically filled with bots.
 - **Bot Intelligence**: Bots evaluate hand strength, pot odds, stack size, and position to make
@@ -52,9 +54,10 @@ The table works fully offline after the first complete load.
   JS, CSS, SVGs, icons) are cached in the browser.
 - **Service Worker** – Handles cache-first requests and serves offline content when the network is
   unavailable.
-- **No asset list needed** – All resources are cached dynamically as they are used.
-- **Updates** – A new version is fetched in the background if online; just refresh the page to
-  switch.
+- **Core Assets Pre‑cached** – Core assets are precached during install; any additional resources
+  are loaded and cached on demand.
+- **Updates** – A new version is fetched and activated in the background; refreshing the page loads
+  the updated assets.
 
 ---
 
@@ -62,7 +65,7 @@ The table works fully offline after the first complete load.
 
 - **HTML/CSS/JavaScript** only – no frameworks
 - **Vanilla JS Game Engine**
- - **kjua** – lightweight QR code generation for offline play
+- **kjua** – lightweight QR code generation for offline play
 - **pokersolver** (ES module) – for hand evaluation at showdown
 
 ---
@@ -96,9 +99,8 @@ The table works fully offline after the first complete load.
 
 ## 🐞 Debug Logging
 
-Set `DEBUG_FLOW` to `true` in `js/app.js` to print detailed, timestamped
-messages about the betting flow. Enable this flag when investigating hangs or
-unexpected behavior.
+Set `DEBUG_FLOW` to `true` in `js/app.js` to print detailed, timestamped messages about the betting
+flow. Enable this flag when investigating hangs or unexpected behavior.
 
 ---
 
@@ -119,5 +121,5 @@ MIT License. Do whatever you want, just don't sue me.
 
 ## 🙌 Credits
 
- - [pokersolver](https://github.com/goldfire/pokersolver) for hand ranking logic
- - [kjua](https://github.com/lrsjng/kjua) for QR code generation
+- [pokersolver](https://github.com/goldfire/pokersolver) for hand ranking logic
+- [kjua](https://github.com/lrsjng/kjua) for QR code generation
