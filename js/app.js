@@ -388,7 +388,7 @@ function preFlop() {
 				champion: champion.name,
 				botWon: champion.isBot,
 				totalHands,
-				durationMs: Date.now() - startTimestamp,
+				durationMin: (Date.now() - startTimestamp) / 60000,
 			});
 		}
 		return; // skip the rest of preFlop()
