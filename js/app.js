@@ -384,11 +384,11 @@ function preFlop() {
 		champion.seat.classList.add("winner");
 		logFlow("tournament_end", { champion: champion.name });
 		if (typeof umami !== "undefined") {
-			umami.track("tournament_end", {
+			umami.track("Poker", {
 				champion: champion.name,
 				botWon: champion.isBot,
-				totalHands,
-				durationMin: (Date.now() - startTimestamp) / 60000,
+				hanndsPlayed: totalHands,
+				durationMinPlayed: (Date.now() - startTimestamp) / 60000,
 			});
 		}
 		return; // skip the rest of preFlop()
@@ -404,7 +404,7 @@ function preFlop() {
 	// Shuffle and deal new hole cards
 	dealCards();
 	if (totalHands === 1 && typeof umami !== "undefined") {
-		umami.track("start_game", {
+		umami.track("Poker", {
 			players: players.length,
 			bots: players.filter((p) => p.isBot).length,
 		});
