@@ -91,7 +91,7 @@ The table works fully offline after the first complete load.
 
 - **Local-first**: Works without network once loaded.
 - **No back-end**: All state is client-side only.
-- **Zero footprint**: No accounts, no tracking, no cloud sync.
+- **Zero footprint**: No accounts, no cloud sync.
 - **Focus on flow**: The app enforces rules and turn order so you can focus on the game.
 - **Tournament-style**: Progressive blinds keep games from stalling.
 

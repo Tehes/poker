@@ -324,10 +324,6 @@ function preFlop() {
 	}
 	// Reset phase to preflop
 	currentPhaseIndex = 0;
-	// Analytics: mark entry into the Pre‑Flop phase
-	if (typeof umami !== "undefined") {
-		umami.track("phase_transition", { phase: "preflop" });
-	}
 
 	startButton.classList.add("hidden");
 
@@ -390,7 +386,7 @@ function preFlop() {
 		if (typeof umami !== "undefined") {
 			umami.track("tournament_end", {
 				champion: champion.name,
-				bot: champion.isBot,
+				botWon: champion.isBot,
 				totalHands,
 				durationMs: Date.now() - startTimestamp,
 			});
@@ -423,17 +419,10 @@ function setPhase() {
 	// EARLY EXIT: If only one player remains, skip straight to showdown
 	const activePlayers = players.filter((p) => !p.folded);
 	if (activePlayers.length <= 1) {
-		if (typeof umami !== "undefined") {
-			umami.track("phase_transition", { phase: "showdown" });
-		}
 		return doShowdown();
 	}
 
 	currentPhaseIndex++;
-	const phase = Phases[currentPhaseIndex];
-	if (typeof umami !== "undefined") {
-		umami.track("phase_transition", { phase });
-	}
 	switch (Phases[currentPhaseIndex]) {
 		case "flop":
 			dealCommunityCards(3);
@@ -1156,12 +1145,6 @@ function notifyPlayerAction(player, action = "", amount = 0) {
 			msg = `${player.name} did something…`;
 	}
 	enqueueNotification(msg);
-	if (typeof umami !== "undefined") {
-		umami.track("player_action", {
-			action,
-			phase: Phases[currentPhaseIndex],
-		});
-	}
 }
 
 function enqueueNotification(msg) {
