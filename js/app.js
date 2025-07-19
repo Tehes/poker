@@ -387,8 +387,8 @@ function preFlop() {
 			umami.track("Poker", {
 				champion: champion.name,
 				botWon: champion.isBot,
-				hanndsPlayed: totalHands,
-				durationMinPlayed: (Date.now() - startTimestamp) / 60000,
+				handsPlayed: totalHands,
+				minutesPlayed: (Date.now() - startTimestamp) / 60000,
 			});
 		}
 		return; // skip the rest of preFlop()
