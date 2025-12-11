@@ -514,10 +514,20 @@ function startBettingRound() {
 	}
 
 	function nextPlayer() {
-		// --- EARLY EXIT --------------------------------------------------
-		// If only ONE player has not folded, the hand ends immediately
-		if (players.filter((p) => !p.folded).length === 1) {
-			return setPhase(); // immediately triggers the show-down / pot award
+		// --- GLOBAL GUARD -------------------------------------------------
+		// If no player can act anymore (all folded or all all-in),
+		// the betting round is over and we advance the phase.
+		const activePlayers = players.filter((p) => !p.folded);
+		const actionablePlayers = activePlayers.filter((p) => !p.allIn);
+		if (activePlayers.length <= 1 || actionablePlayers.length === 0) {
+			logFlow("no actionable players, advance phase (nextPlayer)", {
+				active: activePlayers.map((p) => ({
+					name: p.name,
+					allIn: p.allIn,
+					roundBet: p.roundBet,
+				})),
+			});
+			return setPhase();
 		}
 
 		// -------------------------------------------------------------------
