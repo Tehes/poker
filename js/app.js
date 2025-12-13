@@ -1210,28 +1210,100 @@ globalThis.poker = {
 poker.init();
 
 /* --------------------------------------------------------------------------------------------------
-Service Worker configuration. Toggle 'useServiceWorker' to enable or disable the Service Worker.
----------------------------------------------------------------------------------------------------*/
-const useServiceWorker = true; // Set to "true" if you want to register the Service Worker, "false" to unregister
-const serviceWorkerVersion = "2025-12-12-v1"; // Increment this version to force browsers to fetch a new service-worker.js
+ * Service Worker configuration
+ * - USE_SERVICE_WORKER: enable or disable SW for this project
+ * - SERVICE_WORKER_VERSION: bump to force new SW and new cache
+ * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
+ -------------------------------------------------------------------------------------------------- */
+const USE_SERVICE_WORKER = true;
+const SERVICE_WORKER_VERSION = "2025-12-13-v1";
+const AUTO_RELOAD_ON_SW_UPDATE = true;
 
+/* --------------------------------------------------------------------------------------------------
+ * Project detection
+ * - GitHub Pages: user.github.io/projektname/... -> slug = "projektname", scope = /projektname/
+ * - Everything else (localhost, custom domain): whole origin is one project
+ -------------------------------------------------------------------------------------------------- */
+function getProjectInfo() {
+	const url = new URL(globalThis.location.href);
+	const pathParts = url.pathname.split("/").filter(Boolean);
+	const hostname = url.hostname;
+
+	const isGitHubPages = hostname.endsWith("github.io");
+
+	let projectScope;
+	let projectSlug;
+
+	if (isGitHubPages && pathParts.length > 0) {
+		// Example: https://user.github.io/project/
+		const first = pathParts[0].toLowerCase();
+		projectScope = `${url.origin}/${first}/`;
+		projectSlug = first;
+	} else {
+		// Example: http://127.0.0.1:5500/ or https://nba-spielplan.de/
+		projectScope = `${url.origin}/`;
+		projectSlug = hostname.replace(/[^\w-]/g, "_").toLowerCase();
+	}
+
+	const isGitHubUserRoot = isGitHubPages && pathParts.length === 0;
+
+	return { projectScope, projectSlug, isGitHubUserRoot };
+}
+
+const {
+	projectScope: PROJECT_SCOPE,
+	projectSlug: PROJECT_SLUG,
+	isGitHubUserRoot,
+} = getProjectInfo();
+
+const SW_CACHE_PREFIX = `${PROJECT_SLUG}-cache-`; // SW caches: "<slug>-cache-<version>"
+
+async function shouldSkipServiceWorker(swUrl) {
+	try {
+		const response = await fetch(swUrl, {
+			method: "HEAD",
+			cache: "no-store",
+		});
+
+		if (response.redirected) {
+			console.log(
+				`Service Worker skipped: ${swUrl} redirects to ${response.url}. Use the canonical host for PWA features.`,
+			);
+			return true;
+		}
+
+		if (!response.ok) {
+			console.log(
+				`Service Worker skipped: ${swUrl} returned status ${response.status}.`,
+			);
+			return true;
+		}
+	} catch (error) {
+		console.log("Service Worker preflight check failed, trying to register anyway:", error);
+	}
+
+	return false;
+}
+
+/* Service Worker registration and cleanup */
 async function registerServiceWorker() {
 	try {
-		// Force bypassing the HTTP cache so even Safari checks for a new
-		// service-worker.js on every load.
+		const swUrl = `./service-worker.js?v=${SERVICE_WORKER_VERSION}`;
+
+		if (await shouldSkipServiceWorker(swUrl)) {
+			return;
+		}
+
 		const registration = await navigator.serviceWorker.register(
-			`./service-worker.js?v=${serviceWorkerVersion}`,
-			{
-				scope: "./",
-				// updateViaCache is ignored by Safari but helps other browsers
-				updateViaCache: "none",
-			},
+			swUrl,
+			{ scope: "./", updateViaCache: "none" },
 		);
-		// Immediately ping for an update to catch fresh versions that may
-		// have been cached by the browser.
+
+		// check for updates immediately
 		registration.update();
+
 		console.log(
-			"Service Worker registered with scope:",
+			`Service Worker registered for project "${PROJECT_SLUG}" with scope:`,
 			registration.scope,
 		);
 	} catch (error) {
@@ -1241,17 +1313,75 @@ async function registerServiceWorker() {
 
 async function unregisterServiceWorkers() {
 	const registrations = await navigator.serviceWorker.getRegistrations();
-	if (registrations.length === 0) return;
+	let changedSomething = false;
 
-	await Promise.all(registrations.map((r) => r.unregister()));
-	console.log("All service workers unregistered – reloading page…");
-	// Hard reload to ensure starting without cache
-	globalThis.location.reload();
+	if (registrations.length) {
+		// Only unregister SWs whose scope belongs to this project
+		const projectRegistrations = registrations.filter(
+			(r) => r.scope === PROJECT_SCOPE || r.scope.startsWith(PROJECT_SCOPE),
+		);
+
+		if (projectRegistrations.length) {
+			await Promise.all(projectRegistrations.map((r) => r.unregister()));
+			changedSomething = true;
+		}
+	}
+
+	if ("caches" in globalThis) {
+		const keys = await caches.keys();
+
+		// Remove only Service Worker caches for this project:
+		// - SW caches start with "<slug>-cache-"
+		// - Data / app caches can use "<slug>-data-cache" and are not touched here
+		const swCaches = keys.filter(
+			(k) => k.startsWith(SW_CACHE_PREFIX) && !k.includes("-data-cache"),
+		);
+
+		if (swCaches.length) {
+			await Promise.all(swCaches.map((k) => caches.delete(k)));
+			changedSomething = true;
+		}
+	}
+
+	if (changedSomething) {
+		console.log(
+			`Service workers and SW caches for project "${PROJECT_SLUG}" cleared. Reloading page...`,
+		);
+		globalThis.location.reload();
+	} else {
+		console.log(
+			`No service worker or SW caches found for project "${PROJECT_SLUG}". Not reloading again.`,
+		);
+	}
 }
 
+/* Auto reload on SW controller change and init */
 if ("serviceWorker" in navigator) {
+	const hadControllerAtStart = !!navigator.serviceWorker.controller;
+	let hasHandledControllerChange = false;
+
+	navigator.serviceWorker.addEventListener("controllerchange", () => {
+		if (!hadControllerAtStart) return;
+		if (hasHandledControllerChange) return;
+		hasHandledControllerChange = true;
+
+		if (AUTO_RELOAD_ON_SW_UPDATE) {
+			globalThis.location.reload();
+		} else {
+			console.log("Service Worker updated; auto reload disabled.");
+		}
+	});
+
 	globalThis.addEventListener("DOMContentLoaded", async () => {
-		if (useServiceWorker) {
+		// hard safety: never use a service worker on GitHub user root pages
+		if (isGitHubUserRoot) {
+			console.log(
+				"Service Worker disabled on GitHub user root page to avoid affecting project sites.",
+			);
+			return;
+		}
+
+		if (USE_SERVICE_WORKER) {
 			await registerServiceWorker();
 		} else {
 			await unregisterServiceWorkers();

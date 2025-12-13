@@ -1,6 +1,41 @@
-const CACHE_NAME = `poker-cache-${new URL(location).searchParams.get("v") || "default"}`; // Name of the dynamic cache
+/* --------------------------------------------------------------------------------------------------
+ * Generic Service Worker template
+ * - Per project cache namespace based on PROJECT_SLUG
+ * - Cleans up only this project's SW caches
+ -------------------------------------------------------------------------------------------------- */
 
-// Build list of all card SVGs according to their actual filenames, e.g. "AS.svg", "TD.svg".
+/**
+ * slug must follow the exact same logic used on the client:
+ * - GitHub Pages (user.github.io/project/...) -> slug = the first path segment (the project folder name)
+ * - All other hosts (localhost, custom domains, etc.): slug = hostname
+ */
+function getProjectSlugFromSW() {
+	const scopeUrl = new URL(self.registration.scope);
+	const hostname = scopeUrl.hostname;
+	const pathParts = scopeUrl.pathname.split("/").filter(Boolean);
+
+	const isGitHubPages = hostname.endsWith("github.io");
+
+	if (isGitHubPages && pathParts.length > 0) {
+		return pathParts[0].toLowerCase();
+	}
+
+	return hostname.replace(/[^\w-]/g, "_").toLowerCase();
+}
+
+const PROJECT_SLUG = getProjectSlugFromSW();
+const VERSION = new URL(self.location).searchParams.get("v") || "default";
+const CACHE_PREFIX = `${PROJECT_SLUG}-cache-`;
+const CACHE_NAME = `${CACHE_PREFIX}${VERSION}`;
+
+// Define allowed origins for caching
+const ALLOWED_ORIGINS = new Set([
+	self.location.origin,
+	"https://fonts.googleapis.com",
+	"https://fonts.gstatic.com",
+	// add more if needed
+]);
+
 const SUITS = ["C", "D", "H", "S"];
 const RANKS = ["A", "K", "Q", "J", "T", "9", "8", "7", "6", "5", "4", "3", "2"];
 
@@ -25,89 +60,76 @@ const CORE_ASSETS = [
 	...SUITS.flatMap((suit) => RANKS.map((rank) => `./cards/${rank}${suit}.svg`)),
 ];
 
-// Install event – precache core assets so that everything required for a round of poker
-// is already available before the player goes offline.
 self.addEventListener("install", (event) => {
+	self.skipWaiting();
 	event.waitUntil(
 		caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS)),
 	);
-	self.skipWaiting(); // activate immediately
 });
 
-// Fetch event
+self.addEventListener("message", (event) => {
+	if (event?.data?.type === "SKIP_WAITING") {
+		self.skipWaiting();
+	}
+});
+
+// Example: cache-first / stale-while-revalidate for GET requests
 self.addEventListener("fetch", (event) => {
-	// Ignore everything that's not a simple GET (POST, WebSocket, etc.)
-	if (event.request.method !== "GET") {
-		return; // do not intercept non‑GET requests
+	if (event.request.method !== "GET") return;
+
+	const requestUrl = new URL(event.request.url);
+
+	if (!ALLOWED_ORIGINS.has(requestUrl.origin)) {
+		return;
 	}
 
-	const url = new URL(event.request.url);
-
-	// Requests for hole-cards.html are network-only to avoid unnecessary caching
-	if (url.pathname.endsWith("hole-cards.html")) {
-		return; // let the browser handle it normally
-	}
-
-	// Respond with cache-first strategy and stale-while-revalidate
 	event.respondWith(
-		caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
-			if (cachedResponse) {
-				// Return cached response immediately and update in the background
-				event.waitUntil(
-					fetch(event.request)
-						.then((networkResponse) =>
-							caches.open(CACHE_NAME).then((cache) => {
-								cache.put(event.request, networkResponse.clone());
-							})
-						)
-						// If we're offline or the update fails, swallow the error so we don't get
-						// an unhandled promise rejection in the console.
-						.catch(() => {}),
-				);
-				return cachedResponse; // Return stale (cached) response
-			} else {
-				// If not in cache, fetch from network and cache dynamically
-				return fetch(event.request).then((networkResponse) => {
-					return caches.open(CACHE_NAME).then((cache) => {
-						// Cache the new network response dynamically
+		caches.open(CACHE_NAME).then(async (cache) => {
+			const cached = await cache.match(event.request);
+
+			const fetchPromise = fetch(event.request)
+				.then((networkResponse) => {
+					if (!networkResponse) {
+						return networkResponse;
+					}
+
+					const isOk = networkResponse.ok;
+					const isOpaque = networkResponse.type === "opaque";
+
+					// Cache normal 200 OK responses and opaque cross origin responses (e.g. Google Fonts)
+					if (isOk || isOpaque) {
 						cache.put(event.request, networkResponse.clone());
-						return networkResponse; // Return the fresh network response
-					});
+					}
+
+					return networkResponse;
 				})
-					.catch(() => {
-						// Offline fallback: try cache again; if nothing found and it's a navigation request,
-						// return the cached index.html so the SPA can render.
-						return caches.match(event.request, { ignoreSearch: true }).then(
-							(resp) => {
-								if (resp) return resp;
-								if (event.request.mode === "navigate") {
-									return caches.match("./");
-								}
-								// As a last resort, give an empty 503 response to silence uncaught promise rejections
-								return new Response("", { status: 503, statusText: "Offline" });
-							},
-						);
-					});
-			}
+				.catch(() => cached || Promise.reject());
+
+			return cached || fetchPromise;
 		}),
 	);
 });
 
-// Activate event to clear old caches
+// Clean up old caches for this project only
 self.addEventListener("activate", (event) => {
-	const cacheWhitelist = [CACHE_NAME]; // Only keep the current cache
 	event.waitUntil(
-		(async () => {
-			const cacheNames = await caches.keys();
-			await Promise.all(
-				cacheNames.map((cacheName) => {
-					if (!cacheWhitelist.includes(cacheName)) {
-						// Delete old caches
-						return caches.delete(cacheName);
-					}
-				}),
-			);
-		})(),
+		caches
+			.keys()
+			.then((names) =>
+				Promise.all(
+					names
+						.filter((name) => {
+							// only caches of this project
+							if (!name.startsWith(CACHE_PREFIX)) return false;
+							// keep current cache
+							if (name === CACHE_NAME) return false;
+							// never touch data caches like "<slug>-data-cache"
+							if (name.includes("-data-cache")) return false;
+							return true;
+						})
+						.map((name) => caches.delete(name)),
+				)
+			),
 	);
-	self.clients.claim(); // Ensure service worker takes control of the page immediately
+	self.clients.claim();
 });
