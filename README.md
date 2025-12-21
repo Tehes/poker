@@ -113,12 +113,6 @@ flow. Enable this flag when investigating hangs or unexpected behavior.
 
 ---
 
-## 📄 License
-
-MIT License. Do whatever you want, just don't sue me.
-
----
-
 ## 🙌 Credits
 
 - [pokersolver](https://github.com/goldfire/pokersolver) for hand ranking logic
