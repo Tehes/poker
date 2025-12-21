@@ -35,14 +35,7 @@ const DEBUG_FLOW = false; // Set to true for verbose game-flow logging
 
 let raisesThisRound = 0;
 const STATE_SYNC_ENDPOINT = "https://poker.tehes.deno.net/state";
-const tableUrl = new URL(globalThis.location.href);
-let tableId = tableUrl.searchParams.get("tableId");
-if (!tableId) {
-	tableId = Math.random().toString(36).slice(2, 8);
-	tableUrl.searchParams.set("tableId", tableId);
-	globalThis.history.replaceState(null, "", tableUrl.toString());
-}
-const TABLE_ID = tableId;
+let tableId = null;
 const STATE_SYNC_DELAY = 150;
 let stateSyncTimer = null;
 
@@ -154,7 +147,7 @@ function collectTableState() {
 
 async function sendTableState() {
 	const payload = {
-		tableId: TABLE_ID,
+		tableId: tableId,
 		state: collectTableState(),
 		notifications: notifArr.slice(0, MAX_ITEMS),
 	};
@@ -171,7 +164,7 @@ async function sendTableState() {
 }
 
 function queueStateSync() {
-	if (stateSyncTimer) return;
+	if (stateSyncTimer || openCardsMode) return;
 	stateSyncTimer = setTimeout(() => {
 		stateSyncTimer = null;
 		sendTableState();
@@ -195,6 +188,14 @@ function startGame(event) {
 			}
 			event.target.classList.add("hidden");
 			gameStarted = true;
+
+			if (!tableId) {
+				tableId = Math.random().toString(36).slice(2, 8);
+				const tableUrl = new URL(globalThis.location.href);
+				tableUrl.searchParams.set("tableId", tableId);
+				globalThis.history.replaceState(null, "", tableUrl.toString());
+			}
+
 			preFlop();
 		} else {
 			for (const name of nameBadges) {
@@ -238,7 +239,7 @@ function createPlayers() {
 					const base = globalThis.location.origin +
 						globalThis.location.pathname.replace(/[^/]*$/, "");
 					const url =
-						`${base}hole-cards.html?params=${card1}-${card2}-${playerObject.name}-${playerObject.chips}-${playerObject.seatIndex}&tableId=${TABLE_ID}&t=${Date.now()}`;
+						`${base}hole-cards.html?params=${card1}-${card2}-${playerObject.name}-${playerObject.chips}-${playerObject.seatIndex}&tableId=${tableId}&t=${Date.now()}`;
 					qrContainer.innerHTML = "";
 					const qrEl = globalThis.kjua({
 						text: url,
@@ -1287,6 +1288,12 @@ function init() {
 	for (const closeButton of closeButtons) {
 		closeButton.addEventListener("click", deletePlayer, false);
 	}
+
+	const tableUrl = new URL(globalThis.location.href);
+	if (tableUrl.searchParams.has("tableId")) {
+		tableUrl.searchParams.delete("tableId");
+		globalThis.history.replaceState(null, "", tableUrl.toString());
+	}
 }
 
 /* --------------------------------------------------------------------------------------------------
@@ -1306,7 +1313,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2025-12-13-v1";
+const SERVICE_WORKER_VERSION = "2025-12-21-v1";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 /* --------------------------------------------------------------------------------------------------
