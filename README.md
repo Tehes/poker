@@ -70,6 +70,14 @@ The table works fully offline after the first complete load.
 
 ---
 
+## 🌐 Optional Backend Sync
+
+- The table generates a `tableId` automatically and posts the table state to the backend.
+- Hole-cards views include the same `tableId` in the QR and poll the backend to keep cards/chips in
+  sync. If the backend is unreachable, the QR data stays in place and play continues offline.
+
+---
+
 ## 🤖 How It Works
 
 - The shared device runs the table (e.g., tablet).
@@ -106,7 +114,7 @@ flow. Enable this flag when investigating hangs or unexpected behavior.
 
 ## 📋 Known Limitations
 
-- No live syncing between devices — players act only via the shared table.
+- Live syncing is best-effort; if the backend is unreachable, devices fall back to local QR data.
 - No persistent chip stacks or session saving (yet).
 - Not designed for remote multiplayer.
 - Fixed blind structure (doubles every 2 orbits) — not customizable.

@@ -34,6 +34,17 @@ const HISTORY_LOG = false; // Set to true to enable history logging in the conso
 const DEBUG_FLOW = false; // Set to true for verbose game-flow logging
 
 let raisesThisRound = 0;
+const STATE_SYNC_ENDPOINT = "https://poker.tehes.deno.net/state";
+const tableUrl = new URL(globalThis.location.href);
+let tableId = tableUrl.searchParams.get("tableId");
+if (!tableId) {
+	tableId = Math.random().toString(36).slice(2, 8);
+	tableUrl.searchParams.set("tableId", tableId);
+	globalThis.history.replaceState(null, "", tableUrl.toString());
+}
+const TABLE_ID = tableId;
+const STATE_SYNC_DELAY = 150;
+let stateSyncTimer = null;
 
 // --- Analytics --------------------------------------------------------------
 let totalHands = 0;
@@ -96,6 +107,77 @@ function logFlow(msg, data) {
 	}
 }
 
+function collectTableState() {
+	const communityCards = Array.from(
+		document.querySelectorAll("#community-cards .cardslot img"),
+		(img) => {
+			const match = img.src.match(/\/cards\/([2-9TJQKA][CDHS])\.svg$/);
+			return match ? match[1] : null;
+		},
+	).filter(Boolean);
+
+	const playerStates = players.map((p, index) => ({
+		name: p.name,
+		chips: p.chips,
+		roundBet: p.roundBet,
+		totalBet: p.totalBet,
+		folded: p.folded,
+		allIn: p.allIn,
+		isBot: p.isBot,
+		dealer: p.dealer,
+		smallBlind: p.smallBlind,
+		bigBlind: p.bigBlind,
+		cards: Array.from(p.cards, (card) => card.dataset.value || null),
+		seatIndex: p.seatIndex ?? index,
+		stats: {
+			hands: p.stats.hands,
+			handsWon: p.stats.handsWon,
+			showdowns: p.stats.showdowns,
+			showdownsWon: p.stats.showdownsWon,
+		},
+	}));
+
+	return {
+		phase: Phases[currentPhaseIndex] ?? null,
+		pot,
+		currentBet,
+		lastRaise,
+		smallBlind,
+		bigBlind,
+		raisesThisRound,
+		dealerOrbitCount,
+		communityCards,
+		players: playerStates,
+		timestamp: Date.now(),
+	};
+}
+
+async function sendTableState() {
+	const payload = {
+		tableId: TABLE_ID,
+		state: collectTableState(),
+		notifications: notifArr.slice(0, MAX_ITEMS),
+	};
+
+	try {
+		await fetch(STATE_SYNC_ENDPOINT, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(payload),
+		});
+	} catch (error) {
+		logFlow("state sync failed", error);
+	}
+}
+
+function queueStateSync() {
+	if (stateSyncTimer) return;
+	stateSyncTimer = setTimeout(() => {
+		stateSyncTimer = null;
+		sendTableState();
+	}, STATE_SYNC_DELAY);
+}
+
 function startGame(event) {
 	if (!gameStarted) {
 		createPlayers();
@@ -143,10 +225,12 @@ function createPlayers() {
 
 	const activePlayers = document.querySelectorAll(".seat:not(.hidden)");
 	for (const player of activePlayers) {
+		const seatIndex = players.length;
 		const playerObject = {
 			name: player.querySelector("h3").textContent,
 			isBot: player.classList.contains("bot"),
 			seat: player,
+			seatIndex,
 			qr: {
 				show: function (card1, card2) {
 					const qrContainer = player.querySelector(".qr");
@@ -154,7 +238,7 @@ function createPlayers() {
 					const base = globalThis.location.origin +
 						globalThis.location.pathname.replace(/[^/]*$/, "");
 					const url =
-						`${base}hole-cards.html?params=${card1}-${card2}-${playerObject.name}-${playerObject.chips}&t=${Date.now()}`;
+						`${base}hole-cards.html?params=${card1}-${card2}-${playerObject.name}-${playerObject.chips}-${playerObject.seatIndex}&tableId=${TABLE_ID}&t=${Date.now()}`;
 					qrContainer.innerHTML = "";
 					const qrEl = globalThis.kjua({
 						text: url,
@@ -163,6 +247,7 @@ function createPlayers() {
 						crisp: true,
 					});
 					qrContainer.appendChild(qrEl);
+					qrContainer.dataset.url = url;
 				},
 				hide: function () {
 					const qrContainer = player.querySelector(".qr");
@@ -411,6 +496,7 @@ function preFlop() {
 	}
 
 	// Start first betting round (preflop)
+	queueStateSync();
 	startBettingRound();
 }
 
@@ -443,6 +529,7 @@ function setPhase() {
 			doShowdown();
 			break;
 	}
+	queueStateSync();
 }
 
 function dealCommunityCards(amount) {
@@ -897,6 +984,7 @@ function doShowdown() {
 			actionButton.classList.add("hidden");
 			amountSlider.classList.add("hidden");
 			sliderOutput.classList.add("hidden");
+			queueStateSync();
 		});
 		return;
 	}
@@ -1081,6 +1169,7 @@ function doShowdown() {
 		amountSlider.classList.add("hidden");
 		sliderOutput.classList.add("hidden");
 		startButton.classList.remove("hidden");
+		queueStateSync();
 	});
 	return; // exit doShowdown early because UI flow continues in animation
 }
@@ -1161,6 +1250,7 @@ function enqueueNotification(msg) {
 	pendingNotif.push(msg);
 	if (!isNotifProcessing) {
 		showNextNotif();
+		queueStateSync();
 	}
 }
 

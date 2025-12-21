@@ -5,36 +5,79 @@ Imports
 /* --------------------------------------------------------------------------------------------------
 Variables
 ---------------------------------------------------------------------------------------------------*/
-
+const cardSlots = document.querySelectorAll("img");
+const nameBadge = document.querySelector("h3");
+const chipsEl = document.querySelector(".total");
+const urlParams = new URLSearchParams(globalThis.location.search);
+const params = urlParams.get("params") ? urlParams.get("params").split("-") : [];
+const tableId = urlParams.get("tableId") || "";
+const seatIndexParam = params[4] ? parseInt(params[4], 10) : null;
+const STATE_ENDPOINT = "https://poker.tehes.deno.net/state";
+const REFRESH_INTERVAL = 5000;
 
 /* --------------------------------------------------------------------------------------------------
 functions
 ---------------------------------------------------------------------------------------------------*/
 
 function init() {
-    document.addEventListener("touchstart", function() {}, false);
+	document.addEventListener("touchstart", function () {}, false);
+	applyParams();
+	pollState();
+}
 
-    var queryString = window.location.search;
-    var urlParams = new URLSearchParams(queryString);
+function applyParams() {
+	const card1 = params[0];
+	const card2 = params[1];
+	const playerName = params[2];
+	const chipsVal = Number.parseInt(params[3], 10);
 
-    var params= urlParams.get('params').split('-');
+	setCards(card1, card2);
+	nameBadge.textContent = playerName;
+	chipsEl.textContent = chipsVal;
+}
 
-    var slots = document.querySelectorAll("img");
-    slots[0].src = "cards/"+params[0]+".svg";
-    slots[1].src = "cards/"+params[1]+".svg";
+function setCards(card1, card2) {
+	if (card1) {
+		cardSlots[0].src = `cards/${card1}.svg`;
+	}
+	if (card2) {
+		cardSlots[1].src = `cards/${card2}.svg`;
+	}
+}
 
-    var nameBadge = document.querySelector("h3");
-    nameBadge.textContent = params[2];
+function setChips(amount) {
+	if (typeof amount === "number") {
+		chipsEl.textContent = amount;
+	}
+}
 
-    var chips = document.querySelector(".total");
-    chips.textContent = params[3];
+async function pollState() {
+	try {
+		const res = await fetch(`${STATE_ENDPOINT}?tableId=${encodeURIComponent(tableId)}`);
+		if (res.ok) {
+			const payload = await res.json();
+			applyRemoteState(payload);
+		}
+	} catch (error) {
+		console.warn("state fetch failed", error);
+	}
+	setTimeout(pollState, REFRESH_INTERVAL);
+}
+
+function applyRemoteState(payload) {
+	if (!payload || !payload.state || !Array.isArray(payload.state.players)) return;
+	const player = payload.state.players.find((p) => p.seatIndex === seatIndexParam);
+	if (!player) return;
+
+	setCards(player.cards?.[0], player.cards?.[1]);
+	setChips(player.chips);
 }
 
 /* --------------------------------------------------------------------------------------------------
 public members, exposed with return statement
 ---------------------------------------------------------------------------------------------------*/
-window.app = {
-    init
+globalThis.app = {
+	init,
 };
 
 app.init();
