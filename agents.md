@@ -286,9 +286,10 @@ When making changes, always provide:
    - Mention possible side effects if relevant
 
 - Prefer code-first answers. Explanations should be concise and technical.
-- Trust established data shapes and avoid redundant guards unless a concrete failure mode exists.
-- For internally generated data, do not add fallbacks or extra type checks; rely on the stable
-  identifiers already present.
+- Validate data only at clear module/API boundaries; avoid redundant guards inside controlled flows
+  unless a concrete failure mode exists.
+- For data generated and consumed within the same module or lifecycle, trust the structure and do
+  not add fallbacks or extra type checks.
 
 ---
 
