@@ -5,15 +5,19 @@ Imports
 /* --------------------------------------------------------------------------------------------------
 Variables
 ---------------------------------------------------------------------------------------------------*/
+const singleViewEl = document.getElementById("single");
 const cardSlots = document.querySelectorAll("img");
 const nameBadge = document.querySelector("h3");
 const chipsEl = document.querySelector(".total");
+const betEl = document.querySelector(".bet");
+const potEl = document.getElementById("pot");
+const onlineOnlyElements = [betEl, potEl];
 const urlParams = new URLSearchParams(globalThis.location.search);
 const params = urlParams.get("params") ? urlParams.get("params").split("-") : [];
 const tableId = urlParams.get("tableId") || "";
 const seatIndexParam = params[4] ? parseInt(params[4], 10) : null;
 const STATE_ENDPOINT = "https://poker.tehes.deno.net/state";
-const REFRESH_INTERVAL = 5000;
+const REFRESH_INTERVAL = 2500;
 let lastVersion = 0;
 
 /* --------------------------------------------------------------------------------------------------
@@ -37,19 +41,37 @@ function applyParams() {
 	chipsEl.textContent = chipsVal;
 }
 
-function setCards(card1, card2) {
+function setCards(card1, card2, folded = false) {
 	if (card1) {
 		cardSlots[0].src = `cards/${card1}.svg`;
 	}
 	if (card2) {
 		cardSlots[1].src = `cards/${card2}.svg`;
 	}
+	if (folded) {
+		singleViewEl.classList.add("folded");
+	} else {
+		singleViewEl.classList.remove("folded");
+	}
 }
 
-function setChips(amount) {
+function setChips(amount, roundBet, pot) {
 	if (typeof amount === "number") {
 		chipsEl.textContent = amount;
 	}
+	if (typeof roundBet === "number") {
+		betEl.textContent = roundBet;
+	}
+	if (typeof pot === "number") {
+		potEl.textContent = pot;
+	}
+}
+
+function setOnlineElementsVisible(isOnline) {
+	onlineOnlyElements.forEach((el) => {
+		if (!el) return;
+		el.classList.toggle("hidden", !isOnline);
+	});
 }
 
 async function pollState() {
@@ -59,26 +81,33 @@ async function pollState() {
 		}&sinceVersion=${lastVersion}`;
 		const res = await fetch(url);
 		if (res.status === 204) {
+			setOnlineElementsVisible(true);
 			return;
 		}
 		if (res.ok) {
 			const payload = await res.json();
 			lastVersion = payload.version;
 			applyRemoteState(payload);
+			setOnlineElementsVisible(true);
+		} else {
+			setOnlineElementsVisible(false);
 		}
 	} catch (error) {
 		console.warn("state fetch failed", error);
+		setOnlineElementsVisible(false);
+	} finally {
+		setTimeout(pollState, REFRESH_INTERVAL);
 	}
-	setTimeout(pollState, REFRESH_INTERVAL);
 }
 
 function applyRemoteState(payload) {
 	if (!payload || !payload.state || !Array.isArray(payload.state.players)) return;
 	const player = payload.state.players.find((p) => p.seatIndex === seatIndexParam);
 	if (!player) return;
+	const pot = payload.state.pot || 0;
 
-	setCards(player.cards?.[0], player.cards?.[1]);
-	setChips(player.chips);
+	setCards(player.cards?.[0], player.cards?.[1], player.folded);
+	setChips(player.chips, player.roundBet, pot);
 }
 
 /* --------------------------------------------------------------------------------------------------

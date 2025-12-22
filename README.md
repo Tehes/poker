@@ -74,7 +74,8 @@ The table works fully offline after the first complete load.
 
 - The table generates a `tableId` automatically and posts the table state to the backend.
 - Hole-cards views include the same `tableId` in the QR and poll the backend to keep cards/chips in
-  sync. If the backend is unreachable, the QR data stays in place and play continues offline.
+  sync, including pot and fold status. If the backend is unreachable, the QR data stays in place and
+  play continues offline.
 
 ---
 
