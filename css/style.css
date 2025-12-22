@@ -201,11 +201,23 @@ SINGLE VIEW
 #single {
     display: flex;
     flex-direction: column;
-    justify-content: center;
-    height: 100vh;
+    justify-content: flex-start;
+    min-height: 100dvh;
     width: 100vw;
     margin: 0 3vw;
     max-width: 960px;
+}
+
+#singleview-notifications {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-top: 2rem
+}
+
+#singleview-notifications div {
+    padding-bottom: 0.5rem;
+    border-bottom: 1px dashed var(--font-color);
 }
 
 /*
@@ -378,6 +390,7 @@ h3:focus::before {
 .hole-cards .big {
     width: 47vmin;
     margin: 4vmin;
+    max-width: 350px;
 }
 
 .hole-cards img:nth-of-type(1) {

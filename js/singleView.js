@@ -10,8 +10,9 @@ const cardSlots = document.querySelectorAll("img");
 const nameBadge = document.querySelector("h3");
 const chipsEl = document.querySelector(".total");
 const betEl = document.querySelector(".bet");
-const potEl = document.getElementById("pot");
-const onlineOnlyElements = [betEl, potEl];
+const potEl = document.querySelector("#pot");
+const notificationsEl = document.querySelector("#singleview-notifications");
+const onlineOnlyElements = [betEl, potEl, notificationsEl];
 const urlParams = new URLSearchParams(globalThis.location.search);
 const params = urlParams.get("params") ? urlParams.get("params").split("-") : [];
 const tableId = urlParams.get("tableId") || "";
@@ -74,6 +75,15 @@ function setOnlineElementsVisible(isOnline) {
 	});
 }
 
+function renderNotifications(notifications) {
+	notificationsEl.textContent = "";
+	for (const message of notifications) {
+		const item = document.createElement("div");
+		item.textContent = message;
+		notificationsEl.appendChild(item);
+	}
+}
+
 async function pollState() {
 	try {
 		const url = `${STATE_ENDPOINT}?tableId=${
@@ -104,10 +114,12 @@ function applyRemoteState(payload) {
 	if (!payload || !payload.state || !Array.isArray(payload.state.players)) return;
 	const player = payload.state.players.find((p) => p.seatIndex === seatIndexParam);
 	if (!player) return;
+	nameBadge.textContent = player.name;
 	const pot = payload.state.pot || 0;
 
 	setCards(player.cards?.[0], player.cards?.[1], player.folded);
 	setChips(player.chips, player.roundBet, pot);
+	renderNotifications(payload.notifications);
 }
 
 /* --------------------------------------------------------------------------------------------------

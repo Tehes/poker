@@ -36,7 +36,7 @@ const DEBUG_FLOW = false; // Set to true for verbose game-flow logging
 let raisesThisRound = 0;
 const STATE_SYNC_ENDPOINT = "https://poker.tehes.deno.net/state";
 let tableId = null;
-const STATE_SYNC_DELAY = 150;
+const STATE_SYNC_DELAY = 750;
 let stateSyncTimer = null;
 
 // --- Analytics --------------------------------------------------------------
@@ -196,12 +196,13 @@ function startGame(event) {
 			event.target.classList.add("hidden");
 			gameStarted = true;
 
+			const tableUrl = new URL(globalThis.location.href);
+			tableId = tableUrl.searchParams.get("tableId");
 			if (!tableId) {
 				tableId = Math.random().toString(36).slice(2, 8);
-				const tableUrl = new URL(globalThis.location.href);
-				tableUrl.searchParams.set("tableId", tableId);
-				globalThis.history.replaceState(null, "", tableUrl.toString());
 			}
+			tableUrl.searchParams.set("tableId", tableId);
+			globalThis.history.replaceState(null, "", tableUrl.toString());
 
 			preFlop();
 		} else {
@@ -1255,7 +1256,6 @@ function enqueueNotification(msg) {
 	pendingNotif.push(msg);
 	if (!isNotifProcessing) {
 		showNextNotif();
-		queueStateSync();
 	}
 }
 
@@ -1269,6 +1269,7 @@ function showNextNotif() {
 	// newest message first for tracking
 	notifArr.unshift(msg);
 	if (notifArr.length > MAX_ITEMS) notifArr.pop();
+	queueStateSync();
 	// create a new span for this message
 	const span = document.createElement("span");
 	span.textContent = msg;
