@@ -66,9 +66,14 @@ async function handlePost(request) {
 
 async function handleGet(url) {
 	const tableId = url.searchParams.get("tableId") || "default";
+	const sinceParam = url.searchParams.get("sinceVersion");
+	const sinceVersion = sinceParam ? Number.parseInt(sinceParam, 10) : 0;
 	const record = await getState(tableId);
 	if (!record) {
 		return textResponse("Not found", 404);
+	}
+	if (!Number.isNaN(sinceVersion) && record.version <= sinceVersion) {
+		return new Response(null, { status: 204, headers: withCors() });
 	}
 	return jsonResponse(record);
 }

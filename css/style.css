@@ -182,11 +182,19 @@ SINGLE VIEW
 -------------------------------------------------------------------
 */
 
+#hole-cards {
+    display: flex;
+    justify-content: center;
+}
+
 #single {
     display: flex;
     flex-direction: column;
     justify-content: center;
     height: 100vh;
+    width: 100vw;
+    margin: 0 3vw;
+    max-width: 960px;
 }
 
 /*

@@ -14,6 +14,7 @@ const tableId = urlParams.get("tableId") || "";
 const seatIndexParam = params[4] ? parseInt(params[4], 10) : null;
 const STATE_ENDPOINT = "https://poker.tehes.deno.net/state";
 const REFRESH_INTERVAL = 5000;
+let lastVersion = 0;
 
 /* --------------------------------------------------------------------------------------------------
 functions
@@ -53,9 +54,16 @@ function setChips(amount) {
 
 async function pollState() {
 	try {
-		const res = await fetch(`${STATE_ENDPOINT}?tableId=${encodeURIComponent(tableId)}`);
+		const url = `${STATE_ENDPOINT}?tableId=${
+			encodeURIComponent(tableId)
+		}&sinceVersion=${lastVersion}`;
+		const res = await fetch(url);
+		if (res.status === 204) {
+			return;
+		}
 		if (res.ok) {
 			const payload = await res.json();
+			lastVersion = payload.version;
 			applyRemoteState(payload);
 		}
 	} catch (error) {
