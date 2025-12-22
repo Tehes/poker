@@ -41,7 +41,6 @@ let stateSyncTimer = null;
 
 // --- Analytics --------------------------------------------------------------
 let totalHands = 0;
-let startTimestamp = 0;
 
 // Clubs, Diamonds, Hearts, Spades
 // 2,3,4,5,6,7,8,9,T,J,Q,K,A
@@ -98,6 +97,14 @@ function logFlow(msg, data) {
 			console.log("%c" + ts, "color:#888", msg);
 		}
 	}
+}
+
+function getHandsPlayedBucket(handCount) {
+	if (handCount <= 14) return "1-14";
+	if (handCount <= 25) return "15-25";
+	if (handCount <= 50) return "26-50";
+	if (handCount <= 70) return "51-70";
+	return "71+";
 }
 
 function collectTableState() {
@@ -405,9 +412,6 @@ function dealCards() {
 function preFlop() {
 	// Analytics: count hands and mark start time
 	totalHands++;
-	if (totalHands === 1) {
-		startTimestamp = Date.now();
-	}
 	// Reset phase to preflop
 	currentPhaseIndex = 0;
 
@@ -473,8 +477,7 @@ function preFlop() {
 			umami.track("Poker", {
 				champion: champion.name,
 				botWon: champion.isBot,
-				handsPlayed: totalHands,
-				minutesPlayed: (Date.now() - startTimestamp) / 60000,
+				handsPlayed: getHandsPlayedBucket(totalHands),
 			});
 		}
 		return; // skip the rest of preFlop()
@@ -493,6 +496,7 @@ function preFlop() {
 		umami.track("Poker", {
 			players: players.length,
 			bots: players.filter((p) => p.isBot).length,
+			humans: players.filter((p) => !p.isBot).length,
 		});
 	}
 
@@ -1307,7 +1311,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2025-12-22-v1";
+const SERVICE_WORKER_VERSION = "2025-12-22-v2";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 /* --------------------------------------------------------------------------------------------------
