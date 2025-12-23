@@ -20,6 +20,8 @@ const seatIndexParam = params[4] ? parseInt(params[4], 10) : null;
 const STATE_ENDPOINT = "https://poker.tehes.deno.net/state";
 const REFRESH_INTERVAL = 2500;
 let lastVersion = 0;
+let pollTimeoutId = null;
+let isPolling = false;
 
 /* --------------------------------------------------------------------------------------------------
 functions
@@ -27,6 +29,7 @@ functions
 
 function init() {
 	document.addEventListener("touchstart", function () {}, false);
+	document.addEventListener("visibilitychange", handleVisibilityChange);
 	applyParams();
 	pollState();
 }
@@ -84,7 +87,13 @@ function renderNotifications(notifications) {
 	}
 }
 
+// Constant polling is intentional.
+// Poker tables have bursty activity; 204 does not imply inactivity ahead.
 async function pollState() {
+	if (isPolling || document.visibilityState !== "visible") {
+		return;
+	}
+	isPolling = true;
 	try {
 		const url = `${STATE_ENDPOINT}?tableId=${
 			encodeURIComponent(tableId)
@@ -106,7 +115,29 @@ async function pollState() {
 		console.warn("state fetch failed", error);
 		setOnlineElementsVisible(false);
 	} finally {
-		setTimeout(pollState, REFRESH_INTERVAL);
+		isPolling = false;
+		schedulePoll();
+	}
+}
+
+function schedulePoll() {
+	if (document.visibilityState !== "visible") {
+		pollTimeoutId = null;
+		return;
+	}
+	pollTimeoutId = setTimeout(pollState, REFRESH_INTERVAL);
+}
+
+function handleVisibilityChange() {
+	if (pollTimeoutId !== null) {
+		clearTimeout(pollTimeoutId);
+		pollTimeoutId = null;
+	}
+	if (document.visibilityState !== "visible") {
+		return;
+	}
+	if (!isPolling) {
+		pollState();
 	}
 }
 
