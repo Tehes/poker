@@ -1,10 +1,16 @@
 const kv = await Deno.openKv();
 
+const primaryOrigin = "https://tehes.github.io";
+
 const corsHeaders = {
-	"Access-Control-Allow-Origin": "*",
+	"Access-Control-Allow-Origin": primaryOrigin,
 	"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 	"Access-Control-Allow-Headers": "Content-Type",
 };
+
+const allowedOrigins = new Set([
+	primaryOrigin,
+]);
 
 function withCors(headers = {}) {
 	return { ...corsHeaders, ...headers };
@@ -86,6 +92,11 @@ function routeRequest(request) {
 	const url = new URL(request.url);
 	if (url.pathname !== "/state") {
 		return textResponse("Not found", 404);
+	}
+
+	const origin = request.headers.get("origin");
+	if ((request.method === "POST" || request.method === "OPTIONS") && !allowedOrigins.has(origin)) {
+		return textResponse("Forbidden", 403);
 	}
 
 	if (request.method === "OPTIONS") {
