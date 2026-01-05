@@ -100,12 +100,16 @@ function logFlow(msg, data) {
 }
 
 function getHandsPlayedBucket(handCount) {
-	if (handCount <= 14) return "1-14";
-	if (handCount <= 25) return "15-25";
-	if (handCount <= 50) return "26-50";
-	if (handCount <= 70) return "51-70";
-	return "71+";
+	if (handCount < 20) return "<20";
+	if (handCount <= 25) return "20-25";
+	if (handCount <= 30) return "26-30";
+	if (handCount <= 35) return "31-35";
+	if (handCount <= 40) return "36-40";
+	if (handCount <= 45) return "41-45";
+	if (handCount <= 50) return "46-50";
+	return ">50";
 }
+
 
 function collectTableState() {
 	const communityCards = Array.from(
@@ -1312,7 +1316,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2025-12-23-v1";
+const SERVICE_WORKER_VERSION = "2026-01-05-v1";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 /* --------------------------------------------------------------------------------------------------
