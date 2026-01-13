@@ -110,7 +110,6 @@ function getHandsPlayedBucket(handCount) {
 	return ">50";
 }
 
-
 function collectTableState() {
 	const communityCards = Array.from(
 		document.querySelectorAll("#community-cards .cardslot img"),
@@ -1288,6 +1287,11 @@ function showNextNotif() {
 }
 
 function init() {
+	// Prevent framing
+	if (globalThis.top !== globalThis.self) {
+		globalThis.top.location = globalThis.location.href;
+	}
+
 	document.addEventListener("touchstart", function () {}, false);
 	startButton.addEventListener("click", startGame, false);
 
