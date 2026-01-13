@@ -1289,7 +1289,14 @@ function showNextNotif() {
 function init() {
 	// Prevent framing
 	if (globalThis.top !== globalThis.self) {
-		globalThis.top.location = globalThis.location.href;
+		try {
+			globalThis.top.location.href = globalThis.location.href;
+		} catch {
+			alert("No framing allowed. Please visit: https://tehes.github.io/poker/");
+			throw new Error(
+				"No framing allowed. Open the original: https://tehes.github.io/poker/",
+			);
+		}
 	}
 
 	document.addEventListener("touchstart", function () {}, false);
