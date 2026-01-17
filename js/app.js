@@ -30,6 +30,7 @@ const notifArr = [];
 const pendingNotif = [];
 let isNotifProcessing = false;
 const NOTIF_INTERVAL = 750;
+const ACTION_LABEL_DURATION = 2000;
 const HISTORY_LOG = false; // Set to true to enable history logging in the console
 const DEBUG_FLOW = false; // Set to true for verbose game-flow logging
 
@@ -242,6 +243,7 @@ function createPlayers() {
 			name: player.querySelector("h3").textContent,
 			isBot: player.classList.contains("bot"),
 			seat: player,
+			actionLabelTimer: null,
 			seatIndex,
 			qr: {
 				show: function (card1, card2) {
@@ -1228,29 +1230,48 @@ function notifyPlayerAction(player, action = "", amount = 0) {
 	}
 
 	let msg = "";
+	let actionLabel = "";
 	switch (action) {
 		case "fold":
 			player.seat.classList.add("folded");
+			actionLabel = "Fold";
 			msg = `${player.name} folded.`;
 			break;
 		case "check":
 			player.seat.classList.add("checked");
+			actionLabel = "Check";
 			msg = `${player.name} checked.`;
 			break;
 		case "call":
 			player.seat.classList.add("called");
+			actionLabel = `Call ${amount}`;
 			msg = `${player.name} called ${amount}.`;
 			break;
 		case "raise":
 			player.seat.classList.add("raised");
+			actionLabel = `Raise ${amount}`;
 			msg = `${player.name} raised to ${amount}.`;
 			break;
 		case "allin":
 			player.seat.classList.add("allin");
+			actionLabel = `All-In ${amount}`;
 			msg = `${player.name} is all-in.`;
 			break;
 		default:
 			msg = `${player.name} did something…`;
+	}
+	if (actionLabel) {
+		const nameEl = player.seat.querySelector("h3");
+		if (player.actionLabelTimer) {
+			clearTimeout(player.actionLabelTimer);
+		}
+		player.seat.classList.add("action-label");
+		nameEl.textContent = actionLabel.split(" ")[0];
+		player.actionLabelTimer = setTimeout(() => {
+			nameEl.textContent = player.name;
+			player.seat.classList.remove("action-label");
+			player.actionLabelTimer = null;
+		}, ACTION_LABEL_DURATION);
 	}
 	enqueueNotification(msg);
 }

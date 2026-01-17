@@ -392,11 +392,33 @@ h3:focus::before {
     background-color: var(--yellow);
 }
 
+.action-label h3 {
+    text-transform: uppercase;
+    animation: action-bounce 320ms ease-out;
+}
+
+@keyframes action-bounce {
+    0% {
+        transform: translateY(0);
+    }
+
+    40% {
+        transform: translateY(-4px);
+    }
+
+    70% {
+        transform: translateY(0);
+    }
+
+    100% {
+        transform: translateY(0);
+    }
+}
+
 .folded h3 {
     background-color: var(--blue-darker);
     color: var(--blue-lightest);
 }
-
 
 .folded h3::before {
     content: "❌ ";
@@ -427,7 +449,6 @@ h3:focus::before {
     border: 3px solid var(--yellow);
     font-size: 1rem;
 }
-
 
 .winner h3::before {
     content: "🥇 ";
