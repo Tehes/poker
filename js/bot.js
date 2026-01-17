@@ -12,7 +12,7 @@ import { Card, Hand } from "./pokersolver.js";
 ========================== */
 // Configuration constants
 // Delay in milliseconds between enqueued bot actions
-export const BOT_ACTION_DELAY = 1500;
+export const BOT_ACTION_DELAY = 2000;
 
 // Enable verbose logging of bot decisions
 const DEBUG_DECISIONS = false;

@@ -211,6 +211,7 @@ SINGLE VIEW
 #hole-cards {
     display: flex;
     justify-content: center;
+    flex-direction: initial;
 }
 
 /* When a player folds, bring their hole cards closer together with directional shift */
@@ -342,7 +343,7 @@ footer {
     width: 100%;
     font-size: 0.9rem;
     color: var(--blue-lightest);
-    padding: 0px 20px 10px 20px;
+    padding: 10px 20px;
 }
 
 #social {
