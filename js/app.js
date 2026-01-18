@@ -186,8 +186,6 @@ function queueStateSync() {
 function startGame(event) {
 	if (!gameStarted) {
 		createPlayers();
-		openCardsMode = players.filter((p) => !p.isBot).length === 1;
-		spectatorMode = players.filter((p) => !p.isBot).length === 0;
 
 		if (players.length > 1) {
 			for (const rotateIcon of rotateIcons) {
