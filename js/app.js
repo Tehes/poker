@@ -24,13 +24,14 @@ let initialDealerName = null;
 let dealerOrbitCount = -1;
 let gameStarted = false;
 let openCardsMode = false;
+let spectatorMode = false;
 
 const MAX_ITEMS = 8;
 const notifArr = [];
 const pendingNotif = [];
 let isNotifProcessing = false;
 const NOTIF_INTERVAL = 750;
-const ACTION_LABEL_DURATION = 2000;
+const ACTION_LABEL_DURATION = 3000; //ideally match BOT_ACTION_DELAY
 const HISTORY_LOG = false; // Set to true to enable history logging in the console
 const DEBUG_FLOW = false; // Set to true for verbose game-flow logging
 
@@ -186,6 +187,7 @@ function startGame(event) {
 	if (!gameStarted) {
 		createPlayers();
 		openCardsMode = players.filter((p) => !p.isBot).length === 1;
+		spectatorMode = players.filter((p) => !p.isBot).length === 0;
 
 		if (players.length > 1) {
 			for (const rotateIcon of rotateIcons) {
@@ -407,6 +409,10 @@ function dealCards() {
 				player.qr.show(cards[0], cards[1]);
 			}
 		}
+		if (spectatorMode) {
+			player.cards[0].src = `cards/${cards[0]}.svg`;
+			player.cards[1].src = `cards/${cards[1]}.svg`;
+		}
 		cardGraveyard.push(cards.shift());
 		cardGraveyard.push(cards.shift());
 	}
@@ -458,6 +464,9 @@ function preFlop() {
 		}
 	});
 	players = remainingPlayers;
+	const humanCount = players.filter((p) => !p.isBot).length;
+	openCardsMode = humanCount === 1;
+	spectatorMode = humanCount === 0;
 
 	// Start statistics for a new hand
 	players.forEach((p) => {
