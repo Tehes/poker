@@ -406,10 +406,7 @@ function dealCards() {
 	for (const player of players) {
 		player.cards[0].dataset.value = cards[0];
 		player.cards[1].dataset.value = cards[1];
-		const holeCards = player.cards[0]?.closest(".hole-cards");
-		const areCardsOpen = spectatorMode || (!player.isBot && openCardsMode);
 
-		holeCards.classList.toggle("cards-open", areCardsOpen);
 		if (!player.isBot) {
 			if (openCardsMode) {
 				player.cards[0].src = `cards/${cards[0]}.svg`;
@@ -444,8 +441,6 @@ function preFlop() {
 		p.allIn = false;
 		p.totalBet = 0;
 		p.seat.classList.remove("folded", "called", "raised", "checked", "allin");
-		const holeCards = p.cards[0]?.closest(".hole-cards");
-		holeCards.classList.remove("cards-open");
 	});
 
 	// Remove any previous winner highlighting
@@ -1393,7 +1388,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-01-25-v5";
+const SERVICE_WORKER_VERSION = "2026-01-25-v6";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 /* --------------------------------------------------------------------------------------------------

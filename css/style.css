@@ -487,15 +487,13 @@ main .seat.folded .hole-cards img:nth-of-type(1) {
     margin: 0 0.2vmin;
     transform: translateX(3.5vmin) rotate(-0.5deg);
     transition: all 0.3s;
+    filter: brightness(0.5);
 }
 
 main .seat.folded .hole-cards img:nth-of-type(2) {
     margin: 0 0.2vmin;
     transform: translateX(-3.5vmin) rotate(1deg);
     transition: all 0.3s;
-}
-
-main .seat.folded .hole-cards.cards-open img {
     filter: brightness(0.5);
 }
 
@@ -556,7 +554,7 @@ main .seat.folded .hole-cards.cards-open img {
 }
 
 .hole-cards .blind-icons {
-    width: 4vmin;
+    width: 4.5vmin;
     min-width: 35px;
     border-radius: 50%;
     background-color: var(--yellow);
