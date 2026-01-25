@@ -303,6 +303,13 @@ function createPlayers() {
 				foldsPostflop: 0,
 				allins: 0,
 			},
+			botLine: {
+				preflopAggressor: false,
+				cbetIntent: null,
+				barrelIntent: null,
+				cbetMade: false,
+				barrelMade: false,
+			},
 			showTotal: function () {
 				player.querySelector(".chips .total").textContent = playerObject.chips;
 			},
@@ -469,6 +476,13 @@ function preFlop() {
 	// Start statistics for a new hand
 	players.forEach((p) => {
 		p.stats.hands++;
+		p.botLine = {
+			preflopAggressor: false,
+			cbetIntent: null,
+			barrelIntent: null,
+			cbetMade: false,
+			barrelMade: false,
+		};
 	});
 
 	// If the original dealer is eliminated, update initialDealerName and reset dealerOrbitCount
@@ -1223,6 +1237,17 @@ function notifyPlayerAction(player, action = "", amount = 0) {
 		}
 	}
 
+	if (currentPhaseIndex === 0 && (action === "raise" || action === "allin")) {
+		players.forEach((p) => {
+			if (p.botLine) {
+				p.botLine.preflopAggressor = false;
+			}
+		});
+		if (player.botLine) {
+			player.botLine.preflopAggressor = true;
+		}
+	}
+
 	if (action === "allin") {
 		player.stats.allins++;
 	}
@@ -1355,7 +1380,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-01-25-v1";
+const SERVICE_WORKER_VERSION = "2026-01-25-v2";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 /* --------------------------------------------------------------------------------------------------

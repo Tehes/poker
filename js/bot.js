@@ -341,6 +341,7 @@ export function chooseBotAction(player, ctx) {
 	const active = players.filter((p) => !p.folded);
 	// Number of opponents still in the hand
 	const activeOpponents = active.length - 1;
+	const botLine = player.botLine || null;
 
 	// Helper: find the next active player after the given index
 	function nextActive(startIdx) {
@@ -455,6 +456,8 @@ export function chooseBotAction(player, ctx) {
 	}
 
 	let bluffChance = 0;
+	let foldRate = 0;
+	let statsWeight = 0;
 
 	function valueBetSize() {
 		let base;
@@ -511,6 +514,38 @@ export function chooseBotAction(player, ctx) {
 		return roundTo10(Math.min(player.chips, (pot + needToCall) * factor));
 	}
 
+	function decideCbetIntent(lineAbort) {
+		if (lineAbort) return false;
+		let chance = 0.55;
+		if (textureRisk < 0.35) chance += 0.15;
+		else if (textureRisk > 0.6) chance -= 0.2;
+		chance -= Math.max(0, activeOpponents - 1) * 0.06;
+		chance += positionFactor * 0.08;
+		chance += Math.min(0.2, foldRate * 0.25);
+		if (strengthRatio >= 0.7) chance += 0.15;
+		if (drawEquity > 0) chance += 0.08;
+		const weightScale = 0.6 + 0.4 * statsWeight;
+		chance *= weightScale;
+		chance = Math.max(0.15, Math.min(0.85, chance));
+		return Math.random() < chance;
+	}
+
+	function decideBarrelIntent(lineAbort) {
+		if (lineAbort) return false;
+		let chance = 0.35;
+		if (textureRisk < 0.35) chance += 0.1;
+		else if (textureRisk > 0.6) chance -= 0.15;
+		chance -= Math.max(0, activeOpponents - 1) * 0.05;
+		chance += positionFactor * 0.06;
+		chance += Math.min(0.15, foldRate * 0.2);
+		if (strengthRatio >= 0.75) chance += 0.1;
+		if (drawEquity > 0) chance += 0.06;
+		const weightScale = 0.6 + 0.4 * statsWeight;
+		chance *= weightScale;
+		chance = Math.max(0.1, Math.min(0.75, chance));
+		return Math.random() < chance;
+	}
+
 	// Adjust based on observed opponent tendencies
 	const opponents = players.filter((p) => p !== player);
 	if (opponents.length > 0) {
@@ -520,13 +555,14 @@ export function chooseBotAction(player, ctx) {
 		const avgAgg = opponents.reduce((s, p) =>
 			s + (p.stats.aggressiveActs + 1) / (p.stats.calls + 1), 0) /
 			opponents.length;
-		const foldRate = avgFoldRate(opponents);
+		foldRate = avgFoldRate(opponents);
 
 		// Weight adjustments by average hands played to avoid overreacting in early rounds
 		const avgHands = opponents.reduce((s, p) => s + p.stats.hands, 0) / opponents.length;
 		const weight = avgHands < MIN_HANDS_FOR_WEIGHT
 			? 0
 			: 1 - Math.exp(-(avgHands - MIN_HANDS_FOR_WEIGHT) / WEIGHT_GROWTH);
+		statsWeight = weight;
 		bluffChance = Math.min(0.3, foldRate) * weight;
 		bluffChance *= 1 - textureRisk * 0.5;
 
@@ -542,6 +578,18 @@ export function chooseBotAction(player, ctx) {
 			aggressiveness -= 0.1 * weight;
 		} else if (avgAgg < 0.7) {
 			aggressiveness += 0.1 * weight;
+		}
+	}
+
+	// Keep a simple betting-line memory for the preflop aggressor.
+	let lineAbort = false;
+	if (!preflop && botLine && botLine.preflopAggressor) {
+		lineAbort = textureRisk > 0.7 && strengthRatio < 0.45 && drawEquity === 0;
+		if (currentPhaseIndex === 1 && botLine.cbetIntent === null) {
+			botLine.cbetIntent = decideCbetIntent(lineAbort);
+		}
+		if (currentPhaseIndex === 2 && botLine.cbetMade && botLine.barrelIntent === null) {
+			botLine.barrelIntent = decideBarrelIntent(lineAbort);
 		}
 	}
 
@@ -629,6 +677,25 @@ export function chooseBotAction(player, ctx) {
 	}
 
 	if (
+		!preflop && currentBet === 0 && decision.action === "check" && canRaise &&
+		botLine && botLine.preflopAggressor && !lineAbort && strengthRatio < 0.9
+	) {
+		if (currentPhaseIndex === 1 && botLine.cbetIntent) {
+			const bet = strengthRatio >= 0.6 || drawEquity > 0 ? protectionBetSize() : bluffBetSize();
+			decision = { action: "raise", amount: Math.min(player.chips, Math.max(lastRaise, bet)) };
+			if (strengthRatio < 0.6 && drawEquity === 0) {
+				isBluff = true;
+			}
+		} else if (currentPhaseIndex === 2 && botLine.barrelIntent) {
+			const bet = strengthRatio >= 0.65 || drawEquity > 0 ? protectionBetSize() : bluffBetSize();
+			decision = { action: "raise", amount: Math.min(player.chips, Math.max(lastRaise, bet)) };
+			if (strengthRatio < 0.6 && drawEquity === 0) {
+				isBluff = true;
+			}
+		}
+	}
+
+	if (
 		!preflop && decision.action === "raise" && strengthRatio >= 0.95 && spr <= 2 &&
 		Math.random() < 0.3
 	) {
@@ -665,6 +732,17 @@ export function chooseBotAction(player, ctx) {
 		}
 	}
 
+	if (
+		botLine && botLine.preflopAggressor && !preflop && currentBet === 0 &&
+		decision.action === "raise"
+	) {
+		if (currentPhaseIndex === 1) {
+			botLine.cbetMade = true;
+		} else if (currentPhaseIndex === 2 && botLine.cbetMade) {
+			botLine.barrelMade = true;
+		}
+	}
+
 	if (DEBUG_DECISIONS) {
 		// Map aggressiveness to an emoji for logging
 		let aggrEmoji;
@@ -687,6 +765,16 @@ export function chooseBotAction(player, ctx) {
 			Aggressiveness: aggressiveness.toFixed(2),
 			BoardCtx: overPair ? "overpair" : (topPair ? "top pair" : (drawChance ? "draw" : "-")),
 			Texture: textureRisk.toFixed(2),
+			Line: botLine && botLine.preflopAggressor ? "PFA" : "-",
+			CbetPlan: botLine && botLine.preflopAggressor
+				? (botLine.cbetIntent === null ? "-" : (botLine.cbetIntent ? "Y" : "N"))
+				: "-",
+			BarrelPlan: botLine && botLine.preflopAggressor
+				? (botLine.barrelIntent === null ? "-" : (botLine.barrelIntent ? "Y" : "N"))
+				: "-",
+			CbetMade: botLine && botLine.preflopAggressor ? (botLine.cbetMade ? "Y" : "N") : "-",
+			BarrelMade: botLine && botLine.preflopAggressor ? (botLine.barrelMade ? "Y" : "N") : "-",
+			LineAbort: botLine && botLine.preflopAggressor ? (lineAbort ? "Y" : "N") : "-",
 			Emoji: aggrEmoji,
 			Action: decision.action,
 			Bluff: isBluff,
