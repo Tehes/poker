@@ -699,6 +699,13 @@ function startBettingRound() {
 			foldButton.classList.add("hidden");
 			amountSlider.classList.add("hidden");
 			sliderOutput.classList.add("hidden");
+			const nameEl = player.seat.querySelector("h3");
+			if (player.actionLabelTimer) {
+				clearTimeout(player.actionLabelTimer);
+				player.actionLabelTimer = null;
+				player.seat.classList.remove("action-label");
+			}
+			nameEl.textContent = "thinking...";
 
 			enqueueBotAction(() => {
 				const decision = chooseBotAction(player, {
@@ -1380,7 +1387,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-01-25-v3";
+const SERVICE_WORKER_VERSION = "2026-01-25-v4";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 /* --------------------------------------------------------------------------------------------------
