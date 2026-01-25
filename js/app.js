@@ -31,7 +31,7 @@ const notifArr = [];
 const pendingNotif = [];
 let isNotifProcessing = false;
 const NOTIF_INTERVAL = 750;
-const ACTION_LABEL_DURATION = 3000; //ideally match BOT_ACTION_DELAY
+const ACTION_LABEL_DURATION = 3000;
 const HISTORY_LOG = false; // Set to true to enable history logging in the console
 const DEBUG_FLOW = false; // Set to true for verbose game-flow logging
 
@@ -183,6 +183,181 @@ function queueStateSync() {
 	}, STATE_SYNC_DELAY);
 }
 
+function combinationCount(n, k) {
+	if (k < 0 || k > n) {
+		return 0;
+	}
+	const kk = Math.min(k, n - k);
+	let result = 1;
+	for (let i = 1; i <= kk; i++) {
+		result = (result * (n - kk + i)) / i;
+	}
+	return Math.round(result);
+}
+
+function getCommunityCardsForEquity() {
+	return Array.from(
+		document.querySelectorAll("#community-cards .cardslot img"),
+	).map((img) => {
+		const match = img.src.match(/\/cards\/([2-9TJQKA][CDHS])\.svg$/);
+		return match ? match[1] : null;
+	}).filter(Boolean);
+}
+
+function updateWinProbabilityDisplays() {
+	players.forEach((p) => {
+		const winEl = p.winProbabilityEl || p.seat.querySelector(".win-probality");
+		if (!winEl) {
+			return;
+		}
+		const shouldShow = spectatorMode &&
+			currentPhaseIndex > 0 &&
+			!p.folded &&
+			typeof p.winProbability === "number";
+		if (shouldShow) {
+			winEl.textContent = `${Math.round(p.winProbability)}%`;
+			winEl.classList.remove("hidden");
+		} else {
+			winEl.textContent = "";
+			winEl.classList.add("hidden");
+		}
+	});
+}
+
+function computeSpectatorWinProbabilities(reason = "") {
+	if (!spectatorMode) {
+		return;
+	}
+	if (currentPhaseIndex === 0) {
+		logFlow("winProbability: preflop skipped", { reason });
+		updateWinProbabilityDisplays();
+		return;
+	}
+
+	const communityCards = getCommunityCardsForEquity();
+	const missingCount = 5 - communityCards.length;
+	if (missingCount < 0) {
+		logFlow("winProbability: invalid board state", {
+			communityCards,
+			missingCount,
+		});
+		return;
+	}
+
+	const activePlayers = players.filter((p) => !p.folded);
+	if (activePlayers.length === 0) {
+		updateWinProbabilityDisplays();
+		return;
+	}
+
+	players.forEach((p) => {
+		p.winProbability = p.folded ? 0 : null;
+	});
+
+	if (activePlayers.length === 1) {
+		activePlayers[0].winProbability = 100;
+		updateWinProbabilityDisplays();
+		logFlow("winProbability", {
+			phase: Phases[currentPhaseIndex],
+			reason,
+			boards: 1,
+			players: [{ name: activePlayers[0].name, winProbability: 100 }],
+		});
+		return;
+	}
+
+	const totalBoards = combinationCount(cards.length, missingCount);
+	const MAX_ENUM_BOARDS = 50000;
+	if (totalBoards > MAX_ENUM_BOARDS) {
+		logFlow("winProbability: skipped heavy enumeration", {
+			phase: Phases[currentPhaseIndex],
+			reason,
+			missingCount,
+			totalBoards,
+			deckSize: cards.length,
+		});
+		updateWinProbabilityDisplays();
+		return;
+	}
+
+	const deck = cards.slice();
+	if (totalBoards === 0) {
+		logFlow("winProbability: no boards to evaluate", {
+			deckSize: deck.length,
+			missingCount,
+		});
+		updateWinProbabilityDisplays();
+		return;
+	}
+
+	const scores = new Map();
+	const playerHoles = activePlayers.map((p) => ({
+		player: p,
+		hole: [p.cards[0].dataset.value, p.cards[1].dataset.value],
+	}));
+	playerHoles.forEach((entry) => {
+		scores.set(entry.player, 0);
+	});
+
+	let boardsSeen = 0;
+
+	const scoreBoard = (boardCards) => {
+		const entries = playerHoles.map((entry) => {
+			const seven = [entry.hole[0], entry.hole[1], ...boardCards];
+			return { player: entry.player, handObj: Hand.solve(seven) };
+		});
+		const winners = Hand.winners(entries.map((e) => e.handObj));
+		const share = 1 / winners.length;
+		winners.forEach((winnerHand) => {
+			const winnerEntry = entries.find((e) => e.handObj === winnerHand);
+			const prev = scores.get(winnerEntry.player);
+			scores.set(winnerEntry.player, prev + share);
+		});
+		boardsSeen++;
+	};
+
+	if (missingCount === 0) {
+		scoreBoard(communityCards);
+	} else {
+		const buffer = new Array(missingCount);
+		const recurse = (depth, startIndex) => {
+			if (depth === missingCount) {
+				scoreBoard(communityCards.concat(buffer));
+				return;
+			}
+			const maxIndex = deck.length - (missingCount - depth);
+			for (let i = startIndex; i <= maxIndex; i++) {
+				buffer[depth] = deck[i];
+				recurse(depth + 1, i + 1);
+			}
+		};
+		recurse(0, 0);
+	}
+
+	if (boardsSeen === 0) {
+		return;
+	}
+
+	activePlayers.forEach((p) => {
+		const pct = (scores.get(p) / boardsSeen) * 100;
+		p.winProbability = pct;
+	});
+
+	updateWinProbabilityDisplays();
+
+	logFlow("winProbability", {
+		phase: Phases[currentPhaseIndex],
+		reason,
+		missingCount,
+		totalBoards,
+		boards: boardsSeen,
+		players: activePlayers.map((p) => ({
+			name: p.name,
+			winProbability: Number(p.winProbability.toFixed(2)),
+		})),
+	});
+}
+
 function startGame(event) {
 	if (!gameStarted) {
 		createPlayers();
@@ -243,7 +418,9 @@ function createPlayers() {
 			name: player.querySelector("h3").textContent,
 			isBot: player.classList.contains("bot"),
 			seat: player,
+			winProbabilityEl: player.querySelector(".win-probality"),
 			actionLabelTimer: null,
+			winProbability: null,
 			seatIndex,
 			qr: {
 				show: function (card1, card2) {
@@ -440,6 +617,7 @@ function preFlop() {
 		p.folded = false;
 		p.allIn = false;
 		p.totalBet = 0;
+		p.winProbability = null;
 		p.seat.classList.remove("folded", "called", "raised", "checked", "allin");
 	});
 
@@ -473,6 +651,7 @@ function preFlop() {
 	const humanCount = players.filter((p) => !p.isBot).length;
 	openCardsMode = humanCount === 1;
 	spectatorMode = humanCount === 0;
+	updateWinProbabilityDisplays();
 
 	// Start statistics for a new hand
 	players.forEach((p) => {
@@ -577,6 +756,9 @@ function dealCommunityCards(amount) {
 		const card = cards.shift();
 		emptySlots[i].innerHTML = `<img src="cards/${card}.svg">`;
 		cardGraveyard.push(card); // back into Deck
+	}
+	if (spectatorMode) {
+		computeSpectatorWinProbabilities("dealCommunityCards");
 	}
 }
 
@@ -706,7 +888,8 @@ function startBettingRound() {
 				player.actionLabelTimer = null;
 				player.seat.classList.remove("action-label");
 			}
-			nameEl.textContent = "thinking...";
+			player.seat.classList.remove("checked", "called", "raised", "allin");
+			nameEl.textContent = "thinking …";
 
 			enqueueBotAction(() => {
 				const decision = chooseBotAction(player, {
@@ -1312,6 +1495,14 @@ function notifyPlayerAction(player, action = "", amount = 0) {
 			player.seat.classList.remove("action-label");
 			player.actionLabelTimer = null;
 		}, ACTION_LABEL_DURATION);
+	}
+	if (spectatorMode && action === "fold") {
+		player.winProbability = 0;
+		if (currentPhaseIndex > 0) {
+			computeSpectatorWinProbabilities("fold");
+		} else {
+			logFlow("winProbability: preflop fold skipped", { name: player.name });
+		}
 	}
 	enqueueNotification(msg);
 }

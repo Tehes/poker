@@ -33,6 +33,22 @@ tablet or laptop) handles community cards, blinds, pot, and betting rounds.
 
 ---
 
+## 🎮 Main Play Modes
+
+The same table supports different ways to play. The "mode" is simply the result of how many humans
+join and whether you scan the QR codes.
+
+- **Solo vs Bots (Open Cards)**: One human plays directly on the main device while bots fill the
+  empty seats. This is the fastest way to play and learn.
+- **Spectator / TV Poker**: No humans join. All seats are bots, hole cards are visible, and the
+  table becomes a self-running poker show.
+- **Group Play with QR Hole Cards**: Two or more humans join. Each player scans their QR code to see
+  private hole cards on their own phone, while the shared screen stays clean and neutral.
+- **Hybrid Tables**: Humans and bots can mix freely. This makes it easy to run short-handed games,
+  fill gaps, or teach new players without slowing the table down.
+
+---
+
 ## 🚀 Getting Started
 
 1. Open this URL on a shared device (e.g., tablet or laptop): 👉

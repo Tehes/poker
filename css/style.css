@@ -98,7 +98,7 @@ button:active {
 }
 
 #start-button {
-    width: min(151px, 29vw);
+    width: min(153px, 29vw);
 }
 
 input[type=range] {
@@ -572,6 +572,18 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
     position: absolute;
     right: 0px;
     top: 0px;
+}
+
+.win-probality {
+    position: absolute;
+    bottom: 0px;
+    left: 0px;
+    background-color: var(--blue-darker);
+    color: var(--font-color);
+    padding: 4px 10px;
+    margin: 1vmin;
+    border-radius: 999px;
+    font-size: 0.9rem;
 }
 
 /*
