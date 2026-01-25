@@ -576,12 +576,11 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
 
 .win-probality {
     position: absolute;
-    bottom: 0px;
-    left: 0px;
-    background-color: var(--blue-darker);
-    color: var(--font-color);
-    padding: 4px 10px;
-    margin: 1vmin;
+    top: 0px;
+    right: 0px;
+    background-color: var(--font-color);
+    color: var(--blue-darker);
+    padding: 2px 8px;
     border-radius: 999px;
     font-size: 0.9rem;
 }
