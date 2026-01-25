@@ -146,6 +146,7 @@ function analyzeDrawPotential(hole, board) {
 	if (!hasFlush) {
 		draws.flushDraw = suitCounts.some((c) => c === 4);
 	}
+	const flushOuts = draws.flushDraw ? 9 : 0;
 
 	// Straight draw check
 	const ranks = allCards.map((c) => new Card(c).rank);
@@ -156,18 +157,34 @@ function analyzeDrawPotential(hole, board) {
 	for (let start = 1; start <= 10; start++) {
 		straights.push([start, start + 1, start + 2, start + 3, start + 4]);
 	}
+	let straightOuts = 0;
+	let hasStraight = false;
+	const missingRanks = new Set();
 	for (const seq of straights) {
-		const count = seq.filter((r) => unique.includes(r)).length;
-		if (count === 5) {
+		const missing = seq.filter((r) => !unique.includes(r));
+		if (missing.length === 0) {
 			// Already a straight; no draw
-			draws.straightDraw = false;
+			hasStraight = true;
 			break;
 		}
-		if (count === 4) {
+		if (missing.length === 1) {
 			draws.straightDraw = true;
-			break;
+			const missingRank = missing[0];
+			missingRanks.add(missingRank);
+			if (missingRank === seq[0] || missingRank === seq[4]) {
+				straightOuts = 8;
+			}
 		}
 	}
+
+	if (hasStraight) {
+		draws.straightDraw = false;
+		straightOuts = 0;
+	} else if (draws.straightDraw && straightOuts === 0) {
+		straightOuts = missingRanks.size >= 2 ? 8 : 4;
+	}
+
+	draws.outs = flushOuts + straightOuts;
 
 	return draws;
 }
@@ -371,6 +388,8 @@ export function chooseBotAction(player, ctx) {
 	let topPair = false;
 	let overPair = false;
 	let drawChance = false;
+	let drawOuts = 0;
+	let drawEquity = 0;
 	let textureRisk = 0;
 	if (!preflop && communityCards.length >= 3) {
 		const ctxInfo = analyzeHandContext(
@@ -385,6 +404,15 @@ export function chooseBotAction(player, ctx) {
 			communityCards,
 		);
 		drawChance = draws.flushDraw || draws.straightDraw;
+		drawOuts = draws.outs;
+		if (drawOuts > 0) {
+			const drawFactor = communityCards.length === 3
+				? 0.04
+				: communityCards.length === 4
+				? 0.02
+				: 0;
+			drawEquity = Math.min(1, drawOuts * drawFactor);
+		}
 
 		textureRisk = evaluateBoardTexture(communityCards);
 	}
@@ -413,9 +441,12 @@ export function chooseBotAction(player, ctx) {
 			aggressiveness += 0.1;
 			raiseThreshold -= 0.3;
 		}
-		if (drawChance) {
-			aggressiveness += 0.05;
-			raiseThreshold -= 0.25;
+		if (drawEquity > 0) {
+			const effectiveStrength = Math.min(1, strengthRatio + drawEquity);
+			aggressiveness *= effectiveStrength / strengthRatio;
+		}
+		if (drawOuts > 0) {
+			raiseThreshold -= Math.min(0.4, drawEquity * 0.8);
 		}
 
 		// Reduce aggression on wet boards
