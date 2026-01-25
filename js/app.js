@@ -700,48 +700,48 @@ function startBettingRound() {
 			amountSlider.classList.add("hidden");
 			sliderOutput.classList.add("hidden");
 
-			const decision = chooseBotAction(player, {
-				currentBet,
-				pot,
-				smallBlind,
-				bigBlind,
-				raisesThisRound,
-				currentPhaseIndex,
-				players,
-				lastRaise,
-			});
-			const needToCall = currentBet - player.roundBet;
-
-			if (decision.action === "fold") {
-				player.folded = true;
-				notifyPlayerAction(player, "fold", 0);
-				player.qr.hide();
-			} else if (decision.action === "check") {
-				notifyPlayerAction(player, "check", 0);
-			} else if (decision.action === "call") {
-				const actual = player.placeBet(decision.amount);
-				pot += actual;
-				document.querySelector("#pot").textContent = pot;
-				notifyPlayerAction(player, "call", actual);
-			} else if (decision.action === "raise") {
-				let bet = decision.amount;
-				const minRaise = needToCall + lastRaise;
-				const autoMin = bet < minRaise && bet < player.chips;
-				if (autoMin) {
-					bet = Math.min(player.chips, minRaise);
-				}
-				const amt = player.placeBet(bet);
-				if (amt > needToCall) {
-					currentBet = player.roundBet;
-					lastRaise = amt - needToCall;
-					raisesThisRound++;
-				}
-				pot += amt;
-				document.getElementById("pot").textContent = pot;
-				notifyPlayerAction(player, "raise", amt);
-			}
-
 			enqueueBotAction(() => {
+				const decision = chooseBotAction(player, {
+					currentBet,
+					pot,
+					smallBlind,
+					bigBlind,
+					raisesThisRound,
+					currentPhaseIndex,
+					players,
+					lastRaise,
+				});
+				const needToCall = currentBet - player.roundBet;
+
+				if (decision.action === "fold") {
+					player.folded = true;
+					notifyPlayerAction(player, "fold", 0);
+					player.qr.hide();
+				} else if (decision.action === "check") {
+					notifyPlayerAction(player, "check", 0);
+				} else if (decision.action === "call") {
+					const actual = player.placeBet(decision.amount);
+					pot += actual;
+					document.querySelector("#pot").textContent = pot;
+					notifyPlayerAction(player, "call", actual);
+				} else if (decision.action === "raise") {
+					let bet = decision.amount;
+					const minRaise = needToCall + lastRaise;
+					const autoMin = bet < minRaise && bet < player.chips;
+					if (autoMin) {
+						bet = Math.min(player.chips, minRaise);
+					}
+					const amt = player.placeBet(bet);
+					if (amt > needToCall) {
+						currentBet = player.roundBet;
+						lastRaise = amt - needToCall;
+						raisesThisRound++;
+					}
+					pot += amt;
+					document.getElementById("pot").textContent = pot;
+					notifyPlayerAction(player, "raise", amt);
+				}
+
 				if (cycles < players.length) {
 					logFlow("bot next", { name: player.name });
 					nextPlayer();
@@ -1380,7 +1380,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-01-25-v2";
+const SERVICE_WORKER_VERSION = "2026-01-25-v3";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 /* --------------------------------------------------------------------------------------------------
