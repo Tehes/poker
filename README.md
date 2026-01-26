@@ -112,6 +112,25 @@ The table works fully offline after the first complete load.
 
 ---
 
+## Bot Behavior (Tournament Logic)
+
+Bots play tournament-style poker and follow consistent rules (no hidden information or "reads").
+In plain terms, they consider:
+
+- **Hand and board**: starting hand strength, made hands, strong pairs, and straight/flush draws,
+  plus how dangerous the board is.
+- **Risk and price**: the price to call versus the pot, how much of their stack is at risk, and
+  whether a bet is all-in.
+- **Position and table**: seat position, number of opponents still in the hand, and whether the bot
+  was the preflop aggressor (affects continuation and follow-up bets).
+- **Opponent tendencies**: how loose/tight and aggressive opponents are, and how often they fold,
+  based on enough hands played.
+- **Tournament zones (M-ratio)**: stack vs blinds decides whether they shove, raise, call, or fold.
+- **Stack context**: chip leaders raise a bit wider, short stacks call tighter; small randomness and
+  occasional bluffs appear only outside the shove-only zones.
+
+---
+
 ## 🧠 Design Philosophy
 
 - **Local-first**: Works without network once loaded.
