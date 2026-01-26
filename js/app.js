@@ -109,7 +109,9 @@ function getHandsPlayedBucket(handCount) {
 	if (handCount <= 40) return "36-40";
 	if (handCount <= 45) return "41-45";
 	if (handCount <= 50) return "46-50";
-	return ">50";
+	if (handCount <= 55) return "51-55";
+	if (handCount <= 60) return "56-60";
+	return ">60";
 }
 
 function collectTableState() {
@@ -1579,7 +1581,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-01-25-v7";
+const SERVICE_WORKER_VERSION = "2026-01-26-v1";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 /* --------------------------------------------------------------------------------------------------
