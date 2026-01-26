@@ -118,7 +118,8 @@ Bots play tournament-style poker and follow consistent rules (no hidden informat
 In plain terms, they consider:
 
 - **Hand and board**: starting hand strength, made hands, strong pairs, and straight/flush draws,
-  plus how dangerous the board is.
+  plus how dangerous the board is, including kicker-based tie-breaks within the same hand category
+  after the flop.
 - **Risk and price**: the price to call versus the pot, how much of their stack is at risk, and
   whether a bet is all-in.
 - **Position and table**: seat position, number of opponents still in the hand, and whether the bot

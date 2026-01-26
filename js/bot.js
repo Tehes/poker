@@ -101,6 +101,17 @@ function roundTo10(x) {
 	return Math.round(x / 10) * 10;
 }
 
+function handTiebreaker(handObj) {
+	const base = 15;
+	let value = 0;
+	let factor = 1 / base;
+	for (const card of handObj.cards) {
+		value += card.rank * factor;
+		factor /= base;
+	}
+	return value;
+}
+
 // Calculate how often a player folds
 function calcFoldRate(p) {
 	return p.stats.hands > 0 ? p.stats.folds / p.stats.hands : 0;
@@ -405,6 +416,7 @@ export function chooseBotAction(player, ctx) {
 
 	// Evaluate hand strength
 	let strength;
+	let solvedHand = null;
 	if (preflop) {
 		strength = preflopHandScore(player.cards[0].dataset.value, player.cards[1].dataset.value);
 	} else {
@@ -413,7 +425,8 @@ export function chooseBotAction(player, ctx) {
 			player.cards[1].dataset.value,
 			...communityCards,
 		];
-		strength = Hand.solve(cards).rank;
+		solvedHand = Hand.solve(cards);
+		strength = solvedHand.rank + handTiebreaker(solvedHand);
 	}
 
 	// Post-flop board context
@@ -854,13 +867,7 @@ export function chooseBotAction(player, ctx) {
 
 	const h1 = formatCard(player.cards[0].dataset.value);
 	const h2 = formatCard(player.cards[1].dataset.value);
-	const handName = !preflop
-		? Hand.solve([
-			player.cards[0].dataset.value,
-			player.cards[1].dataset.value,
-			...communityCards,
-		]).name
-		: "preflop";
+	const handName = !preflop ? solvedHand.name : "preflop";
 
 	// --- Ensure raises meet the minimum requirements ---
 	if (decision.action === "raise") {
