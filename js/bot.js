@@ -3,6 +3,9 @@
  *
  * Implements the poker bot's decision-making logic, including hand evaluation,
  * action selection based on game context, and managing delayed execution of bot actions.
+ *
+ * Winner-take-all tournament with no payout ladder: bot decisions are chip-EV driven
+ * (plus M-ratio zones) and intentionally do not apply ICM-style survival premiums.
  */
 
 import { Card, Hand } from "./pokersolver.js";
