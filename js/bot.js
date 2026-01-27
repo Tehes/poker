@@ -15,7 +15,7 @@ import { Card, Hand } from "./pokersolver.js";
 export const BOT_ACTION_DELAY = 3000;
 
 // Enable verbose logging of bot decisions
-const DEBUG_DECISIONS = false;
+const DEBUG_DECISIONS = true;
 // Maximum number of raises allowed per betting round
 const MAX_RAISES_PER_ROUND = 3;
 // Tie-breaker thresholds for close decisions
@@ -53,6 +53,13 @@ const GREEN_MAX_STACK_BET = 0.2;
 const CHIP_LEADER_RAISE_DELTA = 0.05;
 const SHORTSTACK_CALL_DELTA = 0.05;
 const SHORTSTACK_RELATIVE = 0.6;
+// Hand-level commitment tuning to reduce multi-street bleeding
+const COMMIT_SPR_MIN = 1.5;
+const COMMIT_SPR_MAX = 5.5;
+const COMMIT_INVEST_START = 0.1;
+const COMMIT_INVEST_END = 0.6;
+const COMMIT_CALL_RATIO_REF = 0.25;
+const COMMITMENT_PENALTY_MAX = 0.25;
 
 const botActionQueue = [];
 let processingBotActions = false;
@@ -487,8 +494,35 @@ export function chooseBotAction(player, ctx) {
 	const redCallThreshold = Math.min(1, RED_CALL_RATIO + callTightAdj);
 	const orangeCallThreshold = Math.min(1, ORANGE_CALL_RATIO + callTightAdj);
 	const yellowCallThreshold = Math.min(1, YELLOW_CALL_RATIO + callTightAdj);
-	const callBarrier = Math.min(1, potOdds + callTightAdj);
+	const callBarrierBase = Math.min(1, potOdds + callTightAdj);
 	const useHarringtonStrategy = mZone !== "green";
+	const remainingStreets = preflop
+		? 3
+		: communityCards.length === 3
+		? 2
+		: communityCards.length === 4
+		? 1
+		: 0;
+	const projectedInvested = player.totalBet + Math.max(0, needToCall);
+	const investedRatio = projectedInvested / Math.max(1, projectedInvested + player.chips);
+	const callCostRatio = needToCall / Math.max(1, player.chips);
+	const sprPressure = Math.max(
+		0,
+		Math.min(1, (spr - COMMIT_SPR_MIN) / (COMMIT_SPR_MAX - COMMIT_SPR_MIN)),
+	);
+	const investPressure = Math.max(
+		0,
+		Math.min(
+			1,
+			(investedRatio - COMMIT_INVEST_START) / (COMMIT_INVEST_END - COMMIT_INVEST_START),
+		),
+	);
+	const callPressure = Math.max(0, Math.min(1, callCostRatio / COMMIT_CALL_RATIO_REF));
+	const streetPressure = Math.min(1, remainingStreets / 2);
+	const commitmentPressure = (investPressure * 0.6 + callPressure * 0.4) *
+		sprPressure * streetPressure;
+	const commitmentPenalty = commitmentPressure * COMMITMENT_PENALTY_MAX;
+	const callBarrier = Math.min(1, callBarrierBase + commitmentPenalty);
 
 	// Base thresholds for raising depend on stage and pot size
 	// When only a few opponents remain, play slightly more aggressively
@@ -646,7 +680,8 @@ export function chooseBotAction(player, ctx) {
 		foldRate = avgFoldRate(statOpponents);
 
 		// Weight adjustments by average hands played to avoid overreacting in early rounds
-		const avgHands = statOpponents.reduce((s, p) => s + p.stats.hands, 0) /
+		const avgHands = statOpponents.reduce((s, p) =>
+			s + p.stats.hands, 0) /
 			statOpponents.length;
 		const weight = avgHands < MIN_HANDS_FOR_WEIGHT
 			? 0
@@ -830,7 +865,10 @@ export function chooseBotAction(player, ctx) {
 				const bet = strengthRatio >= 0.6 || drawEquity > 0
 					? protectionBetSize()
 					: bluffBetSize();
-				decision = { action: "raise", amount: Math.min(player.chips, Math.max(lastRaise, bet)) };
+				decision = {
+					action: "raise",
+					amount: Math.min(player.chips, Math.max(lastRaise, bet)),
+				};
 				if (strengthRatio < 0.6 && drawEquity === 0) {
 					isBluff = true;
 				}
@@ -838,7 +876,10 @@ export function chooseBotAction(player, ctx) {
 				const bet = strengthRatio >= 0.65 || drawEquity > 0
 					? protectionBetSize()
 					: bluffBetSize();
-				decision = { action: "raise", amount: Math.min(player.chips, Math.max(lastRaise, bet)) };
+				decision = {
+					action: "raise",
+					amount: Math.min(player.chips, Math.max(lastRaise, bet)),
+				};
 				if (strengthRatio < 0.6 && drawEquity === 0) {
 					isBluff = true;
 				}
@@ -900,40 +941,65 @@ export function chooseBotAction(player, ctx) {
 		else if (aggressiveness >= 0.8) aggrEmoji = "🐌";
 		else aggrEmoji = "❄️";
 
-		console.table([{
-			Player: player.name,
-			Cards: `${h1} ${h2}`,
-			Hand: handName,
-			Strength: strengthRatio.toFixed(2),
-			M: mRatio.toFixed(2),
-			Zone: mZone,
-			EffStack: effectiveStack,
-			ChipLead: amChipleader ? "Y" : "N",
-			ShortRel: shortstackRelative ? "Y" : "N",
-			Premium: premiumHand ? "Y" : "N",
-			PotOdds: potOdds.toFixed(2),
-			CallBarrier: callBarrier.toFixed(2),
-			StackRatio: stackRatio.toFixed(2),
-			Position: positionFactor.toFixed(2),
-			Opponents: activeOpponents,
-			RaiseThreshold: (raiseThreshold / 10).toFixed(2),
-			Aggressiveness: aggressiveness.toFixed(2),
-			BoardCtx: overPair ? "overpair" : (topPair ? "top pair" : (drawChance ? "draw" : "-")),
-			Texture: textureRisk.toFixed(2),
-			Line: botLine && botLine.preflopAggressor ? "PFA" : "-",
-			CbetPlan: botLine && botLine.preflopAggressor
-				? (botLine.cbetIntent === null ? "-" : (botLine.cbetIntent ? "Y" : "N"))
-				: "-",
-			BarrelPlan: botLine && botLine.preflopAggressor
-				? (botLine.barrelIntent === null ? "-" : (botLine.barrelIntent ? "Y" : "N"))
-				: "-",
-			CbetMade: botLine && botLine.preflopAggressor ? (botLine.cbetMade ? "Y" : "N") : "-",
-			BarrelMade: botLine && botLine.preflopAggressor ? (botLine.barrelMade ? "Y" : "N") : "-",
-			LineAbort: botLine && botLine.preflopAggressor ? (lineAbort ? "Y" : "N") : "-",
-			Emoji: aggrEmoji,
-			Action: decision.action,
-			Bluff: isBluff,
-		}]);
+		console.groupCollapsed(
+			`${player.name} ${h1} ${h2} → ${decision.action} ${aggrEmoji}`,
+		);
+		console.log(`Hand: ${handName}`);
+		console.log(
+			`Strength: ${strengthRatio.toFixed(2)} | M: ${mRatio.toFixed(2)} | Zone: ${mZone}`,
+		);
+		console.log(
+			`PotOdds: ${potOdds.toFixed(2)} | CallBarrier: ${callBarrier.toFixed(2)} | ` +
+				`StackRatio: ${stackRatio.toFixed(2)}`,
+		);
+		console.log(
+			`CommitPressure: ${commitmentPressure.toFixed(2)} | CommitPenalty: ` +
+				`${commitmentPenalty.toFixed(2)}`,
+		);
+		console.log(
+			`Position: ${positionFactor.toFixed(2)} | Opponents: ${activeOpponents} | ` +
+				`EffStack: ${effectiveStack}`,
+		);
+		console.log(
+			`RaiseThreshold: ${(raiseThreshold / 10).toFixed(2)} | Aggressiveness: ` +
+				`${aggressiveness.toFixed(2)}`,
+		);
+		console.log(
+			`BoardCtx: ${
+				overPair ? "overpair" : (topPair ? "top pair" : (drawChance ? "draw" : "-"))
+			} | ` +
+				`Texture: ${textureRisk.toFixed(2)}`,
+		);
+		console.log(
+			`ChipLead: ${amChipleader ? "Y" : "N"} | ShortRel: ${
+				shortstackRelative ? "Y" : "N"
+			} | ` +
+				`Premium: ${premiumHand ? "Y" : "N"}`,
+		);
+		console.log(
+			`Line: ${botLine && botLine.preflopAggressor ? "PFA" : "-"} | ` +
+				`CbetPlan: ${
+					botLine && botLine.preflopAggressor
+						? (botLine.cbetIntent === null ? "-" : (botLine.cbetIntent ? "Y" : "N"))
+						: "-"
+				} | BarrelPlan: ${
+					botLine && botLine.preflopAggressor
+						? (botLine.barrelIntent === null ? "-" : (botLine.barrelIntent ? "Y" : "N"))
+						: "-"
+				}`,
+		);
+		console.log(
+			`CbetMade: ${
+				botLine && botLine.preflopAggressor ? (botLine.cbetMade ? "Y" : "N") : "-"
+			} | ` +
+				`BarrelMade: ${
+					botLine && botLine.preflopAggressor ? (botLine.barrelMade ? "Y" : "N") : "-"
+				} | LineAbort: ${
+					botLine && botLine.preflopAggressor ? (lineAbort ? "Y" : "N") : "-"
+				}`,
+		);
+		console.log(`Bluff: ${isBluff ? "Y" : "N"}`);
+		console.groupEnd();
 	}
 
 	return decision;

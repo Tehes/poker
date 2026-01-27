@@ -114,14 +114,16 @@ The table works fully offline after the first complete load.
 
 ## Bot Behavior (Tournament Logic)
 
-Bots play tournament-style poker and follow consistent rules (no hidden information or "reads").
-In plain terms, they consider:
+Bots play tournament-style poker and follow consistent rules (no hidden information or "reads"). In
+plain terms, they consider:
 
 - **Hand and board**: starting hand strength, made hands, strong pairs, and straight/flush draws,
   plus how dangerous the board is, including kicker-based tie-breaks within the same hand category
   after the flop.
 - **Risk and price**: the price to call versus the pot, how much of their stack is at risk, and
   whether a bet is all-in.
+- **Hand-level commitment**: call thresholds tighten as more chips are invested with streets left,
+  to avoid multi-street “bleeding” while still calling correctly when already committed.
 - **Position and table**: seat position, number of opponents still in the hand, and whether the bot
   was the preflop aggressor (affects continuation and follow-up bets).
 - **Opponent tendencies**: how loose/tight and aggressive opponents are, and how often they fold,
