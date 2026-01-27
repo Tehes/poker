@@ -15,7 +15,7 @@ import { Card, Hand } from "./pokersolver.js";
 export const BOT_ACTION_DELAY = 3000;
 
 // Enable verbose logging of bot decisions
-const DEBUG_DECISIONS = true;
+const DEBUG_DECISIONS = false;
 // Maximum number of raises allowed per betting round
 const MAX_RAISES_PER_ROUND = 3;
 // Tie-breaker thresholds for close decisions
