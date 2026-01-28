@@ -351,6 +351,209 @@ function preflopHandScore(cardA, cardB) {
 }
 
 /* ===========================
+   Decision Helpers
+========================== */
+function getCommunityCardsFromDom() {
+	return Array.from(
+		document.querySelectorAll("#community-cards .cardslot img"),
+	).map((img) => {
+		const m = img.src.match(/\/cards\/([2-9TJQKA][CDHS])\.svg$/);
+		return m ? m[1] : null;
+	}).filter(Boolean);
+}
+
+function findNextActivePlayer(players, startIdx) {
+	for (let i = 1; i <= players.length; i++) {
+		const idx = (startIdx + i) % players.length;
+		if (!players[idx].folded) return players[idx];
+	}
+	return players[startIdx];
+}
+
+function computePositionFactor(players, active, player, currentPhaseIndex) {
+	const seatIdx = active.indexOf(player);
+	const firstToAct = currentPhaseIndex === 0
+		? findNextActivePlayer(players, players.findIndex((p) => p.bigBlind))
+		: findNextActivePlayer(players, players.findIndex((p) => p.dealer));
+	const refIdx = active.indexOf(firstToAct);
+	const pos = (seatIdx - refIdx + active.length) % active.length;
+	return active.length > 1 ? pos / (active.length - 1) : 0;
+}
+
+function evaluateHandStrength(player, communityCards, preflop) {
+	if (preflop) {
+		return {
+			strength: preflopHandScore(
+				player.cards[0].dataset.value,
+				player.cards[1].dataset.value,
+			),
+			solvedHand: null,
+		};
+	}
+
+	const cards = [
+		player.cards[0].dataset.value,
+		player.cards[1].dataset.value,
+		...communityCards,
+	];
+	const solvedHand = Hand.solve(cards);
+	return { strength: solvedHand.rank + handTiebreaker(solvedHand), solvedHand };
+}
+
+function computePostflopContext(player, communityCards, preflop) {
+	const context = {
+		topPair: false,
+		overPair: false,
+		drawChance: false,
+		drawOuts: 0,
+		drawEquity: 0,
+		textureRisk: 0,
+	};
+
+	if (preflop || communityCards.length < 3) {
+		return context;
+	}
+
+	const hole = [
+		player.cards[0].dataset.value,
+		player.cards[1].dataset.value,
+	];
+	const ctxInfo = analyzeHandContext(hole, communityCards);
+	context.topPair = ctxInfo.isTopPair;
+	context.overPair = ctxInfo.isOverPair;
+
+	const draws = analyzeDrawPotential(hole, communityCards);
+	context.drawChance = draws.flushDraw || draws.straightDraw;
+	context.drawOuts = draws.outs;
+	if (context.drawOuts > 0) {
+		const drawFactor = communityCards.length === 3
+			? 0.04
+			: communityCards.length === 4
+			? 0.02
+			: 0;
+		context.drawEquity = Math.min(1, context.drawOuts * drawFactor);
+	}
+
+	context.textureRisk = evaluateBoardTexture(communityCards);
+
+	return context;
+}
+
+function getMZone(mRatio) {
+	if (mRatio < M_RATIO_DEAD_MAX) return "dead";
+	if (mRatio <= M_RATIO_RED_MAX) return "red";
+	if (mRatio <= M_RATIO_ORANGE_MAX) return "orange";
+	if (mRatio <= M_RATIO_YELLOW_MAX) return "yellow";
+	return "green";
+}
+
+function computeCommitmentMetrics(needToCall, player, spr, remainingStreets) {
+	const projectedInvested = player.totalBet + Math.max(0, needToCall);
+	const investedRatio = projectedInvested / Math.max(1, projectedInvested + player.chips);
+	const callCostRatio = needToCall / Math.max(1, player.chips);
+	const sprPressure = Math.max(
+		0,
+		Math.min(1, (spr - COMMIT_SPR_MIN) / (COMMIT_SPR_MAX - COMMIT_SPR_MIN)),
+	);
+	const investPressure = Math.max(
+		0,
+		Math.min(
+			1,
+			(investedRatio - COMMIT_INVEST_START) / (COMMIT_INVEST_END - COMMIT_INVEST_START),
+		),
+	);
+	const callPressure = Math.max(0, Math.min(1, callCostRatio / COMMIT_CALL_RATIO_REF));
+	const streetPressure = Math.min(1, remainingStreets / 2);
+	const commitmentPressure = (investPressure * 0.6 + callPressure * 0.4) *
+		sprPressure * streetPressure;
+	const commitmentPenalty = commitmentPressure * COMMITMENT_PENALTY_MAX;
+
+	return { commitmentPressure, commitmentPenalty };
+}
+
+function decideHarringtonAction({
+	mZone,
+	facingRaise,
+	needsToCall,
+	strengthRatio,
+	deadPushThreshold,
+	redPushThreshold,
+	orangePushThreshold,
+	yellowRaiseThreshold,
+	yellowShoveThreshold,
+	redCallThreshold,
+	orangeCallThreshold,
+	yellowCallThreshold,
+	canShove,
+	canRaise,
+	needToCall,
+	playerChips,
+	yellowRaiseSize,
+}) {
+	let decision = null;
+
+	if (mZone === "dead") {
+		if (facingRaise && needsToCall) {
+			if (strengthRatio >= deadPushThreshold) {
+				decision = canShove
+					? { action: "raise", amount: playerChips }
+					: { action: "call", amount: Math.min(playerChips, needToCall) };
+			} else {
+				decision = { action: "fold" };
+			}
+		} else if (canShove && strengthRatio >= deadPushThreshold) {
+			decision = { action: "raise", amount: playerChips };
+		} else {
+			decision = needsToCall
+				? { action: "call", amount: Math.min(playerChips, needToCall) }
+				: { action: "check" };
+		}
+	} else if (mZone === "red") {
+		if (facingRaise && needsToCall) {
+			if (strengthRatio >= redCallThreshold) {
+				decision = { action: "call", amount: Math.min(playerChips, needToCall) };
+			} else {
+				decision = { action: "fold" };
+			}
+		} else if (canShove && strengthRatio >= redPushThreshold) {
+			decision = { action: "raise", amount: playerChips };
+		} else {
+			decision = needsToCall ? { action: "fold" } : { action: "check" };
+		}
+	} else if (mZone === "orange") {
+		if (facingRaise && needsToCall) {
+			if (strengthRatio >= orangeCallThreshold) {
+				decision = { action: "call", amount: Math.min(playerChips, needToCall) };
+			} else {
+				decision = { action: "fold" };
+			}
+		} else if (canShove && strengthRatio >= orangePushThreshold) {
+			decision = { action: "raise", amount: playerChips };
+		} else {
+			decision = needsToCall ? { action: "fold" } : { action: "check" };
+		}
+	} else if (mZone === "yellow") {
+		if (facingRaise && needsToCall) {
+			if (canShove && strengthRatio >= yellowShoveThreshold) {
+				decision = { action: "raise", amount: playerChips };
+			} else if (strengthRatio >= yellowCallThreshold) {
+				decision = { action: "call", amount: Math.min(playerChips, needToCall) };
+			} else {
+				decision = { action: "fold" };
+			}
+		} else if (canShove && strengthRatio >= yellowShoveThreshold) {
+			decision = { action: "raise", amount: playerChips };
+		} else if (canRaise && strengthRatio >= yellowRaiseThreshold) {
+			decision = { action: "raise", amount: yellowRaiseSize() };
+		} else {
+			decision = needsToCall ? { action: "fold" } : { action: "check" };
+		}
+	}
+
+	return decision;
+}
+
+/* ===========================
    Decision Engine: Bot Action Selection
 ========================== */
 export function chooseBotAction(player, ctx) {
@@ -395,95 +598,29 @@ export function chooseBotAction(player, ctx) {
 		effectiveStack === player.chips && player.chips < maxOpponentStack * SHORTSTACK_RELATIVE;
 	const botLine = player.botLine || null;
 
-	// Helper: find the next active player after the given index
-	function nextActive(startIdx) {
-		for (let i = 1; i <= players.length; i++) {
-			const idx = (startIdx + i) % players.length;
-			if (!players[idx].folded) return players[idx];
-		}
-		return players[startIdx];
-	}
-
-	const seatIdx = active.indexOf(player);
-	const firstToAct = currentPhaseIndex === 0
-		? nextActive(players.findIndex((p) => p.bigBlind))
-		: nextActive(players.findIndex((p) => p.dealer));
-	const refIdx = active.indexOf(firstToAct);
-
-	const pos = (seatIdx - refIdx + active.length) % active.length;
-	const positionFactor = active.length > 1 ? pos / (active.length - 1) : 0;
+	const positionFactor = computePositionFactor(players, active, player, currentPhaseIndex);
 
 	// Collect community cards from the board
-	const communityCards = Array.from(
-		document.querySelectorAll("#community-cards .cardslot img"),
-	).map((img) => {
-		const m = img.src.match(/\/cards\/([2-9TJQKA][CDHS])\.svg$/);
-		return m ? m[1] : null;
-	}).filter(Boolean);
+	const communityCards = getCommunityCardsFromDom();
 
 	// Determine if we are in pre-flop stage
 	const preflop = communityCards.length === 0;
 
 	// Evaluate hand strength
-	let strength;
-	let solvedHand = null;
-	if (preflop) {
-		strength = preflopHandScore(player.cards[0].dataset.value, player.cards[1].dataset.value);
-	} else {
-		const cards = [
-			player.cards[0].dataset.value,
-			player.cards[1].dataset.value,
-			...communityCards,
-		];
-		solvedHand = Hand.solve(cards);
-		strength = solvedHand.rank + handTiebreaker(solvedHand);
-	}
+	const { strength, solvedHand } = evaluateHandStrength(player, communityCards, preflop);
 
 	// Post-flop board context
-	let topPair = false;
-	let overPair = false;
-	let drawChance = false;
-	let drawOuts = 0;
-	let drawEquity = 0;
-	let textureRisk = 0;
-	if (!preflop && communityCards.length >= 3) {
-		const ctxInfo = analyzeHandContext(
-			[player.cards[0].dataset.value, player.cards[1].dataset.value],
-			communityCards,
-		);
-		topPair = ctxInfo.isTopPair;
-		overPair = ctxInfo.isOverPair;
-
-		const draws = analyzeDrawPotential(
-			[player.cards[0].dataset.value, player.cards[1].dataset.value],
-			communityCards,
-		);
-		drawChance = draws.flushDraw || draws.straightDraw;
-		drawOuts = draws.outs;
-		if (drawOuts > 0) {
-			const drawFactor = communityCards.length === 3
-				? 0.04
-				: communityCards.length === 4
-				? 0.02
-				: 0;
-			drawEquity = Math.min(1, drawOuts * drawFactor);
-		}
-
-		textureRisk = evaluateBoardTexture(communityCards);
-	}
+	const postflopContext = computePostflopContext(player, communityCards, preflop);
+	const topPair = postflopContext.topPair;
+	const overPair = postflopContext.overPair;
+	const drawChance = postflopContext.drawChance;
+	const drawOuts = postflopContext.drawOuts;
+	const drawEquity = postflopContext.drawEquity;
+	const textureRisk = postflopContext.textureRisk;
 
 	// Normalize strength to [0,1]
 	const strengthRatio = strength / 10;
-	let mZone = "green";
-	if (mRatio < M_RATIO_DEAD_MAX) {
-		mZone = "dead";
-	} else if (mRatio <= M_RATIO_RED_MAX) {
-		mZone = "red";
-	} else if (mRatio <= M_RATIO_ORANGE_MAX) {
-		mZone = "orange";
-	} else if (mRatio <= M_RATIO_YELLOW_MAX) {
-		mZone = "yellow";
-	}
+	const mZone = getMZone(mRatio);
 	const premiumHand = preflop
 		? strengthRatio >= PREMIUM_PREFLOP_RATIO
 		: strengthRatio >= PREMIUM_POSTFLOP_RATIO;
@@ -506,25 +643,12 @@ export function chooseBotAction(player, ctx) {
 		: communityCards.length === 4
 		? 1
 		: 0;
-	const projectedInvested = player.totalBet + Math.max(0, needToCall);
-	const investedRatio = projectedInvested / Math.max(1, projectedInvested + player.chips);
-	const callCostRatio = needToCall / Math.max(1, player.chips);
-	const sprPressure = Math.max(
-		0,
-		Math.min(1, (spr - COMMIT_SPR_MIN) / (COMMIT_SPR_MAX - COMMIT_SPR_MIN)),
+	const { commitmentPressure, commitmentPenalty } = computeCommitmentMetrics(
+		needToCall,
+		player,
+		spr,
+		remainingStreets,
 	);
-	const investPressure = Math.max(
-		0,
-		Math.min(
-			1,
-			(investedRatio - COMMIT_INVEST_START) / (COMMIT_INVEST_END - COMMIT_INVEST_START),
-		),
-	);
-	const callPressure = Math.max(0, Math.min(1, callCostRatio / COMMIT_CALL_RATIO_REF));
-	const streetPressure = Math.min(1, remainingStreets / 2);
-	const commitmentPressure = (investPressure * 0.6 + callPressure * 0.4) *
-		sprPressure * streetPressure;
-	const commitmentPenalty = commitmentPressure * COMMITMENT_PENALTY_MAX;
 	const callBarrier = Math.min(1, callBarrierBase + commitmentPenalty);
 
 	// Base thresholds for raising depend on stage and pot size
@@ -732,63 +856,25 @@ export function chooseBotAction(player, ctx) {
 	let decision;
 
 	if (useHarringtonStrategy) {
-		if (mZone === "dead") {
-			if (facingRaise && needsToCall) {
-				if (strengthRatio >= deadPushThreshold) {
-					decision = canShove
-						? { action: "raise", amount: player.chips }
-						: { action: "call", amount: Math.min(player.chips, needToCall) };
-				} else {
-					decision = { action: "fold" };
-				}
-			} else if (canShove && strengthRatio >= deadPushThreshold) {
-				decision = { action: "raise", amount: player.chips };
-			} else {
-				decision = needsToCall
-					? { action: "call", amount: Math.min(player.chips, needToCall) }
-					: { action: "check" };
-			}
-		} else if (mZone === "red") {
-			if (facingRaise && needsToCall) {
-				if (strengthRatio >= redCallThreshold) {
-					decision = { action: "call", amount: Math.min(player.chips, needToCall) };
-				} else {
-					decision = { action: "fold" };
-				}
-			} else if (canShove && strengthRatio >= redPushThreshold) {
-				decision = { action: "raise", amount: player.chips };
-			} else {
-				decision = needsToCall ? { action: "fold" } : { action: "check" };
-			}
-		} else if (mZone === "orange") {
-			if (facingRaise && needsToCall) {
-				if (strengthRatio >= orangeCallThreshold) {
-					decision = { action: "call", amount: Math.min(player.chips, needToCall) };
-				} else {
-					decision = { action: "fold" };
-				}
-			} else if (canShove && strengthRatio >= orangePushThreshold) {
-				decision = { action: "raise", amount: player.chips };
-			} else {
-				decision = needsToCall ? { action: "fold" } : { action: "check" };
-			}
-		} else if (mZone === "yellow") {
-			if (facingRaise && needsToCall) {
-				if (canShove && strengthRatio >= yellowShoveThreshold) {
-					decision = { action: "raise", amount: player.chips };
-				} else if (strengthRatio >= yellowCallThreshold) {
-					decision = { action: "call", amount: Math.min(player.chips, needToCall) };
-				} else {
-					decision = { action: "fold" };
-				}
-			} else if (canShove && strengthRatio >= yellowShoveThreshold) {
-				decision = { action: "raise", amount: player.chips };
-			} else if (canRaise && strengthRatio >= yellowRaiseThreshold) {
-				decision = { action: "raise", amount: yellowRaiseSize() };
-			} else {
-				decision = needsToCall ? { action: "fold" } : { action: "check" };
-			}
-		}
+		decision = decideHarringtonAction({
+			mZone,
+			facingRaise,
+			needsToCall,
+			strengthRatio,
+			deadPushThreshold,
+			redPushThreshold,
+			orangePushThreshold,
+			yellowRaiseThreshold,
+			yellowShoveThreshold,
+			redCallThreshold,
+			orangeCallThreshold,
+			yellowCallThreshold,
+			canShove,
+			canRaise,
+			needToCall,
+			playerChips: player.chips,
+			yellowRaiseSize,
+		});
 	}
 
 	// Automatic shove logic when stacks are shallow
