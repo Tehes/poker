@@ -5,7 +5,7 @@
  * action selection based on game context, and managing delayed execution of bot actions.
  *
  * Winner-take-all tournament with no payout ladder: bot decisions are chip-EV driven
- * (plus M-ratio zones) and intentionally do not apply ICM-style survival premiums.
+ * (plus M-ratio zones) with a light elimination-risk guardrail for large calls.
  */
 
 import { Card, Hand } from "./pokersolver.js";
@@ -65,6 +65,9 @@ const COMMIT_INVEST_END = 0.6;
 const COMMIT_CALL_RATIO_REF = 0.25;
 const COMMITMENT_PENALTY_MAX = 0.25;
 const POSTFLOP_CALL_BARRIER = 0.3;
+const ELIMINATION_RISK_START = 0.25;
+const ELIMINATION_RISK_FULL = 0.8;
+const ELIMINATION_PENALTY_MAX = 0.25;
 
 const botActionQueue = [];
 let processingBotActions = false;
@@ -474,6 +477,20 @@ function computeCommitmentMetrics(needToCall, player, spr, remainingStreets) {
 	return { commitmentPressure, commitmentPenalty };
 }
 
+function computeEliminationRisk(stackRatio) {
+	const risk = Math.max(
+		0,
+		Math.min(
+			1,
+			(stackRatio - ELIMINATION_RISK_START) /
+				(ELIMINATION_RISK_FULL - ELIMINATION_RISK_START),
+		),
+	);
+	const eliminationPenalty = risk * ELIMINATION_PENALTY_MAX;
+
+	return { eliminationRisk: risk, eliminationPenalty };
+}
+
 function decideHarringtonAction({
 	mZone,
 	facingRaise,
@@ -685,7 +702,9 @@ export function chooseBotAction(player, ctx) {
 		? strengthRatioBase >= PREMIUM_PREFLOP_RATIO
 		: strengthRatioBase >= PREMIUM_POSTFLOP_RATIO;
 	const raiseAggAdj = amChipleader ? -CHIP_LEADER_RAISE_DELTA : 0;
-	const callTightAdj = shortstackRelative ? -SHORTSTACK_CALL_DELTA : 0;
+	const callTightAdj = shortstackRelative && stackRatio < ELIMINATION_RISK_START
+		? -SHORTSTACK_CALL_DELTA
+		: 0;
 	const deadPushThreshold = Math.max(0, DEAD_PUSH_RATIO + raiseAggAdj);
 	const redPushThreshold = Math.max(0, RED_PUSH_RATIO + raiseAggAdj);
 	const orangePushThreshold = Math.max(0, ORANGE_PUSH_RATIO + raiseAggAdj);
@@ -708,6 +727,12 @@ export function chooseBotAction(player, ctx) {
 		spr,
 		remainingStreets,
 	);
+	const { eliminationRisk, eliminationPenalty } = needsToCall
+		? computeEliminationRisk(stackRatio)
+		: { eliminationRisk: 0, eliminationPenalty: 0 };
+	const riskAdjustedRedCallThreshold = Math.min(1, redCallThreshold + eliminationPenalty);
+	const riskAdjustedOrangeCallThreshold = Math.min(1, orangeCallThreshold + eliminationPenalty);
+	const riskAdjustedYellowCallThreshold = Math.min(1, yellowCallThreshold + eliminationPenalty);
 	if (!preflop && needsToCall) {
 		const potOddsAdj = Math.max(-0.12, Math.min(0.08, (0.25 - potOdds) * 0.6));
 		const commitmentAdj = -commitmentPenalty * 0.8;
@@ -720,6 +745,9 @@ export function chooseBotAction(player, ctx) {
 	const callBarrier = preflop
 		? Math.min(1, callBarrierBase + commitmentPenalty)
 		: callBarrierBase;
+	const eliminationBarrier = needsToCall
+		? Math.min(1, callBarrier + eliminationPenalty)
+		: callBarrier;
 
 	// Base thresholds for raising depend on stage and pot size
 	// When only a few opponents remain, play slightly more aggressively
@@ -916,9 +944,9 @@ export function chooseBotAction(player, ctx) {
 			orangePushThreshold,
 			yellowRaiseThreshold,
 			yellowShoveThreshold,
-			redCallThreshold,
-			orangeCallThreshold,
-			yellowCallThreshold,
+			redCallThreshold: riskAdjustedRedCallThreshold,
+			orangeCallThreshold: riskAdjustedOrangeCallThreshold,
+			yellowCallThreshold: riskAdjustedYellowCallThreshold,
 			canShove,
 			canRaise,
 			needToCall,
@@ -956,8 +984,8 @@ export function chooseBotAction(player, ctx) {
 			raiseAmt = Math.max(currentBet + lastRaise, raiseAmt);
 			if (Math.abs(decisionStrength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
 				const callAmt = Math.min(player.chips, needToCall);
-				const alt = (strengthRatio * aggressiveness >= callBarrier &&
-						stackRatio <= (preflop ? 0.5 : 0.7))
+				const alt = (strengthRatio * aggressiveness >= eliminationBarrier &&
+					stackRatio <= (preflop ? 0.5 : 0.7))
 					? { action: "call", amount: callAmt }
 					: { action: "fold" };
 				decision = Math.random() < 0.5 ? { action: "raise", amount: raiseAmt } : alt;
@@ -965,10 +993,11 @@ export function chooseBotAction(player, ctx) {
 				decision = { action: "raise", amount: raiseAmt };
 			}
 		} else if (
-			strengthRatio * aggressiveness >= callBarrier && stackRatio <= (preflop ? 0.5 : 0.7)
+			strengthRatio * aggressiveness >= eliminationBarrier &&
+			stackRatio <= (preflop ? 0.5 : 0.7)
 		) {
 			const callAmt = Math.min(player.chips, needToCall);
-			if (Math.abs(strengthRatio * aggressiveness - callBarrier) <= ODDS_TIE_DELTA) {
+			if (Math.abs(strengthRatio * aggressiveness - eliminationBarrier) <= ODDS_TIE_DELTA) {
 				decision = Math.random() < 0.5
 					? { action: "call", amount: callAmt }
 					: { action: "fold" };
@@ -986,7 +1015,8 @@ export function chooseBotAction(player, ctx) {
 		const facingAllIn = statOpponents.some((p) => p.allIn);
 		if (decision.action === "fold" && facingAllIn) {
 			const goodThreshold = preflop ? ALLIN_HAND_PREFLOP : ALLIN_HAND_POSTFLOP;
-			if (strengthRatio >= goodThreshold) {
+			const riskAdjustedThreshold = Math.min(1, goodThreshold + eliminationPenalty);
+			if (strengthRatio >= riskAdjustedThreshold) {
 				decision = { action: "call", amount: Math.min(player.chips, needToCall) };
 			}
 		}
@@ -1098,12 +1128,15 @@ export function chooseBotAction(player, ctx) {
 			`Strength: ${strengthRatio.toFixed(2)} | M: ${mRatio.toFixed(2)} | Zone: ${mZone}`,
 		);
 		console.log(
-			`PotOdds: ${potOdds.toFixed(2)} | CallBarrier: ${callBarrier.toFixed(2)} | ` +
+			`PotOdds: ${potOdds.toFixed(2)} | CallBarrier: ${eliminationBarrier.toFixed(2)} | ` +
 				`StackRatio: ${stackRatio.toFixed(2)}`,
 		);
 		console.log(
 			`CommitPressure: ${commitmentPressure.toFixed(2)} | CommitPenalty: ` +
 				`${commitmentPenalty.toFixed(2)}`,
+		);
+		console.log(
+			`ElimRisk: ${eliminationRisk.toFixed(2)} | ElimPenalty: ${eliminationPenalty.toFixed(2)}`,
 		);
 		console.log(
 			`Position: ${positionFactor.toFixed(2)} | Opponents: ${activeOpponents} | ` +
