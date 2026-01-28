@@ -734,7 +734,13 @@ export function chooseBotAction(player, ctx) {
 	if (useHarringtonStrategy) {
 		if (mZone === "dead") {
 			if (facingRaise && needsToCall) {
-				decision = { action: "call", amount: Math.min(player.chips, needToCall) };
+				if (strengthRatio >= deadPushThreshold) {
+					decision = canShove
+						? { action: "raise", amount: player.chips }
+						: { action: "call", amount: Math.min(player.chips, needToCall) };
+				} else {
+					decision = { action: "fold" };
+				}
 			} else if (canShove && strengthRatio >= deadPushThreshold) {
 				decision = { action: "raise", amount: player.chips };
 			} else {
