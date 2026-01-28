@@ -56,6 +56,7 @@ const GREEN_MAX_STACK_BET = 0.2;
 const CHIP_LEADER_RAISE_DELTA = 0.05;
 const SHORTSTACK_CALL_DELTA = 0.05;
 const SHORTSTACK_RELATIVE = 0.6;
+const MIN_PREFLOP_BLUFF_RATIO = 0.45;
 // Hand-level commitment tuning to reduce multi-street bleeding
 const COMMIT_SPR_MIN = 1.5;
 const COMMIT_SPR_MAX = 5.5;
@@ -397,6 +398,7 @@ function evaluateHandStrength(player, communityCards, preflop) {
 		...communityCards,
 	];
 	const solvedHand = Hand.solve(cards);
+	// pokersolver: rank is a category score (1..9, higher is stronger) + small tiebreaker
 	return { strength: solvedHand.rank + handTiebreaker(solvedHand), solvedHand };
 }
 
@@ -504,9 +506,7 @@ function decideHarringtonAction({
 		} else if (canShove && strengthRatio >= deadPushThreshold) {
 			decision = { action: "raise", amount: playerChips };
 		} else {
-			decision = needsToCall
-				? { action: "call", amount: Math.min(playerChips, needToCall) }
-				: { action: "check" };
+			decision = needsToCall ? { action: "fold" } : { action: "check" };
 		}
 	} else if (mZone === "red") {
 		if (facingRaise && needsToCall) {
@@ -619,13 +619,48 @@ export function chooseBotAction(player, ctx) {
 	const textureRisk = postflopContext.textureRisk;
 
 	// Normalize strength to [0,1]
-	const strengthRatio = strength / 10;
+	// preflop score and postflop rank both live roughly in 0..10, so /10 is intentional
+	const strengthBase = strength / 10;
+	let strengthRatio = strengthBase;
 	const mZone = getMZone(mRatio);
+	const isGreenZone = mZone === "green";
+	if (!preflop && solvedHand) {
+		let handFloor = 0;
+		switch (solvedHand.name) {
+			case "Pair":
+				handFloor = 0.45;
+				break;
+			case "Two Pair":
+				handFloor = 0.6;
+				break;
+			case "Three of a Kind":
+				handFloor = 0.7;
+				break;
+			case "Straight":
+				handFloor = 0.75;
+				break;
+			case "Flush":
+				handFloor = 0.8;
+				break;
+			case "Full House":
+				handFloor = 0.9;
+				break;
+			case "Four of a Kind":
+				handFloor = 0.95;
+				break;
+			case "Straight Flush":
+				handFloor = 0.98;
+				break;
+			default:
+				break;
+		}
+		strengthRatio = Math.min(1, Math.max(strengthRatio, handFloor));
+	}
 	const premiumHand = preflop
 		? strengthRatio >= PREMIUM_PREFLOP_RATIO
 		: strengthRatio >= PREMIUM_POSTFLOP_RATIO;
 	const raiseAggAdj = amChipleader ? -CHIP_LEADER_RAISE_DELTA : 0;
-	const callTightAdj = shortstackRelative ? SHORTSTACK_CALL_DELTA : 0;
+	const callTightAdj = shortstackRelative ? -SHORTSTACK_CALL_DELTA : 0;
 	const deadPushThreshold = Math.max(0, DEAD_PUSH_RATIO + raiseAggAdj);
 	const redPushThreshold = Math.max(0, RED_PUSH_RATIO + raiseAggAdj);
 	const orangePushThreshold = Math.max(0, ORANGE_PUSH_RATIO + raiseAggAdj);
@@ -634,8 +669,8 @@ export function chooseBotAction(player, ctx) {
 	const redCallThreshold = Math.min(1, RED_CALL_RATIO + callTightAdj);
 	const orangeCallThreshold = Math.min(1, ORANGE_CALL_RATIO + callTightAdj);
 	const yellowCallThreshold = Math.min(1, YELLOW_CALL_RATIO + callTightAdj);
-	const callBarrierBase = Math.min(1, potOdds + callTightAdj);
-	const useHarringtonStrategy = mZone !== "green";
+	const callBarrierBase = Math.min(1, Math.max(0, potOdds + callTightAdj));
+	const useHarringtonStrategy = preflop && !isGreenZone;
 	const remainingStreets = preflop
 		? 3
 		: communityCards.length === 3
@@ -674,10 +709,11 @@ export function chooseBotAction(player, ctx) {
 		}
 		if (drawEquity > 0) {
 			const effectiveStrength = Math.min(1, strengthRatio + drawEquity);
-			aggressiveness *= effectiveStrength / strengthRatio;
+			const drawBoost = Math.min(1.6, effectiveStrength / Math.max(0.25, strengthRatio));
+			aggressiveness *= drawBoost;
 		}
 		if (drawOuts > 0) {
-			raiseThreshold -= Math.min(0.4, drawEquity * 0.8);
+			raiseThreshold -= Math.min(0.25, drawEquity * 0.6);
 		}
 
 		// Reduce aggression on wet boards
@@ -693,7 +729,7 @@ export function chooseBotAction(player, ctx) {
 	let statsWeight = 0;
 
 	function capGreenNonPremium(amount) {
-		if (useHarringtonStrategy || premiumHand) return amount;
+		if (!isGreenZone || premiumHand) return amount;
 		const cap = Math.floor(player.chips * GREEN_MAX_STACK_BET);
 		return Math.min(amount, cap);
 	}
@@ -943,6 +979,7 @@ export function chooseBotAction(player, ctx) {
 
 		if (
 			bluffChance > 0 && canRaise &&
+			(!preflop || strengthRatio >= MIN_PREFLOP_BLUFF_RATIO) &&
 			(decision.action === "check" || decision.action === "fold") && !facingAllIn
 		) {
 			if (Math.random() < bluffChance) {
@@ -995,7 +1032,10 @@ export function chooseBotAction(player, ctx) {
 			decision = { action: "check" };
 		}
 
-		if (!preflop && currentBet === 0 && decision.action === "check" && Math.random() < 0.3) {
+		if (
+			!preflop && currentBet === 0 && decision.action === "check" && canRaise &&
+			textureRisk < 0.4 && (foldRate > 0.25 || drawEquity > 0) && Math.random() < 0.2
+		) {
 			const betAmt = protectionBetSize();
 			decision = { action: "raise", amount: Math.max(lastRaise, betAmt) };
 		}
