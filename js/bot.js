@@ -64,6 +64,7 @@ const COMMIT_INVEST_START = 0.1;
 const COMMIT_INVEST_END = 0.6;
 const COMMIT_CALL_RATIO_REF = 0.25;
 const COMMITMENT_PENALTY_MAX = 0.25;
+const POSTFLOP_CALL_BARRIER = 0.3;
 
 const botActionQueue = [];
 let processingBotActions = false;
@@ -654,11 +655,35 @@ export function chooseBotAction(player, ctx) {
 			default:
 				break;
 		}
-		strengthRatio = Math.min(1, Math.max(strengthRatio, handFloor));
+		const categoryWeight = Math.max(0.25, 1 - handFloor);
+		let contextAdj = 0;
+		if (overPair) {
+			contextAdj += 0.1;
+		} else if (topPair) {
+			contextAdj += 0.06;
+		}
+		if (drawEquity > 0) {
+			contextAdj += Math.min(0.1, drawEquity * 0.35);
+		}
+		contextAdj += Math.max(-0.06, Math.min(0.06, (2.5 - spr) * 0.02));
+		if (activeOpponents <= 1) {
+			contextAdj += 0.1;
+		} else {
+			contextAdj -= Math.min(0.1, (activeOpponents - 1) * 0.04);
+		}
+		contextAdj -= textureRisk * 0.12;
+		contextAdj *= categoryWeight;
+
+		const floorMin = Math.max(0, handFloor - 0.08 * categoryWeight);
+		const floorMax = Math.min(1, handFloor + 0.12 * categoryWeight);
+		const adjustedFloor = Math.max(floorMin, Math.min(floorMax, handFloor + contextAdj));
+
+		strengthRatio = Math.min(1, Math.max(strengthRatio, adjustedFloor));
 	}
+	const strengthRatioBase = strengthRatio;
 	const premiumHand = preflop
-		? strengthRatio >= PREMIUM_PREFLOP_RATIO
-		: strengthRatio >= PREMIUM_POSTFLOP_RATIO;
+		? strengthRatioBase >= PREMIUM_PREFLOP_RATIO
+		: strengthRatioBase >= PREMIUM_POSTFLOP_RATIO;
 	const raiseAggAdj = amChipleader ? -CHIP_LEADER_RAISE_DELTA : 0;
 	const callTightAdj = shortstackRelative ? -SHORTSTACK_CALL_DELTA : 0;
 	const deadPushThreshold = Math.max(0, DEAD_PUSH_RATIO + raiseAggAdj);
@@ -669,7 +694,6 @@ export function chooseBotAction(player, ctx) {
 	const redCallThreshold = Math.min(1, RED_CALL_RATIO + callTightAdj);
 	const orangeCallThreshold = Math.min(1, ORANGE_CALL_RATIO + callTightAdj);
 	const yellowCallThreshold = Math.min(1, YELLOW_CALL_RATIO + callTightAdj);
-	const callBarrierBase = Math.min(1, Math.max(0, potOdds + callTightAdj));
 	const useHarringtonStrategy = preflop && !isGreenZone;
 	const remainingStreets = preflop
 		? 3
@@ -684,7 +708,18 @@ export function chooseBotAction(player, ctx) {
 		spr,
 		remainingStreets,
 	);
-	const callBarrier = Math.min(1, callBarrierBase + commitmentPenalty);
+	if (!preflop && needsToCall) {
+		const potOddsAdj = Math.max(-0.12, Math.min(0.08, (0.25 - potOdds) * 0.6));
+		const commitmentAdj = -commitmentPenalty * 0.8;
+		strengthRatio = Math.min(1, Math.max(0, strengthRatio + potOddsAdj + commitmentAdj));
+	}
+
+	const callBarrierBase = preflop
+		? Math.min(1, Math.max(0, potOdds + callTightAdj))
+		: Math.min(1, Math.max(0, POSTFLOP_CALL_BARRIER + callTightAdj));
+	const callBarrier = preflop
+		? Math.min(1, callBarrierBase + commitmentPenalty)
+		: callBarrierBase;
 
 	// Base thresholds for raising depend on stage and pot size
 	// When only a few opponents remain, play slightly more aggressively
@@ -694,35 +729,14 @@ export function chooseBotAction(player, ctx) {
 	const thresholdAdj = activeOpponents < OPPONENT_THRESHOLD
 		? (OPPONENT_THRESHOLD - activeOpponents) * THRESHOLD_FACTOR
 		: 0;
-	let aggressiveness = (preflop ? 0.8 + 0.4 * positionFactor : 1 + 0.6 * positionFactor) +
-		oppAggAdj;
+	const baseAggressiveness = preflop ? 0.8 + 0.4 * positionFactor : 1 + 0.6 * positionFactor;
+	let aggressiveness = preflop ? baseAggressiveness + oppAggAdj : baseAggressiveness;
 	let raiseThreshold = preflop ? 8 - 2 * positionFactor : Math.max(2, 4 - 2 * positionFactor);
-	raiseThreshold = Math.max(1, raiseThreshold - thresholdAdj);
-
-	if (!preflop) {
-		if (overPair) {
-			aggressiveness += 0.2;
-			raiseThreshold -= 0.5;
-		} else if (topPair) {
-			aggressiveness += 0.1;
-			raiseThreshold -= 0.3;
-		}
-		if (drawEquity > 0) {
-			const effectiveStrength = Math.min(1, strengthRatio + drawEquity);
-			const drawBoost = Math.min(1.6, effectiveStrength / Math.max(0.25, strengthRatio));
-			aggressiveness *= drawBoost;
-		}
-		if (drawOuts > 0) {
-			raiseThreshold -= Math.min(0.25, drawEquity * 0.6);
-		}
-
-		// Reduce aggression on wet boards
-		aggressiveness *= 1 - textureRisk * 0.5;
-		raiseThreshold = Math.min(10, raiseThreshold + textureRisk);
-	}
+	raiseThreshold = Math.max(1, raiseThreshold - (preflop ? thresholdAdj : 0));
 	if (amChipleader) {
 		raiseThreshold = Math.max(1, raiseThreshold - CHIP_LEADER_RAISE_DELTA * 10);
 	}
+	const decisionStrength = preflop ? strength : strengthRatio * 10;
 
 	let bluffChance = 0;
 	let foldRate = 0;
@@ -924,10 +938,10 @@ export function chooseBotAction(player, ctx) {
 
 	if (!decision) {
 		if (needToCall <= 0) {
-			if (canRaise && strength >= raiseThreshold) {
+			if (canRaise && decisionStrength >= raiseThreshold) {
 				let raiseAmt = valueBetSize();
 				raiseAmt = Math.max(currentBet + lastRaise, raiseAmt);
-				if (Math.abs(strength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
+				if (Math.abs(decisionStrength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
 					decision = Math.random() < 0.5
 						? { action: "check" }
 						: { action: "raise", amount: raiseAmt };
@@ -937,10 +951,10 @@ export function chooseBotAction(player, ctx) {
 			} else {
 				decision = { action: "check" };
 			}
-		} else if (canRaise && strength >= raiseThreshold && stackRatio <= 1 / 3) {
+		} else if (canRaise && decisionStrength >= raiseThreshold && stackRatio <= 1 / 3) {
 			let raiseAmt = protectionBetSize();
 			raiseAmt = Math.max(currentBet + lastRaise, raiseAmt);
-			if (Math.abs(strength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
+			if (Math.abs(decisionStrength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
 				const callAmt = Math.min(player.chips, needToCall);
 				const alt = (strengthRatio * aggressiveness >= callBarrier &&
 						stackRatio <= (preflop ? 0.5 : 0.7))
