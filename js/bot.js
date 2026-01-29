@@ -134,6 +134,22 @@ function handTiebreaker(handObj) {
 	return value;
 }
 
+function getSolvedHandScore(handObj) {
+	return handObj ? handObj.rank + handTiebreaker(handObj) : 0;
+}
+
+function solvedHandUsesHoleCards(hole, handObj) {
+	if (!handObj) {
+		return false;
+	}
+	const holeCards = hole.map((c) => new Card(c));
+	return handObj.cards.some((card) =>
+		holeCards.some((holeCard) =>
+			holeCard.rank === card.rank && holeCard.suit === card.suit
+		)
+	);
+}
+
 // Calculate how often a player folds
 function calcFoldRate(p) {
 	return p.stats.hands > 0 ? p.stats.folds / p.stats.hands : 0;
@@ -633,6 +649,19 @@ export function chooseBotAction(player, ctx) {
 
 	// Evaluate hand strength
 	const { strength, solvedHand } = evaluateHandStrength(player, communityCards, preflop);
+	const holeCards = [
+		player.cards[0].dataset.value,
+		player.cards[1].dataset.value,
+	];
+	let holeImprovesHand = false;
+	if (!preflop && solvedHand) {
+		if (communityCards.length < 5) {
+			holeImprovesHand = solvedHandUsesHoleCards(holeCards, solvedHand);
+		} else if (communityCards.length === 5) {
+			const boardHand = Hand.solve(communityCards);
+			holeImprovesHand = getSolvedHandScore(solvedHand) > getSolvedHandScore(boardHand);
+		}
+	}
 
 	// Post-flop board context
 	const postflopContext = computePostflopContext(player, communityCards, preflop);
@@ -680,10 +709,12 @@ export function chooseBotAction(player, ctx) {
 		}
 		const categoryWeight = Math.max(0.25, 1 - handFloor);
 		let contextAdj = 0;
-		if (overPair) {
-			contextAdj += 0.1;
-		} else if (topPair) {
-			contextAdj += 0.06;
+		if (holeImprovesHand) {
+			if (overPair) {
+				contextAdj += 0.1;
+			} else if (topPair) {
+				contextAdj += 0.06;
+			}
 		}
 		if (drawEquity > 0) {
 			contextAdj += Math.min(0.1, drawEquity * 0.35);
@@ -701,7 +732,9 @@ export function chooseBotAction(player, ctx) {
 		const floorMax = Math.min(1, handFloor + 0.12 * categoryWeight);
 		const adjustedFloor = Math.max(floorMin, Math.min(floorMax, handFloor + contextAdj));
 
-		strengthRatio = Math.min(1, Math.max(strengthRatio, adjustedFloor));
+		if (holeImprovesHand) {
+			strengthRatio = Math.min(1, Math.max(strengthRatio, adjustedFloor));
+		}
 	}
 	const strengthRatioBase = strengthRatio;
 	const premiumHand = preflop
