@@ -30,10 +30,18 @@ const MAX_ITEMS = 8;
 const notifArr = [];
 const pendingNotif = [];
 let isNotifProcessing = false;
-const NOTIF_INTERVAL = 750;
-const ACTION_LABEL_DURATION = 3000;
+let NOTIF_INTERVAL = 750;
+let ACTION_LABEL_DURATION = 3000;
 const HISTORY_LOG = false; // Set to true to enable history logging in the console
-const DEBUG_FLOW = false; // Set to true for verbose game-flow logging
+let DEBUG_FLOW = false; // Set to true for verbose game-flow logging
+
+const speedModeParam = new URLSearchParams(globalThis.location.search).get("speedmode");
+const SPEED_MODE = speedModeParam !== null && speedModeParam !== "0" && speedModeParam !== "false";
+if (SPEED_MODE) {
+	NOTIF_INTERVAL = 0;
+	ACTION_LABEL_DURATION = 0;
+	DEBUG_FLOW = true;
+}
 
 let raisesThisRound = 0;
 const STATE_SYNC_ENDPOINT = "https://poker.tehes.deno.net/state";
@@ -765,6 +773,12 @@ function dealCommunityCards(amount) {
 }
 
 function startBettingRound() {
+	if (currentPhaseIndex > 0) {
+		// Reset state for post-flop rounds before any checks/logging
+		currentBet = 0;
+		lastRaise = bigBlind;
+		players.forEach((p) => p.resetRoundBet());
+	}
 	logFlow("startBettingRound", {
 		phase: Phases[currentPhaseIndex],
 		currentBet,
@@ -795,12 +809,6 @@ function startBettingRound() {
 		// first player left of dealer
 		const dealerIdx = players.findIndex((p) => p.dealer);
 		startIdx = (dealerIdx + 1) % players.length;
-		// Reset currentBet for post-Flop rounds
-		currentBet = 0;
-		// Reset minimum raise for new betting round
-		lastRaise = bigBlind;
-		// Reset bets only for post-flop rounds
-		players.forEach((p) => p.resetRoundBet());
 	}
 
 	logFlow("betting start index", { index: startIdx, player: players[startIdx].name });
@@ -1130,6 +1138,19 @@ function startBettingRound() {
  * onDone   – callback after animation completes
  */
 function animateChipTransfer(amount, playerObj, onDone) {
+	if (SPEED_MODE) {
+		const potElem = document.getElementById("pot");
+		let potVal = parseInt(potElem.textContent, 10);
+		potVal -= amount;
+		potElem.textContent = potVal;
+
+		playerObj.chips += amount;
+		playerObj.showTotal();
+
+		if (onDone) onDone();
+		return;
+	}
+
 	const steps = 30;
 	const totalDuration = Math.min(Math.max(amount * 20, 300), 3000);
 	const delay = totalDuration / steps;
@@ -1203,12 +1224,17 @@ function doShowdown() {
 		animateChipTransfer(pot, winner, () => {
 			pot = 0;
 			document.getElementById("pot").textContent = pot;
-			startButton.textContent = "New Round";
-			startButton.classList.remove("hidden");
 			foldButton.classList.add("hidden");
 			actionButton.classList.add("hidden");
 			amountSlider.classList.add("hidden");
 			sliderOutput.classList.add("hidden");
+			if (SPEED_MODE) {
+				queueStateSync();
+				preFlop();
+				return;
+			}
+			startButton.textContent = "New Round";
+			startButton.classList.remove("hidden");
 			queueStateSync();
 		});
 		return;
@@ -1388,11 +1414,16 @@ function doShowdown() {
 			p.seat.classList.remove("active");
 		});
 
-		startButton.textContent = "New Round";
 		foldButton.classList.add("hidden");
 		actionButton.classList.add("hidden");
 		amountSlider.classList.add("hidden");
 		sliderOutput.classList.add("hidden");
+		if (SPEED_MODE) {
+			queueStateSync();
+			preFlop();
+			return;
+		}
+		startButton.textContent = "New Round";
 		startButton.classList.remove("hidden");
 		queueStateSync();
 	});
@@ -1581,7 +1612,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-01-28-v5";
+const SERVICE_WORKER_VERSION = "2026-01-28-v6";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 /* --------------------------------------------------------------------------------------------------
