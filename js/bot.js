@@ -803,7 +803,7 @@ export function chooseBotAction(player, ctx) {
 		else if (spr > 6) base -= 0.05;
 		const rand = Math.random() * 0.2 - 0.1;
 		const factor = Math.min(1, Math.max(0.35, base + rand));
-		const sized = roundTo10(Math.min(player.chips, (pot + needToCall) * factor));
+		const sized = roundTo10(Math.min(player.chips, (pot + needToCall) * factor * betAggFactor));
 		return capGreenNonPremium(sized);
 	}
 
@@ -815,7 +815,7 @@ export function chooseBotAction(player, ctx) {
 		else if (spr > 5) base -= 0.05;
 		const rand = Math.random() * 0.08 - 0.04;
 		const factor = Math.min(0.45, Math.max(0.2, base + rand));
-		const sized = roundTo10(Math.min(player.chips, (pot + needToCall) * factor));
+		const sized = roundTo10(Math.min(player.chips, (pot + needToCall) * factor * betAggFactor));
 		return capGreenNonPremium(sized);
 	}
 
@@ -827,7 +827,7 @@ export function chooseBotAction(player, ctx) {
 		else if (spr > 5) base -= 0.05;
 		const rand = Math.random() * 0.1 - 0.05;
 		const factor = Math.min(0.8, Math.max(0.35, base + rand));
-		const sized = roundTo10(Math.min(player.chips, (pot + needToCall) * factor));
+		const sized = roundTo10(Math.min(player.chips, (pot + needToCall) * factor * betAggFactor));
 		return capGreenNonPremium(sized);
 	}
 
@@ -837,13 +837,13 @@ export function chooseBotAction(player, ctx) {
 		if (spr < 2) base += 0.3;
 		const rand = Math.random() * 0.15 - 0.05;
 		const factor = Math.max(1.1, Math.min(1.5, base + rand));
-		const sized = roundTo10(Math.min(player.chips, (pot + needToCall) * factor));
+		const sized = roundTo10(Math.min(player.chips, (pot + needToCall) * factor * betAggFactor));
 		return capGreenNonPremium(sized);
 	}
 
 	function yellowRaiseSize() {
 		const base = bigBlind * (2.5 + Math.random() * 0.5);
-		const sized = roundTo10(base);
+		const sized = roundTo10(base * betAggFactor);
 		return Math.min(player.chips, Math.max(currentBet + lastRaise, sized));
 	}
 
@@ -900,6 +900,8 @@ export function chooseBotAction(player, ctx) {
 		statsWeight = weight;
 		bluffChance = Math.min(0.3, foldRate) * weight;
 		bluffChance *= 1 - textureRisk * 0.5;
+		const bluffAggFactor = Math.max(0.8, Math.min(1.2, aggressiveness));
+		bluffChance = Math.min(0.3, bluffChance * bluffAggFactor);
 
 		if (avgVPIP < 0.25) {
 			raiseThreshold -= 0.5 * weight;
@@ -915,6 +917,10 @@ export function chooseBotAction(player, ctx) {
 			aggressiveness += 0.1 * weight;
 		}
 	}
+
+	raiseThreshold = Math.max(1, raiseThreshold - (aggressiveness - 1) * 1.2);
+	const betAggFactor = Math.max(0.9, Math.min(1.1, aggressiveness));
+	const shoveAggAdj = Math.max(-0.08, Math.min(0.08, (aggressiveness - 1) * 0.12));
 
 	// Keep a simple betting-line memory for the preflop aggressor.
 	let lineAbort = false;
@@ -934,7 +940,7 @@ export function chooseBotAction(player, ctx) {
 	/* Tie-breaker explanation:
        - When the difference between hand strength and the raise threshold is within STRENGTH_TIE_DELTA,
          the bot randomly chooses between the two close options to introduce unpredictability.
-       - Similarly, when the difference between (strengthRatio * aggressiveness) and callBarrier is within ODDS_TIE_DELTA,
+       - Similarly, when the difference between strengthRatio and callBarrier is within ODDS_TIE_DELTA,
          the bot randomly resolves between call and fold to break ties.
      */
 	let decision;
@@ -963,9 +969,14 @@ export function chooseBotAction(player, ctx) {
 
 	// Automatic shove logic when stacks are shallow
 	if (!decision) {
-		if (spr <= 1.2 && strengthRatio >= 0.65) {
+		const shallowShoveThreshold = Math.max(0, Math.min(1, 0.65 - shoveAggAdj));
+		const shortstackShoveThreshold = Math.max(0, Math.min(1, 0.75 - shoveAggAdj));
+		if (spr <= 1.2 && strengthRatio >= shallowShoveThreshold) {
 			decision = { action: "raise", amount: player.chips };
-		} else if (preflop && player.chips <= blindLevel.big * 10 && strengthRatio >= 0.75) {
+		} else if (
+			preflop && player.chips <= blindLevel.big * 10 &&
+			strengthRatio >= shortstackShoveThreshold
+		) {
 			decision = { action: "raise", amount: player.chips };
 		}
 	}
@@ -990,7 +1001,7 @@ export function chooseBotAction(player, ctx) {
 			raiseAmt = Math.max(currentBet + lastRaise, raiseAmt);
 			if (Math.abs(decisionStrength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
 				const callAmt = Math.min(player.chips, needToCall);
-				const alt = (strengthRatio * aggressiveness >= eliminationBarrier &&
+				const alt = (strengthRatio >= eliminationBarrier &&
 						stackRatio <= (preflop ? 0.5 : 0.7))
 					? { action: "call", amount: callAmt }
 					: { action: "fold" };
@@ -999,11 +1010,11 @@ export function chooseBotAction(player, ctx) {
 				decision = { action: "raise", amount: raiseAmt };
 			}
 		} else if (
-			strengthRatio * aggressiveness >= eliminationBarrier &&
+			strengthRatio >= eliminationBarrier &&
 			stackRatio <= (preflop ? 0.5 : 0.7)
 		) {
 			const callAmt = Math.min(player.chips, needToCall);
-			if (Math.abs(strengthRatio * aggressiveness - eliminationBarrier) <= ODDS_TIE_DELTA) {
+			if (Math.abs(strengthRatio - eliminationBarrier) <= ODDS_TIE_DELTA) {
 				decision = Math.random() < 0.5
 					? { action: "call", amount: callAmt }
 					: { action: "fold" };
