@@ -117,20 +117,25 @@ The table works fully offline after the first complete load.
 Bots play tournament-style poker and follow consistent rules (no hidden information or "reads"). In
 plain terms, they consider:
 
-- **Hand and board**: starting hand strength, made hands, strong pairs, and straight/flush draws,
-  plus how dangerous the board is, including kicker-based tie-breaks within the same hand category
-  after the flop.
-- **Risk and price**: the price to call versus the pot, how much of their stack is at risk, and
-  whether a bet is all-in.
-- **Hand-level commitment**: call thresholds tighten as more chips are invested with streets left,
-  to avoid multi-street “bleeding” while still calling correctly when already committed.
-- **Position and table**: seat position, number of opponents still in the hand, and whether the bot
-  was the preflop aggressor (affects continuation and follow-up bets).
-- **Opponent tendencies**: how loose/tight and aggressive opponents are, and how often they fold,
-  based on enough hands played.
-- **Tournament zones (M-ratio)**: stack vs blinds decides whether they shove, raise, call, or fold.
-- **Stack context**: chip leaders raise a bit wider, short stacks call tighter; small randomness and
-  occasional bluffs appear only outside the shove-only zones.
+- **Hand evaluation**: preflop strength uses a simplified Chen score; postflop uses pokersolver
+  rank plus kicker tiebreakers and checks whether hole cards actually improve the hand.
+- **Board context**: recognizes top pair/overpair, straight/flush draws (outs to equity), and board
+  texture (dry vs wet) to adjust strength.
+- **Tournament zones (M-ratio)**: dead/red/orange/yellow/green zones guide preflop Harrington-style
+  push/call/raise logic; green zone plays chip-EV.
+- **Stack pressure and risk**: pot odds, stack ratio, and SPR; shallow SPR or <=10bb can trigger
+  shove thresholds; large all-in calls are tightened by an elimination-risk guardrail.
+- **Commitment control**: invested-stack and remaining-street pressure add a call penalty to reduce
+  multi-street bleeding while still calling when committed.
+- **Position and table**: position factor and active opponents shift aggression and raise
+  thresholds; chip leaders open wider, short stacks call tighter and cap non-premium bet sizes.
+- **Opponent tendencies**: VPIP, aggression, and fold rate are weighted only after enough hands;
+  fold-heavy tables increase bluff frequency.
+- **Bet sizing**: value/protection/bluff/overbet sizes scale with pot, texture, SPR, position, and
+  opponent count, with small randomness and rounding.
+- **Line memory and tie-breakers**: tracks the preflop aggressor for c-bet/barrel plans (aborts on
+  very wet boards); near-threshold decisions randomize between close actions and avoid bluffing
+  into all-ins.
 
 ---
 

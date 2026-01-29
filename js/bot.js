@@ -144,9 +144,7 @@ function solvedHandUsesHoleCards(hole, handObj) {
 	}
 	const holeCards = hole.map((c) => new Card(c));
 	return handObj.cards.some((card) =>
-		holeCards.some((holeCard) =>
-			holeCard.rank === card.rank && holeCard.suit === card.suit
-		)
+		holeCards.some((holeCard) => holeCard.rank === card.rank && holeCard.suit === card.suit)
 	);
 }
 
@@ -654,6 +652,14 @@ export function chooseBotAction(player, ctx) {
 		player.cards[1].dataset.value,
 	];
 	let holeImprovesHand = false;
+
+	/* Hybrid check: Do hole cards improve the hand?
+   - River: Delta-score (7-card vs 5-card board). Pokersolver may include hole
+     cards in tie best-5 even when they don't improve (Board AA KK Q, Hole Q♦ 2♣
+     → solver picks Q♦, but delta = 0).
+   - Flop/Turn: No reliable board-vs-full test (board < 5 cards). Uses-hole-cards
+     is a conservative gate to prevent obvious plays-the-board cases.
+	*/
 	if (!preflop && solvedHand) {
 		if (communityCards.length < 5) {
 			holeImprovesHand = solvedHandUsesHoleCards(holeCards, solvedHand);
