@@ -19,8 +19,14 @@ export let BOT_ACTION_DELAY = 3000;
 
 // Enable verbose logging of bot decisions
 let DEBUG_DECISIONS = false;
+let DEBUG_DECISIONS_DETAIL = false;
 
 const speedModeParam = new URLSearchParams(globalThis.location.search).get("speedmode");
+const debugBotParam = new URLSearchParams(globalThis.location.search).get("botdebug");
+DEBUG_DECISIONS_DETAIL = debugBotParam === "1" || debugBotParam === "true" || debugBotParam === "detail";
+if (DEBUG_DECISIONS_DETAIL) {
+	DEBUG_DECISIONS = true;
+}
 const SPEED_MODE = speedModeParam !== null && speedModeParam !== "0" && speedModeParam !== "false";
 if (SPEED_MODE) {
 	BOT_ACTION_DELAY = 0;
@@ -609,6 +615,7 @@ export function chooseBotAction(player, ctx) {
 	// Determine amount needed to call the current bet
 	const needToCall = currentBet - player.roundBet;
 	const needsToCall = needToCall > 0;
+	const minRaiseAmount = Math.max(lastRaise, needToCall + lastRaise);
 
 	// Calculate pot odds to assess call viability
 	const potOdds = needToCall / (pot + needToCall);
@@ -789,6 +796,9 @@ export function chooseBotAction(player, ctx) {
 	let bluffChance = 0;
 	let foldRate = 0;
 	let statsWeight = 0;
+	let avgVPIP = 0;
+	let avgAgg = 0;
+	let avgHands = 0;
 
 	function capGreenNonPremium(amount) {
 		if (!isGreenZone || premiumHand) return amount;
@@ -859,7 +869,7 @@ export function chooseBotAction(player, ctx) {
 	function yellowRaiseSize() {
 		const base = bigBlind * (2.5 + Math.random() * 0.5);
 		const sized = roundTo10(base * betAggFactor);
-		return Math.min(player.chips, Math.max(currentBet + lastRaise, sized));
+		return Math.min(player.chips, Math.max(minRaiseAmount, sized));
 	}
 
 	function decideCbetIntent(lineAbort) {
@@ -897,16 +907,16 @@ export function chooseBotAction(player, ctx) {
 	// Adjust based on observed opponent tendencies
 	const statOpponents = players.filter((p) => p !== player);
 	if (statOpponents.length > 0) {
-		const avgVPIP = statOpponents.reduce((s, p) =>
+		avgVPIP = statOpponents.reduce((s, p) =>
 			s + (p.stats.vpip + 1) / (p.stats.hands + 2), 0) /
 			statOpponents.length;
-		const avgAgg = statOpponents.reduce((s, p) =>
+		avgAgg = statOpponents.reduce((s, p) =>
 			s + (p.stats.aggressiveActs + 1) / (p.stats.calls + 1), 0) /
 			statOpponents.length;
 		foldRate = avgFoldRate(statOpponents);
 
 		// Weight adjustments by average hands played to avoid overreacting in early rounds
-		const avgHands = statOpponents.reduce((s, p) =>
+		avgHands = statOpponents.reduce((s, p) =>
 			s + p.stats.hands, 0) /
 			statOpponents.length;
 		const weight = avgHands < MIN_HANDS_FOR_WEIGHT
@@ -1029,13 +1039,13 @@ export function chooseBotAction(player, ctx) {
 
 	if (!decision) {
 		if (needToCall <= 0) {
-			if (canRaise && decisionStrength >= raiseThreshold) {
-				let raiseAmt = valueBetSize();
-				raiseAmt = Math.max(currentBet + lastRaise, raiseAmt);
-				if (Math.abs(decisionStrength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
-					decision = Math.random() < 0.5
-						? { action: "check" }
-						: { action: "raise", amount: raiseAmt };
+				if (canRaise && decisionStrength >= raiseThreshold) {
+					let raiseAmt = valueBetSize();
+					raiseAmt = Math.max(minRaiseAmount, raiseAmt);
+					if (Math.abs(decisionStrength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
+						decision = Math.random() < 0.5
+							? { action: "check" }
+							: { action: "raise", amount: raiseAmt };
 				} else {
 					decision = { action: "raise", amount: raiseAmt };
 				}
@@ -1044,7 +1054,7 @@ export function chooseBotAction(player, ctx) {
 			}
 		} else if (canRaise && decisionStrength >= raiseThreshold && stackRatio <= 1 / 3) {
 			let raiseAmt = protectionBetSize();
-			raiseAmt = Math.max(currentBet + lastRaise, raiseAmt);
+			raiseAmt = Math.max(minRaiseAmount, raiseAmt);
 			if (Math.abs(decisionStrength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
 				const callAmt = Math.min(player.chips, needToCall);
 				const alt = (strengthRatio >= eliminationBarrier &&
@@ -1085,17 +1095,17 @@ export function chooseBotAction(player, ctx) {
 			}
 		}
 
-		if (
-			bluffChance > 0 && canRaise &&
-			(!preflop || strengthRatio >= MIN_PREFLOP_BLUFF_RATIO) &&
-			(decision.action === "check" || decision.action === "fold") && !facingAllIn
-		) {
-			if (Math.random() < bluffChance) {
-				const bluffAmt = Math.max(currentBet + lastRaise, bluffBetSize());
-				decision = { action: "raise", amount: bluffAmt };
-				isBluff = true;
+			if (
+				bluffChance > 0 && canRaise &&
+				(!preflop || strengthRatio >= MIN_PREFLOP_BLUFF_RATIO) &&
+				(decision.action === "check" || decision.action === "fold") && !facingAllIn
+			) {
+				if (Math.random() < bluffChance) {
+					const bluffAmt = Math.max(minRaiseAmount, bluffBetSize());
+					decision = { action: "raise", amount: bluffAmt };
+					isBluff = true;
+				}
 			}
-		}
 
 		if (
 			!preflop && currentBet === 0 && decision.action === "check" && canRaise &&
