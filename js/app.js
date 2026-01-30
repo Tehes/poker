@@ -690,7 +690,7 @@ function preFlop() {
 		champion.showTotal();
 		champion.seat.classList.add("winner");
 		logFlow("tournament_end", { champion: champion.name });
-		if (typeof umami !== "undefined") {
+		if (typeof umami !== "undefined" && !SPEED_MODE) {
 			umami.track("Poker", {
 				champion: champion.name,
 				botWon: champion.isBot,
@@ -709,7 +709,7 @@ function preFlop() {
 
 	// Shuffle and deal new hole cards
 	dealCards();
-	if (totalHands === 1 && typeof umami !== "undefined") {
+	if (totalHands === 1 && typeof umami !== "undefined" && !SPEED_MODE) {
 		umami.track("Poker", {
 			players: players.length,
 			bots: players.filter((p) => p.isBot).length,
