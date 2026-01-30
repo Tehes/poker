@@ -43,7 +43,7 @@ const MIN_HANDS_FOR_WEIGHT = 10;
 const WEIGHT_GROWTH = 10;
 // Detect opponents that shove frequently
 const ALLIN_HAND_PREFLOP = 0.85;
-const ALLIN_HAND_POSTFLOP = 0.5;
+const ALLIN_HAND_POSTFLOP = 0.38;
 // Harrington M-ratio zones and strength thresholds
 const M_RATIO_DEAD_MAX = 1;
 const M_RATIO_RED_MAX = 5;
@@ -58,8 +58,8 @@ const YELLOW_RAISE_RATIO = 0.6;
 const YELLOW_CALL_RATIO = 0.7;
 const YELLOW_SHOVE_RATIO = 0.85;
 const PREMIUM_PREFLOP_RATIO = 0.8;
-const PREMIUM_POSTFLOP_RATIO = 0.7;
-const GREEN_MAX_STACK_BET = 0.2;
+const PREMIUM_POSTFLOP_RATIO = 0.55;
+const GREEN_MAX_STACK_BET = 0.25;
 const CHIP_LEADER_RAISE_DELTA = 0.05;
 const SHORTSTACK_CALL_DELTA = 0.05;
 const SHORTSTACK_RELATIVE = 0.6;
@@ -71,7 +71,7 @@ const COMMIT_INVEST_START = 0.1;
 const COMMIT_INVEST_END = 0.6;
 const COMMIT_CALL_RATIO_REF = 0.25;
 const COMMITMENT_PENALTY_MAX = 0.25;
-const POSTFLOP_CALL_BARRIER = 0.3;
+const POSTFLOP_CALL_BARRIER = 0.16;
 const ELIMINATION_RISK_START = 0.25;
 const ELIMINATION_RISK_FULL = 0.8;
 const ELIMINATION_PENALTY_MAX = 0.25;
@@ -674,74 +674,16 @@ export function chooseBotAction(player, ctx) {
 	const topPair = postflopContext.topPair;
 	const overPair = postflopContext.overPair;
 	const drawChance = postflopContext.drawChance;
+	const drawOuts = postflopContext.drawOuts;
 	const drawEquity = postflopContext.drawEquity;
 	const textureRisk = postflopContext.textureRisk;
 
 	// Normalize strength to [0,1]
 	// preflop score and postflop rank both live roughly in 0..10, so /10 is intentional
 	const strengthBase = strength / 10;
-	let strengthRatio = strengthBase;
+	const strengthRatio = strengthBase;
 	const mZone = getMZone(mRatio);
 	const isGreenZone = mZone === "green";
-	if (!preflop && solvedHand) {
-		let handFloor = 0;
-		switch (solvedHand.name) {
-			case "Pair":
-				handFloor = 0.45;
-				break;
-			case "Two Pair":
-				handFloor = 0.6;
-				break;
-			case "Three of a Kind":
-				handFloor = 0.7;
-				break;
-			case "Straight":
-				handFloor = 0.75;
-				break;
-			case "Flush":
-				handFloor = 0.8;
-				break;
-			case "Full House":
-				handFloor = 0.9;
-				break;
-			case "Four of a Kind":
-				handFloor = 0.95;
-				break;
-			case "Straight Flush":
-				handFloor = 0.98;
-				break;
-			default:
-				break;
-		}
-		const categoryWeight = Math.max(0.25, 1 - handFloor);
-		let contextAdj = 0;
-		if (holeImprovesHand) {
-			if (overPair) {
-				contextAdj += 0.1;
-			} else if (topPair) {
-				contextAdj += 0.06;
-			}
-		}
-		if (drawEquity > 0) {
-			contextAdj += Math.min(0.1, drawEquity * 0.35);
-		}
-		contextAdj += Math.max(-0.06, Math.min(0.06, (2.5 - spr) * 0.02));
-		if (activeOpponents <= 1) {
-			contextAdj += 0.1;
-		} else {
-			contextAdj -= Math.min(0.1, (activeOpponents - 1) * 0.04);
-		}
-		contextAdj -= textureRisk * 0.12;
-		contextAdj *= categoryWeight;
-
-		const floorMin = Math.max(0, handFloor - 0.08 * categoryWeight);
-		const floorMax = Math.min(1, handFloor + 0.12 * categoryWeight);
-		const adjustedFloor = Math.max(floorMin, Math.min(floorMax, handFloor + contextAdj));
-
-		if (holeImprovesHand) {
-			strengthRatio = Math.min(1, Math.max(strengthRatio, adjustedFloor));
-		}
-	}
 	const strengthRatioBase = strengthRatio;
 	const premiumHand = preflop
 		? strengthRatioBase >= PREMIUM_PREFLOP_RATIO
@@ -778,18 +720,51 @@ export function chooseBotAction(player, ctx) {
 	const riskAdjustedRedCallThreshold = Math.min(1, redCallThreshold + eliminationPenalty);
 	const riskAdjustedOrangeCallThreshold = Math.min(1, orangeCallThreshold + eliminationPenalty);
 	const riskAdjustedYellowCallThreshold = Math.min(1, yellowCallThreshold + eliminationPenalty);
-	if (!preflop && needsToCall) {
-		const potOddsAdj = Math.max(-0.12, Math.min(0.08, (0.25 - potOdds) * 0.6));
-		const commitmentAdj = -commitmentPenalty * 0.8;
-		strengthRatio = Math.min(1, Math.max(0, strengthRatio + potOddsAdj + commitmentAdj));
-	}
 
 	const callBarrierBase = preflop
 		? Math.min(1, Math.max(0, potOdds + callTightAdj))
 		: Math.min(1, Math.max(0, POSTFLOP_CALL_BARRIER + callTightAdj));
-	const callBarrier = preflop
+	let callBarrier = preflop
 		? Math.min(1, callBarrierBase + commitmentPenalty)
 		: callBarrierBase;
+	if (!preflop) {
+		let callBarrierAdj = 0;
+		if (holeImprovesHand) {
+			if (overPair) {
+				callBarrierAdj -= 0.03;
+			} else if (topPair) {
+				callBarrierAdj -= 0.02;
+			}
+		}
+		if (drawOuts >= 8) {
+			if (communityCards.length === 3) {
+				callBarrierAdj -= 0.02;
+			} else if (communityCards.length === 4) {
+				callBarrierAdj -= 0.01;
+			}
+		}
+		if (activeOpponents <= 1) {
+			callBarrierAdj -= 0.02;
+		}
+		if (textureRisk > 0.6) {
+			callBarrierAdj += 0.02;
+		}
+		if (spr < 3) {
+			callBarrierAdj -= 0.01;
+		} else if (spr > 6) {
+			callBarrierAdj += 0.01;
+		}
+		callBarrierAdj = Math.max(-0.04, Math.min(0.04, callBarrierAdj));
+
+		const potOddsAdj = needsToCall
+			? Math.max(-0.12, Math.min(0.08, (0.25 - potOdds) * 0.6))
+			: 0;
+		const potOddsShift = -potOddsAdj;
+		const commitmentShift = needsToCall ? commitmentPenalty * 0.8 : 0;
+
+		callBarrier = callBarrierBase + callBarrierAdj + potOddsShift + commitmentShift;
+		callBarrier = Math.min(0.22, Math.max(0.10, callBarrier));
+	}
 	const eliminationBarrier = needsToCall
 		? Math.min(1, callBarrier + eliminationPenalty)
 		: callBarrier;
@@ -804,7 +779,7 @@ export function chooseBotAction(player, ctx) {
 		: 0;
 	const baseAggressiveness = preflop ? 0.8 + 0.4 * positionFactor : 1 + 0.6 * positionFactor;
 	let aggressiveness = preflop ? baseAggressiveness + oppAggAdj : baseAggressiveness;
-	let raiseThreshold = preflop ? 8 - 2 * positionFactor : Math.max(2, 4 - 2 * positionFactor);
+	let raiseThreshold = preflop ? 8 - 2 * positionFactor : 2.6 - 0.8 * positionFactor;
 	raiseThreshold = Math.max(1, raiseThreshold - (preflop ? thresholdAdj : 0));
 	if (amChipleader) {
 		raiseThreshold = Math.max(1, raiseThreshold - CHIP_LEADER_RAISE_DELTA * 10);
@@ -817,7 +792,8 @@ export function chooseBotAction(player, ctx) {
 
 	function capGreenNonPremium(amount) {
 		if (!isGreenZone || premiumHand) return amount;
-		const cap = Math.floor(player.chips * GREEN_MAX_STACK_BET);
+		const capRatio = spr < 3 ? 0.3 : spr > 6 ? 0.2 : GREEN_MAX_STACK_BET;
+		const cap = Math.floor(player.chips * capRatio);
 		return Math.min(amount, cap);
 	}
 
@@ -957,7 +933,38 @@ export function chooseBotAction(player, ctx) {
 		}
 	}
 
-	raiseThreshold = Math.max(1, raiseThreshold - (aggressiveness - 1) * 1.2);
+	raiseThreshold = Math.max(1, raiseThreshold - (aggressiveness - 1) * 0.8);
+	if (!preflop) {
+		let raiseAdj = 0;
+		if (holeImprovesHand) {
+			if (overPair) {
+				raiseAdj -= 0.35;
+			} else if (topPair) {
+				raiseAdj -= 0.2;
+			}
+		}
+		if (drawOuts >= 8) {
+			if (communityCards.length === 3) {
+				raiseAdj -= 0.15;
+			} else if (communityCards.length === 4) {
+				raiseAdj -= 0.08;
+			}
+		}
+		if (activeOpponents <= 1) {
+			raiseAdj -= 0.15;
+		}
+		if (textureRisk > 0.6) {
+			raiseAdj += 0.15;
+		}
+		if (spr < 3) {
+			raiseAdj -= 0.1;
+		} else if (spr > 6) {
+			raiseAdj += 0.1;
+		}
+		raiseAdj = Math.max(-0.5, Math.min(0.5, raiseAdj));
+		raiseThreshold += raiseAdj;
+		raiseThreshold = Math.max(1.4, raiseThreshold);
+	}
 	const betAggFactor = Math.max(0.9, Math.min(1.1, aggressiveness));
 	const shoveAggAdj = Math.max(-0.08, Math.min(0.08, (aggressiveness - 1) * 0.12));
 
@@ -1066,6 +1073,7 @@ export function chooseBotAction(player, ctx) {
 	}
 
 	let isBluff = false;
+	let isStab = false;
 	if (!useHarringtonStrategy) {
 		// If facing any all-in, do not fold always
 		const facingAllIn = statOpponents.some((p) => p.allIn);
@@ -1138,6 +1146,7 @@ export function chooseBotAction(player, ctx) {
 		) {
 			const betAmt = protectionBetSize();
 			decision = { action: "raise", amount: Math.max(lastRaise, betAmt) };
+			isStab = true;
 		}
 	}
 
@@ -1192,7 +1201,7 @@ export function chooseBotAction(player, ctx) {
 
 		console.log(
 			`${player.name} ${h1} ${h2} → ${decision.action} ${aggrEmoji} | ` +
-				`H:${handName} A:${decision.amount ?? 0} | ` +
+				`H:${handName} Amt:${decision.amount ?? 0} | ` +
 				`S:${strengthRatio.toFixed(2)} M:${mRatio.toFixed(2)} Z:${mZone} | ` +
 				`PO:${potOdds.toFixed(2)} CB:${eliminationBarrier.toFixed(2)} SR:${
 					stackRatio.toFixed(2)
@@ -1200,13 +1209,15 @@ export function chooseBotAction(player, ctx) {
 				`CP:${commitmentPressure.toFixed(2)} CPen:${commitmentPenalty.toFixed(2)} | ` +
 				`ER:${eliminationRisk.toFixed(2)} EP:${eliminationPenalty.toFixed(2)} | ` +
 				`Pos:${positionFactor.toFixed(2)} Opp:${activeOpponents} Eff:${effectiveStack} | ` +
-				`RT:${(raiseThreshold / 10).toFixed(2)} Agg:${aggressiveness.toFixed(2)} | ` +
+				`RT10:${(raiseThreshold / 10).toFixed(2)} RT:${raiseThreshold.toFixed(2)} Agg:${
+					aggressiveness.toFixed(2)
+				} | ` +
 				`Ctx:${boardCtx} Tex:${textureRisk.toFixed(2)} | ` +
 				`CL:${amChipleader ? "Y" : "N"} SS:${shortstackRelative ? "Y" : "N"} Prem:${
 					premiumHand ? "Y" : "N"
 				} | ` +
-				`Line:${lineTag} CP:${cbetPlan} BP:${barrelPlan} CM:${cbetMade} BM:${barrelMade} LA:${lineAbortFlag} | ` +
-				`Bluff:${isBluff ? "Y" : "N"}`,
+			`Line:${lineTag} CP:${cbetPlan} BP:${barrelPlan} CM:${cbetMade} BM:${barrelMade} LA:${lineAbortFlag} | ` +
+			`Stab:${isStab ? "Y" : "N"} Bluff:${isBluff ? "Y" : "N"}`,
 		);
 	}
 
