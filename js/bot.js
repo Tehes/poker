@@ -23,7 +23,8 @@ let DEBUG_DECISIONS_DETAIL = false;
 
 const speedModeParam = new URLSearchParams(globalThis.location.search).get("speedmode");
 const debugBotParam = new URLSearchParams(globalThis.location.search).get("botdebug");
-DEBUG_DECISIONS_DETAIL = debugBotParam === "1" || debugBotParam === "true" || debugBotParam === "detail";
+DEBUG_DECISIONS_DETAIL = debugBotParam === "1" || debugBotParam === "true" ||
+	debugBotParam === "detail";
 if (DEBUG_DECISIONS_DETAIL) {
 	DEBUG_DECISIONS = true;
 }
@@ -34,6 +35,11 @@ if (SPEED_MODE) {
 }
 // Maximum number of raises allowed per betting round
 const MAX_RAISES_PER_ROUND = 3;
+// Extra required strengthRatio per prior raise in the same betting round
+const RERAISE_RATIO_STEP = 0.12;
+// Minimum strengthRatio to allow reraises (value gate)
+const RERAISE_VALUE_RATIO = 0.34;
+const RERAISE_TOP_PAIR_RATIO = 0.28;
 // Tie-breaker thresholds for close decisions
 const STRENGTH_TIE_DELTA = 0.25; // Threshold for treating strength close to the raise threshold as a tie
 const ODDS_TIE_DELTA = 0.02; // Threshold for treating pot odds close to expected value as a tie
@@ -731,9 +737,7 @@ export function chooseBotAction(player, ctx) {
 	const callBarrierBase = preflop
 		? Math.min(1, Math.max(0, potOdds + callTightAdj))
 		: Math.min(1, Math.max(0, POSTFLOP_CALL_BARRIER + callTightAdj));
-	let callBarrier = preflop
-		? Math.min(1, callBarrierBase + commitmentPenalty)
-		: callBarrierBase;
+	let callBarrier = preflop ? Math.min(1, callBarrierBase + commitmentPenalty) : callBarrierBase;
 	if (!preflop) {
 		let callBarrierAdj = 0;
 		if (holeImprovesHand) {
@@ -907,8 +911,7 @@ export function chooseBotAction(player, ctx) {
 	// Adjust based on observed opponent tendencies
 	const statOpponents = players.filter((p) => p !== player);
 	if (statOpponents.length > 0) {
-		avgVPIP = statOpponents.reduce((s, p) =>
-			s + (p.stats.vpip + 1) / (p.stats.hands + 2), 0) /
+		avgVPIP = statOpponents.reduce((s, p) => s + (p.stats.vpip + 1) / (p.stats.hands + 2), 0) /
 			statOpponents.length;
 		avgAgg = statOpponents.reduce((s, p) =>
 			s + (p.stats.aggressiveActs + 1) / (p.stats.calls + 1), 0) /
@@ -975,6 +978,10 @@ export function chooseBotAction(player, ctx) {
 		raiseThreshold += raiseAdj;
 		raiseThreshold = Math.max(1.4, raiseThreshold);
 	}
+	const raiseLevel = (facingRaise && raisesThisRound > 0)
+		? Math.max(0, raisesThisRound)
+		: 0;
+	raiseThreshold += raiseLevel * RERAISE_RATIO_STEP * 10;
 	const betAggFactor = Math.max(0.9, Math.min(1.1, aggressiveness));
 	const shoveAggAdj = Math.max(-0.08, Math.min(0.08, (aggressiveness - 1) * 0.12));
 
@@ -1039,13 +1046,13 @@ export function chooseBotAction(player, ctx) {
 
 	if (!decision) {
 		if (needToCall <= 0) {
-				if (canRaise && decisionStrength >= raiseThreshold) {
-					let raiseAmt = valueBetSize();
-					raiseAmt = Math.max(minRaiseAmount, raiseAmt);
-					if (Math.abs(decisionStrength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
-						decision = Math.random() < 0.5
-							? { action: "check" }
-							: { action: "raise", amount: raiseAmt };
+			if (canRaise && decisionStrength >= raiseThreshold) {
+				let raiseAmt = valueBetSize();
+				raiseAmt = Math.max(minRaiseAmount, raiseAmt);
+				if (Math.abs(decisionStrength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
+					decision = Math.random() < 0.5
+						? { action: "check" }
+						: { action: "raise", amount: raiseAmt };
 				} else {
 					decision = { action: "raise", amount: raiseAmt };
 				}
@@ -1095,20 +1102,21 @@ export function chooseBotAction(player, ctx) {
 			}
 		}
 
-			if (
-				bluffChance > 0 && canRaise &&
-				(!preflop || strengthRatio >= MIN_PREFLOP_BLUFF_RATIO) &&
-				(decision.action === "check" || decision.action === "fold") && !facingAllIn
-			) {
-				if (Math.random() < bluffChance) {
-					const bluffAmt = Math.max(minRaiseAmount, bluffBetSize());
-					decision = { action: "raise", amount: bluffAmt };
-					isBluff = true;
-				}
+		if (
+			bluffChance > 0 && canRaise && !facingRaise &&
+			(!preflop || strengthRatio >= MIN_PREFLOP_BLUFF_RATIO) &&
+			(decision.action === "check" || decision.action === "fold") && !facingAllIn
+		) {
+			if (Math.random() < bluffChance) {
+				const bluffAmt = Math.max(minRaiseAmount, bluffBetSize());
+				decision = { action: "raise", amount: bluffAmt };
+				isBluff = true;
 			}
+		}
 
 		if (
 			!preflop && currentBet === 0 && decision.action === "check" && canRaise &&
+			!facingRaise &&
 			botLine && botLine.preflopAggressor && !lineAbort && strengthRatio < 0.9
 		) {
 			if (currentPhaseIndex === 1 && botLine.cbetIntent) {
@@ -1152,12 +1160,24 @@ export function chooseBotAction(player, ctx) {
 
 		if (
 			!preflop && currentBet === 0 && decision.action === "check" && canRaise &&
+			!facingRaise &&
 			textureRisk < 0.4 && (foldRate > 0.25 || drawEquity > 0) && Math.random() < 0.2
 		) {
 			const betAmt = protectionBetSize();
 			decision = { action: "raise", amount: Math.max(lastRaise, betAmt) };
 			isStab = true;
 		}
+	}
+
+	const reraiseValueRatio = (topPair || overPair)
+		? RERAISE_TOP_PAIR_RATIO
+		: RERAISE_VALUE_RATIO;
+	if (decision.action === "raise" && raiseLevel > 0 && strengthRatio < reraiseValueRatio) {
+		decision = needToCall > 0
+			? { action: "call", amount: Math.min(player.chips, needToCall) }
+			: { action: "check" };
+		isBluff = false;
+		isStab = false;
 	}
 
 	const h1 = formatCard(player.cards[0].dataset.value);
@@ -1221,13 +1241,13 @@ export function chooseBotAction(player, ctx) {
 				`Pos:${positionFactor.toFixed(2)} Opp:${activeOpponents} Eff:${effectiveStack} | ` +
 				`RT10:${(raiseThreshold / 10).toFixed(2)} RT:${raiseThreshold.toFixed(2)} Agg:${
 					aggressiveness.toFixed(2)
-				} | ` +
+				} RL:${raiseLevel} RAdj:${(raiseLevel * RERAISE_RATIO_STEP).toFixed(2)} | ` +
 				`Ctx:${boardCtx} Tex:${textureRisk.toFixed(2)} | ` +
 				`CL:${amChipleader ? "Y" : "N"} SS:${shortstackRelative ? "Y" : "N"} Prem:${
 					premiumHand ? "Y" : "N"
 				} | ` +
-			`Line:${lineTag} CP:${cbetPlan} BP:${barrelPlan} CM:${cbetMade} BM:${barrelMade} LA:${lineAbortFlag} | ` +
-			`Stab:${isStab ? "Y" : "N"} Bluff:${isBluff ? "Y" : "N"}`,
+				`Line:${lineTag} CP:${cbetPlan} BP:${barrelPlan} CM:${cbetMade} BM:${barrelMade} LA:${lineAbortFlag} | ` +
+				`Stab:${isStab ? "Y" : "N"} Bluff:${isBluff ? "Y" : "N"}`,
 		);
 	}
 
