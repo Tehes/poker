@@ -1167,7 +1167,8 @@ export function chooseBotAction(player, ctx) {
 		if (
 			!preflop && currentBet === 0 && decision.action === "check" && canRaise &&
 			!facingRaise &&
-			textureRisk < 0.4 && (foldRate > 0.25 || drawEquity > 0) && Math.random() < 0.2 &&
+			textureRisk < 0.4 && (foldRate > 0.25 || drawEquity > 0) &&
+			Math.random() < Math.max(0.05, Math.min(0.35, 0.05 + positionFactor * 0.3)) &&
 			!nonValueAggressionMade
 		) {
 			const betAmt = protectionBetSize();
