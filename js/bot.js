@@ -691,6 +691,10 @@ export function chooseBotAction(player, ctx) {
 	const drawOuts = postflopContext.drawOuts;
 	const drawEquity = postflopContext.drawEquity;
 	const textureRisk = postflopContext.textureRisk;
+	const isMadeHand = !preflop && solvedHand && solvedHand.rank >= 2;
+	const isDraw = drawOuts >= 8;
+	const isWeakDraw = drawOuts > 0 && drawOuts < 8;
+	const isDeadHand = !preflop && !isMadeHand && !isDraw && !isWeakDraw;
 
 	// Normalize strength to [0,1]
 	// preflop score and postflop rank both live roughly in 0..10, so /10 is intentional
@@ -768,14 +772,39 @@ export function chooseBotAction(player, ctx) {
 		}
 		callBarrierAdj = Math.max(-0.04, Math.min(0.04, callBarrierAdj));
 
+		const streetIndex = communityCards.length === 3
+			? 1
+			: communityCards.length === 4
+			? 2
+			: communityCards.length === 5
+			? 3
+			: 0;
+		const streetPressure = needsToCall ? streetIndex * 0.01 : 0;
+		const weakDrawPressure = needsToCall && isWeakDraw ? streetIndex * 0.01 : 0;
+		const deadHandPressure = needsToCall && isDeadHand ? streetIndex * 0.02 : 0;
+
 		const potOddsAdj = needsToCall
 			? Math.max(-0.12, Math.min(0.08, (0.25 - potOdds) * 0.6))
 			: 0;
-		const potOddsShift = -potOddsAdj;
+		let potOddsShift = -potOddsAdj;
+		if (needsToCall && isDeadHand) {
+			potOddsShift *= 0.35;
+		} else if (needsToCall && isWeakDraw) {
+			potOddsShift *= 0.5;
+		}
 		const commitmentShift = needsToCall ? commitmentPenalty * 0.8 : 0;
 
 		callBarrier = callBarrierBase + callBarrierAdj + potOddsShift + commitmentShift;
-		callBarrier = Math.min(0.22, Math.max(0.10, callBarrier));
+		callBarrier += streetPressure + weakDrawPressure + deadHandPressure;
+		if (needsToCall && isDeadHand) {
+			const deadHandFloor = streetIndex === 1
+				? 0.18
+				: streetIndex === 2
+				? 0.2
+				: 0.22;
+			callBarrier = Math.max(callBarrier, deadHandFloor);
+		}
+		callBarrier = Math.min(1, Math.max(0.10, callBarrier));
 	}
 	const eliminationBarrier = needsToCall
 		? Math.min(1, callBarrier + eliminationPenalty)
@@ -1218,6 +1247,7 @@ export function chooseBotAction(player, ctx) {
 
 	if (DEBUG_DECISIONS) {
 		const boardCtx = overPair ? "OP" : (topPair ? "TP" : (drawChance ? "DR" : "-"));
+		const drawFlag = isDraw ? "S" : (isWeakDraw ? "W" : "-");
 		const lineTag = botLine && botLine.preflopAggressor ? "PFA" : "-";
 		const cbetPlan = botLine && botLine.preflopAggressor
 			? (botLine.cbetIntent === null ? "-" : (botLine.cbetIntent ? "Y" : "N"))
@@ -1244,7 +1274,7 @@ export function chooseBotAction(player, ctx) {
 				`RT10:${(raiseThreshold / 10).toFixed(2)} Agg:${
 					aggressiveness.toFixed(2)
 				} RL:${raiseLevel} RAdj:${(raiseLevel * RERAISE_RATIO_STEP).toFixed(2)} | ` +
-				`Ctx:${boardCtx} Tex:${textureRisk.toFixed(2)} | ` +
+				`Ctx:${boardCtx} Draw:${drawFlag} Tex:${textureRisk.toFixed(2)} | ` +
 				`CL:${amChipleader ? "Y" : "N"} SS:${shortstackRelative ? "Y" : "N"} Prem:${
 					premiumHand ? "Y" : "N"
 				} | ` +
