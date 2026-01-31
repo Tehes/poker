@@ -779,9 +779,11 @@ export function chooseBotAction(player, ctx) {
 			: communityCards.length === 5
 			? 3
 			: 0;
+		const raiseLevelForCalls = facingRaise && raisesThisRound > 0 ? raisesThisRound : 0;
 		const streetPressure = needsToCall ? streetIndex * 0.01 : 0;
 		const weakDrawPressure = needsToCall && isWeakDraw ? streetIndex * 0.01 : 0;
 		const deadHandPressure = needsToCall && isDeadHand ? streetIndex * 0.02 : 0;
+		const barrelPressure = needsToCall ? raiseLevelForCalls * 0.02 : 0;
 
 		const potOddsAdj = needsToCall
 			? Math.max(-0.12, Math.min(0.08, (0.25 - potOdds) * 0.6))
@@ -795,14 +797,21 @@ export function chooseBotAction(player, ctx) {
 		const commitmentShift = needsToCall ? commitmentPenalty * 0.8 : 0;
 
 		callBarrier = callBarrierBase + callBarrierAdj + potOddsShift + commitmentShift;
-		callBarrier += streetPressure + weakDrawPressure + deadHandPressure;
+		callBarrier += streetPressure + weakDrawPressure + deadHandPressure + barrelPressure;
 		if (needsToCall && isDeadHand) {
 			const deadHandFloor = streetIndex === 1
-				? 0.18
-				: streetIndex === 2
 				? 0.2
-				: 0.22;
+				: streetIndex === 2
+				? 0.22
+				: 0.24;
 			callBarrier = Math.max(callBarrier, deadHandFloor);
+		}
+		if (needsToCall && isWeakDraw) {
+			if (streetIndex >= 2) {
+				callBarrier = 1;
+			} else if (streetIndex === 1 && (potOdds > 0.18 || raiseLevelForCalls > 0)) {
+				callBarrier = 1;
+			}
 		}
 		callBarrier = Math.min(1, Math.max(0.10, callBarrier));
 	}
