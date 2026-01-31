@@ -649,6 +649,7 @@ export function chooseBotAction(player, ctx) {
 	const shortstackRelative = opponentStacks.length > 0 &&
 		effectiveStack === player.chips && player.chips < maxOpponentStack * SHORTSTACK_RELATIVE;
 	const botLine = player.botLine || null;
+	const nonValueAggressionMade = botLine ? botLine.nonValueAggressionMade : false;
 
 	const positionFactor = computePositionFactor(players, active, player, currentPhaseIndex);
 
@@ -1103,7 +1104,8 @@ export function chooseBotAction(player, ctx) {
 		if (
 			bluffChance > 0 && canRaise && !facingRaise &&
 			(!preflop || strengthRatio >= MIN_PREFLOP_BLUFF_RATIO) &&
-			(decision.action === "check" || decision.action === "fold") && !facingAllIn
+			(decision.action === "check" || decision.action === "fold") && !facingAllIn &&
+			!nonValueAggressionMade
 		) {
 			if (Math.random() < bluffChance) {
 				const bluffAmt = Math.max(minRaiseAmount, bluffBetSize());
@@ -1118,26 +1120,32 @@ export function chooseBotAction(player, ctx) {
 			botLine && botLine.preflopAggressor && !lineAbort && strengthRatio < 0.9
 		) {
 			if (currentPhaseIndex === 1 && botLine.cbetIntent) {
-				const bet = strengthRatio >= 0.6 || drawEquity > 0
-					? protectionBetSize()
-					: bluffBetSize();
-				decision = {
-					action: "raise",
-					amount: Math.min(player.chips, Math.max(lastRaise, bet)),
-				};
-				if (strengthRatio < 0.6 && drawEquity === 0) {
-					isBluff = true;
+				const wantsBluff = strengthRatio < 0.6 && drawEquity === 0;
+				if (!wantsBluff || !nonValueAggressionMade) {
+					const bet = strengthRatio >= 0.6 || drawEquity > 0
+						? protectionBetSize()
+						: bluffBetSize();
+					decision = {
+						action: "raise",
+						amount: Math.min(player.chips, Math.max(lastRaise, bet)),
+					};
+					if (wantsBluff) {
+						isBluff = true;
+					}
 				}
 			} else if (currentPhaseIndex === 2 && botLine.barrelIntent) {
-				const bet = strengthRatio >= 0.65 || drawEquity > 0
-					? protectionBetSize()
-					: bluffBetSize();
-				decision = {
-					action: "raise",
-					amount: Math.min(player.chips, Math.max(lastRaise, bet)),
-				};
-				if (strengthRatio < 0.6 && drawEquity === 0) {
-					isBluff = true;
+				const wantsBluff = strengthRatio < 0.6 && drawEquity === 0;
+				if (!wantsBluff || !nonValueAggressionMade) {
+					const bet = strengthRatio >= 0.65 || drawEquity > 0
+						? protectionBetSize()
+						: bluffBetSize();
+					decision = {
+						action: "raise",
+						amount: Math.min(player.chips, Math.max(lastRaise, bet)),
+					};
+					if (wantsBluff) {
+						isBluff = true;
+					}
 				}
 			}
 		}
@@ -1159,7 +1167,8 @@ export function chooseBotAction(player, ctx) {
 		if (
 			!preflop && currentBet === 0 && decision.action === "check" && canRaise &&
 			!facingRaise &&
-			textureRisk < 0.4 && (foldRate > 0.25 || drawEquity > 0) && Math.random() < 0.2
+			textureRisk < 0.4 && (foldRate > 0.25 || drawEquity > 0) && Math.random() < 0.2 &&
+			!nonValueAggressionMade
 		) {
 			const betAmt = protectionBetSize();
 			decision = { action: "raise", amount: Math.max(lastRaise, betAmt) };
@@ -1191,6 +1200,10 @@ export function chooseBotAction(player, ctx) {
 		}
 	}
 
+	if (botLine && decision.action === "raise" && (isBluff || isStab)) {
+		botLine.nonValueAggressionMade = true;
+	}
+
 	if (
 		botLine && botLine.preflopAggressor && !preflop && currentBet === 0 &&
 		decision.action === "raise"
@@ -1203,14 +1216,6 @@ export function chooseBotAction(player, ctx) {
 	}
 
 	if (DEBUG_DECISIONS) {
-		// Map aggressiveness to an emoji for logging
-		let aggrEmoji;
-		if (aggressiveness >= 1.5) aggrEmoji = "🔥";
-		else if (aggressiveness >= 1.2) aggrEmoji = "⚡";
-		else if (aggressiveness >= 1.0) aggrEmoji = "👌";
-		else if (aggressiveness >= 0.8) aggrEmoji = "🐌";
-		else aggrEmoji = "❄️";
-
 		const boardCtx = overPair ? "OP" : (topPair ? "TP" : (drawChance ? "DR" : "-"));
 		const lineTag = botLine && botLine.preflopAggressor ? "PFA" : "-";
 		const cbetPlan = botLine && botLine.preflopAggressor
@@ -1226,7 +1231,7 @@ export function chooseBotAction(player, ctx) {
 		const lineAbortFlag = botLine && botLine.preflopAggressor ? (lineAbort ? "Y" : "N") : "-";
 
 		console.log(
-			`${player.name} ${h1} ${h2} → ${decision.action} ${aggrEmoji} | ` +
+			`${player.name} ${h1} ${h2} → ${decision.action} | ` +
 				`H:${handName} Amt:${decision.amount ?? 0} | ` +
 				`S:${strengthRatio.toFixed(2)} M:${mRatio.toFixed(2)} Z:${mZone} | ` +
 				`PO:${potOdds.toFixed(2)} CB:${eliminationBarrier.toFixed(2)} SR:${
@@ -1235,7 +1240,7 @@ export function chooseBotAction(player, ctx) {
 				`CP:${commitmentPressure.toFixed(2)} CPen:${commitmentPenalty.toFixed(2)} | ` +
 				`ER:${eliminationRisk.toFixed(2)} EP:${eliminationPenalty.toFixed(2)} | ` +
 				`Pos:${positionFactor.toFixed(2)} Opp:${activeOpponents} Eff:${effectiveStack} | ` +
-				`RT10:${(raiseThreshold / 10).toFixed(2)} RT:${raiseThreshold.toFixed(2)} Agg:${
+				`RT10:${(raiseThreshold / 10).toFixed(2)} Agg:${
 					aggressiveness.toFixed(2)
 				} RL:${raiseLevel} RAdj:${(raiseLevel * RERAISE_RATIO_STEP).toFixed(2)} | ` +
 				`Ctx:${boardCtx} Tex:${textureRisk.toFixed(2)} | ` +
