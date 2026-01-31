@@ -39,7 +39,7 @@ const MAX_RAISES_PER_ROUND = 3;
 const RERAISE_RATIO_STEP = 0.12;
 // Minimum strengthRatio to allow reraises (value gate)
 const RERAISE_VALUE_RATIO = 0.34;
-const RERAISE_TOP_PAIR_RATIO = 0.28;
+const RERAISE_TOP_PAIR_RATIO = 0.32;
 // Tie-breaker thresholds for close decisions
 const STRENGTH_TIE_DELTA = 0.25; // Threshold for treating strength close to the raise threshold as a tie
 const ODDS_TIE_DELTA = 0.02; // Threshold for treating pot odds close to expected value as a tie
@@ -978,9 +978,7 @@ export function chooseBotAction(player, ctx) {
 		raiseThreshold += raiseAdj;
 		raiseThreshold = Math.max(1.4, raiseThreshold);
 	}
-	const raiseLevel = (facingRaise && raisesThisRound > 0)
-		? Math.max(0, raisesThisRound)
-		: 0;
+	const raiseLevel = (facingRaise && raisesThisRound > 0) ? Math.max(0, raisesThisRound) : 0;
 	raiseThreshold += raiseLevel * RERAISE_RATIO_STEP * 10;
 	const betAggFactor = Math.max(0.9, Math.min(1.1, aggressiveness));
 	const shoveAggAdj = Math.max(-0.08, Math.min(0.08, (aggressiveness - 1) * 0.12));
@@ -1169,9 +1167,7 @@ export function chooseBotAction(player, ctx) {
 		}
 	}
 
-	const reraiseValueRatio = (topPair || overPair)
-		? RERAISE_TOP_PAIR_RATIO
-		: RERAISE_VALUE_RATIO;
+	const reraiseValueRatio = (topPair || overPair) ? RERAISE_TOP_PAIR_RATIO : RERAISE_VALUE_RATIO;
 	if (decision.action === "raise" && raiseLevel > 0 && strengthRatio < reraiseValueRatio) {
 		decision = needToCall > 0
 			? { action: "call", amount: Math.min(player.chips, needToCall) }
