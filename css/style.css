@@ -533,6 +533,7 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
     min-width: 55px;
     z-index: 2000;
     border-radius: 1vmin;
+    cursor: pointer;
 }
 
 .chips {
@@ -572,6 +573,7 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
     position: absolute;
     right: 0px;
     top: 0px;
+    cursor: pointer;
 }
 
 .win-probality {
