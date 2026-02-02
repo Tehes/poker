@@ -136,6 +136,13 @@ plain terms, they consider:
 - **Line memory and tie-breakers**: tracks the preflop aggressor for c-bet/barrel plans (aborts on
   very wet boards); near-threshold decisions randomize between close actions and avoid bluffing
   into all-ins.
+- **Raise constraints**: respects per-round raise limits and minimum-legal raises, and can
+  downgrade a raise to a call/check if the minimum is not met.
+- **All-in response**: avoids automatic folds against all-ins by allowing risk-aware calls with
+  sufficiently strong hands.
+- **Postflop pressure filters**: distinguishes made hands, strong draws, weak draws, and dead
+  hands to tighten or loosen calling on later streets.
+- **Occasional deception**: mixes in stabs, check-backs, and overbets to avoid being predictable.
 
 ---
 
