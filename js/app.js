@@ -23,6 +23,7 @@ let pot = 0;
 let initialDealerName = null;
 let dealerOrbitCount = -1;
 let gameStarted = false;
+let gameFinished = false;
 let openCardsMode = false;
 let spectatorMode = false;
 
@@ -692,11 +693,13 @@ function preFlop() {
 		champion.showTotal();
 		champion.seat.classList.add("winner");
 		logFlow("tournament_end", { champion: champion.name });
+		gameFinished = true;
 		if (typeof umami !== "undefined" && !SPEED_MODE) {
 			umami.track("Poker", {
 				champion: champion.name,
 				botWon: champion.isBot,
 				handsPlayed: getHandsPlayedBucket(totalHands),
+				finished: true,
 			});
 		}
 		return; // skip the rest of preFlop()
@@ -1588,6 +1591,12 @@ function init() {
 
 	document.addEventListener("touchstart", function () {}, false);
 	startButton.addEventListener("click", startGame, false);
+	globalThis.addEventListener("pagehide", () => {
+		if (SPEED_MODE || typeof umami === "undefined" || !gameStarted || gameFinished) {
+			return;
+		}
+		umami.track("Poker", { finished: false });
+	}, false);
 
 	for (const rotateIcon of rotateIcons) {
 		rotateIcon.addEventListener("click", rotateSeat, false);
@@ -1614,7 +1623,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-02-02-v1";
+const SERVICE_WORKER_VERSION = "2026-02-04-v1";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 /* --------------------------------------------------------------------------------------------------
