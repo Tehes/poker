@@ -52,6 +52,7 @@ let stateSyncTimer = null;
 
 // --- Analytics --------------------------------------------------------------
 let totalHands = 0;
+let botsRemainingWhenLastHumanOut = null;
 
 // Clubs, Diamonds, Hearts, Spades
 // 2,3,4,5,6,7,8,9,T,J,Q,K,A
@@ -371,6 +372,7 @@ function computeSpectatorWinProbabilities(reason = "") {
 
 function startGame(event) {
 	if (!gameStarted) {
+		botsRemainingWhenLastHumanOut = null;
 		createPlayers();
 
 		if (players.length > 1) {
@@ -648,6 +650,7 @@ function preFlop() {
 	});
 
 	// Remove players with zero chips from the table
+	const humanCountBeforeElimination = players.filter((p) => !p.isBot).length;
 	const remainingPlayers = [];
 	players.forEach((p) => {
 		if (p.chips <= 0) {
@@ -661,6 +664,15 @@ function preFlop() {
 	});
 	players = remainingPlayers;
 	const humanCount = players.filter((p) => !p.isBot).length;
+	const botCount = players.length - humanCount;
+	if (
+		humanCountBeforeElimination > 0 &&
+		humanCount === 0 &&
+		botsRemainingWhenLastHumanOut === null
+	) {
+		botsRemainingWhenLastHumanOut = botCount;
+		logFlow("last_human_out", { botsRemaining: botCount, hand: totalHands });
+	}
 	openCardsMode = humanCount === 1;
 	spectatorMode = humanCount === 0;
 	updateWinProbabilityDisplays();
@@ -698,6 +710,7 @@ function preFlop() {
 			umami.track("Poker", {
 				champion: champion.name,
 				botWon: champion.isBot,
+				botsRemainingWhenLastHumanOut,
 				handsPlayed: getHandsPlayedBucket(totalHands),
 				finished: true,
 			});
@@ -1595,7 +1608,10 @@ function init() {
 		if (SPEED_MODE || typeof umami === "undefined" || !gameStarted || gameFinished) {
 			return;
 		}
-		umami.track("Poker", { finished: false });
+		umami.track("Poker", {
+			finished: false,
+			botsRemainingWhenLastHumanOut,
+		});
 	}, false);
 
 	for (const rotateIcon of rotateIcons) {
