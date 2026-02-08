@@ -263,6 +263,9 @@ Accessibility should be **pragmatic, not performative**.
   - Versioning
   - Cache prefixes
   - Scope detection (GitHub Pages vs custom domain vs localhost)
+- If a project has an active Service Worker, bump the Service Worker version in every commit.
+- Use exactly one unique Service Worker version per commit; never reuse the previous commit's version.
+- Apply the version bump in the same commit as the code change (no delayed bump in a later commit).
 - Never experiment with SW behavior.
 - Do not enable SWs in environments explicitly excluded by the project.
 
