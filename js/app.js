@@ -52,7 +52,8 @@ let stateSyncTimer = null;
 
 // --- Analytics --------------------------------------------------------------
 let totalHands = 0;
-let botsRemainingWhenLastHumanOut = null;
+let humansAtStart = null;
+let exitEventSent = false;
 
 // Clubs, Diamonds, Hearts, Spades
 // 2,3,4,5,6,7,8,9,T,J,Q,K,A
@@ -122,6 +123,39 @@ function getHandsPlayedBucket(handCount) {
 	if (handCount <= 55) return "51-55";
 	if (handCount <= 60) return "56-60";
 	return ">60";
+}
+
+function getExitCounts() {
+	const humansWithChipsAtExit = players.filter((p) => !p.isBot && p.chips > 0).length;
+	const botsWithChipsAtExit = players.filter((p) => p.isBot && p.chips > 0).length;
+	return { humansWithChipsAtExit, botsWithChipsAtExit };
+}
+
+function trackUnfinishedExit(exitSignal) {
+	if (
+		SPEED_MODE ||
+		!globalThis.umami ||
+		!gameStarted ||
+		gameFinished ||
+		exitEventSent ||
+		humansAtStart === null ||
+		humansAtStart <= 0
+	) {
+		return;
+	}
+	const { humansWithChipsAtExit, botsWithChipsAtExit } = getExitCounts();
+	const exitCategory = humansWithChipsAtExit === 0
+		? "last_human_bust"
+		: "humans_left_with_chips";
+	exitEventSent = true;
+	globalThis.umami?.track("Poker", {
+		finished: false,
+		humansAtStart,
+		humansWithChipsAtExit,
+		botsWithChipsAtExit,
+		exitCategory,
+		exitSignal,
+	});
 }
 
 function collectTableState() {
@@ -372,8 +406,9 @@ function computeSpectatorWinProbabilities(reason = "") {
 
 function startGame(event) {
 	if (!gameStarted) {
-		botsRemainingWhenLastHumanOut = null;
 		createPlayers();
+		humansAtStart = players.filter((p) => !p.isBot).length;
+		exitEventSent = false;
 
 		if (players.length > 1) {
 			for (const rotateIcon of rotateIcons) {
@@ -398,6 +433,7 @@ function startGame(event) {
 
 			preFlop();
 		} else {
+			humansAtStart = null;
 			for (const name of nameBadges) {
 				if (name.textContent === "") {
 					name.parentElement.classList.remove("hidden");
@@ -650,7 +686,6 @@ function preFlop() {
 	});
 
 	// Remove players with zero chips from the table
-	const humanCountBeforeElimination = players.filter((p) => !p.isBot).length;
 	const remainingPlayers = [];
 	players.forEach((p) => {
 		if (p.chips <= 0) {
@@ -664,15 +699,6 @@ function preFlop() {
 	});
 	players = remainingPlayers;
 	const humanCount = players.filter((p) => !p.isBot).length;
-	const botCount = players.length - humanCount;
-	if (
-		humanCountBeforeElimination > 0 &&
-		humanCount === 0 &&
-		botsRemainingWhenLastHumanOut === null
-	) {
-		botsRemainingWhenLastHumanOut = botCount;
-		logFlow("last_human_out", { botsRemaining: botCount, hand: totalHands });
-	}
 	openCardsMode = humanCount === 1;
 	spectatorMode = humanCount === 0;
 	updateWinProbabilityDisplays();
@@ -706,13 +732,13 @@ function preFlop() {
 		champion.seat.classList.add("winner");
 		logFlow("tournament_end", { champion: champion.name });
 		gameFinished = true;
-		if (typeof umami !== "undefined" && !SPEED_MODE) {
-			umami.track("Poker", {
+		if (!SPEED_MODE) {
+			globalThis.umami?.track("Poker", {
 				champion: champion.name,
 				botWon: champion.isBot,
-				botsRemainingWhenLastHumanOut,
 				handsPlayed: getHandsPlayedBucket(totalHands),
 				finished: true,
+				humansAtStart,
 			});
 		}
 		return; // skip the rest of preFlop()
@@ -727,8 +753,8 @@ function preFlop() {
 
 	// Shuffle and deal new hole cards
 	dealCards();
-	if (totalHands === 1 && typeof umami !== "undefined" && !SPEED_MODE) {
-		umami.track("Poker", {
+	if (totalHands === 1 && !SPEED_MODE) {
+		globalThis.umami?.track("Poker", {
 			players: players.length,
 			bots: players.filter((p) => p.isBot).length,
 			humans: players.filter((p) => !p.isBot).length,
@@ -1604,15 +1630,8 @@ function init() {
 
 	document.addEventListener("touchstart", function () {}, false);
 	startButton.addEventListener("click", startGame, false);
-	globalThis.addEventListener("pagehide", () => {
-		if (SPEED_MODE || typeof umami === "undefined" || !gameStarted || gameFinished) {
-			return;
-		}
-		umami.track("Poker", {
-			finished: false,
-			botsRemainingWhenLastHumanOut,
-		});
-	}, false);
+	globalThis.addEventListener("pagehide", () => trackUnfinishedExit("pagehide"), false);
+	globalThis.addEventListener("beforeunload", () => trackUnfinishedExit("beforeunload"), false);
 
 	for (const rotateIcon of rotateIcons) {
 		rotateIcon.addEventListener("click", rotateSeat, false);
@@ -1639,7 +1658,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-02-07-v1";
+const SERVICE_WORKER_VERSION = "2026-02-08-v1";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 /* --------------------------------------------------------------------------------------------------
