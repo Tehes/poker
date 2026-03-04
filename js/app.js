@@ -33,6 +33,7 @@ const pendingNotif = [];
 let isNotifProcessing = false;
 let NOTIF_INTERVAL = 750;
 let ACTION_LABEL_DURATION = 3000;
+let RUNOUT_PHASE_DELAY = 3000;
 const HISTORY_LOG = false; // Set to true to enable history logging in the console
 let DEBUG_FLOW = false; // Set to true for verbose game-flow logging
 
@@ -41,6 +42,7 @@ const SPEED_MODE = speedModeParam !== null && speedModeParam !== "0" && speedMod
 if (SPEED_MODE) {
 	NOTIF_INTERVAL = 0;
 	ACTION_LABEL_DURATION = 0;
+	RUNOUT_PHASE_DELAY = 0;
 	DEBUG_FLOW = true;
 }
 
@@ -49,6 +51,7 @@ const STATE_SYNC_ENDPOINT = "https://poker.tehes.deno.net/state";
 let tableId = null;
 const STATE_SYNC_DELAY = 750;
 let stateSyncTimer = null;
+let runoutPhaseTimer = null;
 
 // --- Analytics --------------------------------------------------------------
 let totalHands = 0;
@@ -247,13 +250,54 @@ function getCommunityCardsForEquity() {
 	}).filter(Boolean);
 }
 
+function isAllInRunout() {
+	const activePlayers = players.filter((p) => !p.folded);
+	const actionablePlayers = activePlayers.filter((p) => !p.allIn);
+	if (activePlayers.length <= 1 || actionablePlayers.length > 1) {
+		return false;
+	}
+	if (actionablePlayers.length === 0) {
+		return true;
+	}
+	// Do not start the runout until the last player with chips has matched the bet.
+	return actionablePlayers[0].roundBet === currentBet;
+}
+
+function revealActiveHoleCards() {
+	players.filter((p) => !p.folded).forEach((p) => {
+		const card1 = p.cards[0].dataset.value;
+		const card2 = p.cards[1].dataset.value;
+		p.cards[0].src = `cards/${card1}.svg`;
+		p.cards[1].src = `cards/${card2}.svg`;
+		p.qr.hide();
+	});
+}
+
+function queueRunoutPhaseAdvance(reason = "") {
+	if (!isAllInRunout() || RUNOUT_PHASE_DELAY === 0) {
+		return setPhase();
+	}
+	if (runoutPhaseTimer) {
+		return;
+	}
+	logFlow("delay runout phase", {
+		reason,
+		phase: Phases[currentPhaseIndex],
+		delay: RUNOUT_PHASE_DELAY,
+	});
+	runoutPhaseTimer = setTimeout(() => {
+		runoutPhaseTimer = null;
+		setPhase();
+	}, RUNOUT_PHASE_DELAY);
+}
+
 function updateWinProbabilityDisplays() {
 	players.forEach((p) => {
 		const winEl = p.winProbabilityEl || p.seat.querySelector(".win-probality");
 		if (!winEl) {
 			return;
 		}
-		const shouldShow = spectatorMode &&
+		const shouldShow = (spectatorMode || isAllInRunout()) &&
 			currentPhaseIndex > 0 &&
 			!p.folded &&
 			typeof p.winProbability === "number";
@@ -268,7 +312,7 @@ function updateWinProbabilityDisplays() {
 }
 
 function computeSpectatorWinProbabilities(reason = "") {
-	if (!spectatorMode) {
+	if (!spectatorMode && !isAllInRunout()) {
 		return;
 	}
 	if (currentPhaseIndex === 0) {
@@ -656,6 +700,10 @@ function preFlop() {
 	totalHands++;
 	// Reset phase to preflop
 	currentPhaseIndex = 0;
+	if (runoutPhaseTimer) {
+		clearTimeout(runoutPhaseTimer);
+		runoutPhaseTimer = null;
+	}
 
 	startButton.classList.add("hidden");
 
@@ -807,7 +855,7 @@ function dealCommunityCards(amount) {
 		emptySlots[i].innerHTML = `<img src="cards/${card}.svg">`;
 		cardGraveyard.push(card); // back into Deck
 	}
-	if (spectatorMode) {
+	if (spectatorMode || isAllInRunout()) {
 		computeSpectatorWinProbabilities("dealCommunityCards");
 	}
 }
@@ -836,7 +884,7 @@ function startBettingRound() {
 			active: activePlayers.length,
 			actionable: actionable.length,
 		});
-		return setPhase();
+		return queueRunoutPhaseAdvance("startBettingRound");
 	}
 
 	// 2) Determine start index
@@ -879,7 +927,7 @@ function startBettingRound() {
 					roundBet: p.roundBet,
 				})),
 			});
-			return setPhase();
+			return queueRunoutPhaseAdvance("nextPlayer");
 		}
 
 		// -------------------------------------------------------------------
@@ -920,7 +968,7 @@ function startBettingRound() {
 					return setTimeout(nextPlayer, 0); // schedule asynchronously to break call chain
 				}
 				logFlow("advance phase", { name: player.name });
-				return setPhase();
+				return queueRunoutPhaseAdvance("matched");
 			}
 		}
 
@@ -991,7 +1039,7 @@ function startBettingRound() {
 					nextPlayer();
 				} else {
 					logFlow("bot advance", { name: player.name });
-					setPhase();
+					queueRunoutPhaseAdvance("bot");
 				}
 			});
 			return;
@@ -1103,7 +1151,7 @@ function startBettingRound() {
 					nextPlayer();
 				} else {
 					logFlow("human advance", { name: player.name });
-					setPhase();
+					queueRunoutPhaseAdvance("human-allin");
 				}
 				return;
 			} else if (bet === needToCall) {
@@ -1139,7 +1187,7 @@ function startBettingRound() {
 				nextPlayer();
 			} else {
 				logFlow("human advance", { name: player.name });
-				setPhase();
+				queueRunoutPhaseAdvance("human");
 			}
 		}
 		function onFold() {
@@ -1160,7 +1208,7 @@ function startBettingRound() {
 				nextPlayer();
 			} else {
 				logFlow("fold advance", { name: player.name });
-				setPhase();
+				queueRunoutPhaseAdvance("fold");
 			}
 		}
 
@@ -1243,13 +1291,7 @@ function doShowdown() {
 
 	// Reveal hole cards of all active players
 	if (activePlayers.length > 1) {
-		activePlayers.forEach((p) => {
-			const card1 = p.cards[0].dataset.value;
-			const card2 = p.cards[1].dataset.value;
-			p.cards[0].src = `cards/${card1}.svg`;
-			p.cards[1].src = `cards/${card2}.svg`;
-			p.qr.hide();
-		});
+		revealActiveHoleCards();
 	}
 
 	// Single-player case: immediate win (no hand needed)
@@ -1569,8 +1611,22 @@ function notifyPlayerAction(player, action = "", amount = 0) {
 			player.actionLabelTimer = null;
 		}, ACTION_LABEL_DURATION);
 	}
-	if (spectatorMode && action === "fold") {
+
+	if (action === "fold") {
 		player.winProbability = 0;
+	}
+
+	if (action !== "check" && isAllInRunout()) {
+		revealActiveHoleCards();
+		if (currentPhaseIndex > 0) {
+			computeSpectatorWinProbabilities("allin-runout");
+		} else {
+			logFlow("winProbability: preflop all-in runout pending", {
+				action,
+				name: player.name,
+			});
+		}
+	} else if (spectatorMode && action === "fold") {
 		if (currentPhaseIndex > 0) {
 			computeSpectatorWinProbabilities("fold");
 		} else {
@@ -1654,7 +1710,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-02-08-v3";
+const SERVICE_WORKER_VERSION = "2026-03-04-v1";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 /* --------------------------------------------------------------------------------------------------
