@@ -146,9 +146,7 @@ function trackUnfinishedExit() {
 		return;
 	}
 	const { humansWithChipsAtExit, botsWithChipsAtExit } = getExitCounts();
-	const exitCategory = humansWithChipsAtExit === 0
-		? "last_human_bust"
-		: "humans_left_with_chips";
+	const exitCategory = humansWithChipsAtExit === 0 ? "last_human_bust" : "humans_left_with_chips";
 	exitEventSent = true;
 	globalThis.umami?.track("Poker", {
 		finished: false,
@@ -275,7 +273,9 @@ function revealActiveHoleCards() {
 }
 
 function areHoleCardsFaceUp(player) {
-	return Array.from(player.cards).every((card) => /\/cards\/[2-9TJQKA][CDHS]\.svg$/.test(card.src));
+	return Array.from(player.cards).every((card) =>
+		/\/cards\/[2-9TJQKA][CDHS]\.svg$/.test(card.src)
+	);
 }
 
 function getShortHandStrengthLabel(solvedHand) {
@@ -1781,7 +1781,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-07-v2";
+const SERVICE_WORKER_VERSION = "2026-03-07-v3";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 /* --------------------------------------------------------------------------------------------------

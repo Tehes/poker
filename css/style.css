@@ -10,6 +10,7 @@
     --shadow: rgba(0, 0, 0, 0.4) 0px 3px 8px;
     --shadow-pressed: rgba(0, 0, 0, 0.6) 0px 2px 8px;
     --shadow-light: rgba(0, 0, 0, 0.2) 0px 3px 8px;
+    --shadow-close: hsla(0, 0%, 0%, 0.5) 1px 1px 4px;
     --yellow: hsl(40, 90%, 60%);
     --yellow-active: hsl(40, 100%, 50%);
     --invalid: hsl(0, 100%, 50%)
@@ -520,22 +521,6 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
     height: auto !important;
 }
 
-.hole-cards .rotate {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    box-shadow: var(--shadow);
-    padding: 8px;
-    background-color: #fff;
-    width: 8vmin;
-    aspect-ratio: 1/1;
-    min-width: 55px;
-    z-index: 2000;
-    border-radius: 1vmin;
-    cursor: pointer;
-}
-
 .chips {
     display: flex;
     justify-content: center;
@@ -565,15 +550,29 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
     z-index: 1100;
 }
 
-.hole-cards .close {
+.hole-cards .close,
+.hole-cards .rotate {
+    position: absolute;
     width: 4vmin;
     min-width: 35px;
-    border-radius: 50%;
+    border-radius: 100%;
     background-color: #fff;
-    position: absolute;
+    cursor: pointer;
+    box-shadow: var(--shadow-close);
+    z-index: 2000;
+}
+
+.hole-cards .close {
     right: 0px;
     top: 0px;
-    cursor: pointer;
+
+}
+
+.hole-cards .rotate {
+    position: absolute;
+    top: 0px;
+    left: 0px;
+    padding: 8px;
 }
 
 .pill {
@@ -583,6 +582,7 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
     padding: 2px 8px;
     border-radius: 999px;
     font-size: 0.9rem;
+    box-shadow: var(--shadow-close);
 }
 
 #win-probality {
