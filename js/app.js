@@ -652,8 +652,15 @@ function createPlayers() {
 					qrContainer.classList.remove("hidden");
 					const base = globalThis.location.origin +
 						globalThis.location.pathname.replace(/[^/]*$/, "");
-					const url =
-						`${base}hole-cards.html?params=${card1}-${card2}-${playerObject.name}-${playerObject.chips}-${playerObject.seatIndex}&tableId=${tableId}&t=${Date.now()}`;
+					const holeCardsUrl = new URL(`${base}hole-cards.html`);
+					holeCardsUrl.searchParams.set("card1", card1);
+					holeCardsUrl.searchParams.set("card2", card2);
+					holeCardsUrl.searchParams.set("name", playerObject.name);
+					holeCardsUrl.searchParams.set("chips", `${playerObject.chips}`);
+					holeCardsUrl.searchParams.set("seatIndex", `${playerObject.seatIndex}`);
+					holeCardsUrl.searchParams.set("tableId", tableId);
+					holeCardsUrl.searchParams.set("t", `${Date.now()}`);
+					const url = holeCardsUrl.toString();
 					qrContainer.innerHTML = "";
 					const qrEl = globalThis.kjua({
 						text: url,
@@ -1867,7 +1874,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-07-v6";
+const SERVICE_WORKER_VERSION = "2026-03-07-v7";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 /* --------------------------------------------------------------------------------------------------

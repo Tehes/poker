@@ -14,14 +14,52 @@ const potEl = document.querySelector("#pot");
 const notificationsEl = document.querySelector("#singleview-notifications");
 const onlineOnlyElements = [betEl, potEl, notificationsEl];
 const urlParams = new URLSearchParams(globalThis.location.search);
-const params = urlParams.get("params") ? urlParams.get("params").split("-") : [];
 const tableId = urlParams.get("tableId") || "";
-const seatIndexParam = params[4] ? parseInt(params[4], 10) : null;
 const STATE_ENDPOINT = "https://poker.tehes.deno.net/state";
 const REFRESH_INTERVAL = 2500;
 let lastVersion = 0;
 let pollTimeoutId = null;
 let isPolling = false;
+
+function parseOptionalInt(value) {
+	if (value === null || value === "") {
+		return null;
+	}
+	const parsed = Number.parseInt(value, 10);
+	return Number.isNaN(parsed) ? null : parsed;
+}
+
+function getInitialViewState() {
+	const card1 = urlParams.get("card1");
+	const card2 = urlParams.get("card2");
+	const playerName = urlParams.get("name");
+	const chips = urlParams.get("chips");
+	const seatIndex = urlParams.get("seatIndex");
+	const hasStructuredParams = [card1, card2, playerName, chips, seatIndex].some((value) =>
+		value !== null
+	);
+
+	if (hasStructuredParams) {
+		return {
+			card1: card1 || "",
+			card2: card2 || "",
+			playerName: playerName || "",
+			chips: parseOptionalInt(chips),
+			seatIndex: parseOptionalInt(seatIndex),
+		};
+	}
+
+	return {
+		card1: "",
+		card2: "",
+		playerName: "",
+		chips: null,
+		seatIndex: null,
+	};
+}
+
+const initialViewState = getInitialViewState();
+const seatIndexParam = initialViewState.seatIndex;
 
 /* --------------------------------------------------------------------------------------------------
 functions
@@ -35,14 +73,11 @@ function init() {
 }
 
 function applyParams() {
-	const card1 = params[0];
-	const card2 = params[1];
-	const playerName = params[2];
-	const chipsVal = Number.parseInt(params[3], 10);
-
-	setCards(card1, card2);
-	nameBadge.textContent = playerName;
-	chipsEl.textContent = chipsVal;
+	setCards(initialViewState.card1, initialViewState.card2);
+	nameBadge.textContent = initialViewState.playerName;
+	if (typeof initialViewState.chips === "number") {
+		chipsEl.textContent = initialViewState.chips;
+	}
 }
 
 function setCards(card1, card2, folded = false) {
