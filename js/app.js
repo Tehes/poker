@@ -271,6 +271,73 @@ function revealActiveHoleCards() {
 		p.cards[1].src = `cards/${card2}.svg`;
 		p.qr.hide();
 	});
+	updateHandStrengthDisplays();
+}
+
+function areHoleCardsFaceUp(player) {
+	return Array.from(player.cards).every((card) => /\/cards\/[2-9TJQKA][CDHS]\.svg$/.test(card.src));
+}
+
+function getShortHandStrengthLabel(solvedHand) {
+	if (!solvedHand) {
+		return "";
+	}
+	if (solvedHand.descr === "Royal Flush") {
+		return "Royal flush";
+	}
+	switch (solvedHand.name) {
+		case "Straight Flush":
+			return "Straight flush";
+		case "Four of a Kind":
+			return "4 of a kind";
+		case "Full House":
+			return "Full house";
+		case "Flush":
+			return "Flush";
+		case "Straight":
+			return "Straight";
+		case "Three of a Kind":
+			return "3 of a kind";
+		case "Two Pair":
+			return "2 Pair";
+		case "Pair":
+			return "Pair";
+		case "High Card":
+		default:
+			return "High card";
+	}
+}
+
+function updateHandStrengthDisplays() {
+	const communityCards = getCommunityCardsForEquity();
+	const shouldShowPostflop = currentPhaseIndex > 0 && communityCards.length >= 3;
+
+	players.forEach((p) => {
+		const handEl = p.handStrengthEl || p.seat.querySelector("#hand-strength");
+		if (!handEl) {
+			return;
+		}
+
+		if (!shouldShowPostflop || p.folded || !areHoleCardsFaceUp(p)) {
+			handEl.textContent = "";
+			handEl.classList.add("hidden");
+			return;
+		}
+
+		const solvedHand = Hand.solve([
+			p.cards[0].dataset.value,
+			p.cards[1].dataset.value,
+			...communityCards,
+		]);
+		if (!solvedHand) {
+			handEl.textContent = "";
+			handEl.classList.add("hidden");
+			return;
+		}
+
+		handEl.textContent = getShortHandStrengthLabel(solvedHand);
+		handEl.classList.remove("hidden");
+	});
 }
 
 function queueRunoutPhaseAdvance(reason = "") {
@@ -293,7 +360,7 @@ function queueRunoutPhaseAdvance(reason = "") {
 
 function updateWinProbabilityDisplays() {
 	players.forEach((p) => {
-		const winEl = p.winProbabilityEl || p.seat.querySelector(".win-probality");
+		const winEl = p.winProbabilityEl || p.seat.querySelector("#win-probality");
 		if (!winEl) {
 			return;
 		}
@@ -508,7 +575,8 @@ function createPlayers() {
 			name: player.querySelector("h3").textContent,
 			isBot: player.classList.contains("bot"),
 			seat: player,
-			winProbabilityEl: player.querySelector(".win-probality"),
+			winProbabilityEl: player.querySelector("#win-probality"),
+			handStrengthEl: player.querySelector("#hand-strength"),
 			actionLabelTimer: null,
 			winProbability: null,
 			seatIndex,
@@ -747,6 +815,7 @@ function preFlop() {
 	openCardsMode = humanCount === 1;
 	spectatorMode = humanCount === 0;
 	updateWinProbabilityDisplays();
+	updateHandStrengthDisplays();
 
 	// Start statistics for a new hand
 	players.forEach((p) => {
@@ -855,6 +924,7 @@ function dealCommunityCards(amount) {
 		emptySlots[i].innerHTML = `<img src="cards/${card}.svg">`;
 		cardGraveyard.push(card); // back into Deck
 	}
+	updateHandStrengthDisplays();
 	if (spectatorMode || isAllInRunout()) {
 		computeSpectatorWinProbabilities("dealCommunityCards");
 	}
@@ -1614,6 +1684,7 @@ function notifyPlayerAction(player, action = "", amount = 0) {
 
 	if (action === "fold") {
 		player.winProbability = 0;
+		updateHandStrengthDisplays();
 	}
 
 	if (action !== "check" && isAllInRunout()) {
@@ -1710,7 +1781,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-04-v1";
+const SERVICE_WORKER_VERSION = "2026-03-07-v2";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 /* --------------------------------------------------------------------------------------------------
