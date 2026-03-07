@@ -38,6 +38,14 @@ let isNotifProcessing = false;
 let NOTIF_INTERVAL = 750;
 let ACTION_LABEL_DURATION = 3000;
 let RUNOUT_PHASE_DELAY = 3000;
+const BOT_REVEAL_CHANCE = 0.3; // Chance that a bot will choose to reveal part of its hand post-flop.
+const BOT_DOUBLE_REVEAL_HANDS = new Set(["Straight Flush", "Four of a Kind", "Full House"]);
+const CARD_SUIT_SYMBOLS = {
+	C: "♣",
+	D: "♦",
+	H: "♥",
+	S: "♠",
+};
 const HISTORY_LOG = false; // Set to true to enable history logging in the console
 let DEBUG_FLOW = false; // Set to true for verbose game-flow logging
 
@@ -84,6 +92,7 @@ let cards = [
 
 let cardGraveyard = [];
 let players = [];
+let allPlayers = [];
 
 let smallBlind = 10;
 let bigBlind = 20;
@@ -229,6 +238,18 @@ function trackUnfinishedExit() {
 	});
 }
 
+function registerBotReveal(player) {
+	if (player?.stats) {
+		player.stats.reveals++;
+	}
+	if (SPEED_MODE) {
+		return;
+	}
+	globalThis.umami?.track("poker", {
+		botReveal: true,
+	});
+}
+
 function collectTableState() {
 	const communityCards = Array.from(
 		document.querySelectorAll("#community-cards .cardslot img"),
@@ -254,6 +275,7 @@ function collectTableState() {
 		stats: {
 			hands: p.stats.hands,
 			handsWon: p.stats.handsWon,
+			reveals: p.stats.reveals,
 			showdowns: p.stats.showdowns,
 			showdownsWon: p.stats.showdownsWon,
 		},
@@ -379,6 +401,88 @@ function getShortHandStrengthLabel(solvedHand) {
 		default:
 			return "High card";
 	}
+}
+
+function formatCardLabel(cardCode) {
+	if (!cardCode || cardCode.length < 2) {
+		return "";
+	}
+	const rank = cardCode[0] === "T" ? "10" : cardCode[0];
+	const suit = CARD_SUIT_SYMBOLS[cardCode[1]] || cardCode[1];
+	return `${rank}${suit}`;
+}
+
+function getSolvedHandCardCodes(solvedHand) {
+	if (!solvedHand) {
+		return [];
+	}
+	return solvedHand.cards.map((card) => `${card.value}${card.suit.toUpperCase()}`);
+}
+
+function getBotRevealDecision(player, communityCards) {
+	if (!player.isBot || communityCards.length === 0) {
+		return null;
+	}
+	if (Math.random() >= BOT_REVEAL_CHANCE) {
+		return null;
+	}
+
+	const holeCards = [
+		player.cards[0].dataset.value,
+		player.cards[1].dataset.value,
+	];
+	const solvedHand = Hand.solve([...holeCards, ...communityCards]);
+	if (!solvedHand) {
+		return null;
+	}
+
+	const bestHandCardCodes = new Set(getSolvedHandCardCodes(solvedHand));
+	const revealedHoleCards = holeCards.filter((cardCode) => bestHandCardCodes.has(cardCode));
+
+	if (BOT_DOUBLE_REVEAL_HANDS.has(solvedHand.name) && revealedHoleCards.length === 2) {
+		return { type: "double", handName: solvedHand.name, codes: holeCards.slice() };
+	}
+
+	if (solvedHand.name !== "Pair" && solvedHand.name !== "Three of a Kind") {
+		return null;
+	}
+
+	const repeatedCount = solvedHand.name === "Pair" ? 2 : 3;
+	const rankCounts = new Map();
+	getSolvedHandCardCodes(solvedHand).forEach((cardCode) => {
+		const rank = cardCode[0];
+		rankCounts.set(rank, (rankCounts.get(rank) || 0) + 1);
+	});
+	const madeRankEntry = Array.from(rankCounts.entries()).find(([, count]) =>
+		count === repeatedCount
+	);
+	if (!madeRankEntry) {
+		return null;
+	}
+
+	const matchingHoleCards = holeCards.filter((cardCode) => cardCode[0] === madeRankEntry[0]);
+	if (matchingHoleCards.length !== 1) {
+		return null;
+	}
+
+	return { type: "single", handName: solvedHand.name, codes: matchingHoleCards };
+}
+
+function applyBotReveal(player, revealDecision) {
+	if (!revealDecision) {
+		return;
+	}
+	if (spectatorMode) {
+		updateHandStrengthDisplays();
+		return;
+	}
+	const revealedCards = new Set(revealDecision.codes);
+	Array.from(player.cards).forEach((cardEl) => {
+		const cardCode = cardEl.dataset.value;
+		cardEl.src = revealedCards.has(cardCode) ? `cards/${cardCode}.svg` : "cards/1B.svg";
+	});
+	player.qr.hide();
+	updateHandStrengthDisplays();
 }
 
 function updateHandStrengthDisplays() {
@@ -631,6 +735,8 @@ function startGame(event) {
 }
 
 function createPlayers() {
+	players = [];
+	allPlayers = [];
 	// Auto-fill empty seats with Bots
 	let botIndex = 1;
 	for (const seat of document.querySelectorAll(".seat")) {
@@ -712,6 +818,7 @@ function createPlayers() {
 				pfr: 0,
 				calls: 0,
 				aggressiveActs: 0,
+				reveals: 0,
 				showdowns: 0,
 				showdownsWon: 0,
 				folds: 0,
@@ -750,6 +857,7 @@ function createPlayers() {
 		};
 		players.push(playerObject);
 	}
+	allPlayers = players.slice();
 }
 
 function setDealer() {
@@ -1449,11 +1557,20 @@ function doShowdown() {
 	// Single-player case: immediate win (no hand needed)
 	if (activePlayers.length === 1) {
 		const winner = activePlayers[0];
+		const communityCards = getCommunityCardsForEquity();
+		const revealDecision = getBotRevealDecision(winner, communityCards);
 		winner.stats.handsWon++;
-		// Animate the chip transfer for the single winner
 		winner.seat.classList.add("winner");
 		winner.seat.classList.remove("active");
-		winner.qr.hide(); // keep hole cards concealed
+		if (revealDecision) {
+			applyBotReveal(winner, revealDecision);
+			registerBotReveal(winner);
+			enqueueNotification(
+				`${winner.name} reveals ${revealDecision.codes.map(formatCardLabel).join(" ")}`,
+			);
+		} else {
+			winner.qr.hide();
+		}
 		enqueueNotification(`${winner.name} wins ${pot}!`);
 		animateChipTransfer(pot, winner, () => {
 			pot = 0;
@@ -1862,7 +1979,13 @@ public members, exposed with return statement
 globalThis.poker = {
 	init,
 	get players() {
-		return players;
+		return allPlayers;
+	},
+	get reveals() {
+		return allPlayers.map((player) => ({
+			name: player.name,
+			reveals: player.stats.reveals,
+		}));
 	},
 };
 
@@ -1875,7 +1998,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-07-v9";
+const SERVICE_WORKER_VERSION = "2026-03-07-v17";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 /* --------------------------------------------------------------------------------------------------
