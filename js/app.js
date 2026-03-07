@@ -38,8 +38,25 @@ let isNotifProcessing = false;
 let NOTIF_INTERVAL = 750;
 let ACTION_LABEL_DURATION = 3000;
 let RUNOUT_PHASE_DELAY = 3000;
+const BOT_REACTION_DURATION = 2000;
 const BOT_REVEAL_CHANCE = 0.3; // Chance that a bot will choose to reveal part of its hand post-flop.
 const BOT_DOUBLE_REVEAL_HANDS = new Set(["Straight Flush", "Four of a Kind", "Full House"]);
+const BOT_REACTION_EMOJIS = {
+	reveal: ["😉"],
+	split: ["🤝"],
+	bustout: ["💀"],
+	comeback: ["😮", "💪", "🤯"],
+	allIn: ["🔥", "😅"],
+	strongHand: ["😏"],
+	monsterHand: ["😈", "🤩"],
+	chipLeader: ["👑"],
+	blindBattle: ["⚔️"],
+	uncontested: ["😊", "😌"],
+	bigPot: ["💰", "😎", "🤑"],
+	fallback: ["🙂"],
+};
+const BOT_REACTION_MONSTER_HANDS = new Set(["Full House", "Four of a Kind", "Straight Flush"]);
+const BOT_REACTION_STRONG_HANDS = new Set(["Straight", "Flush"]);
 const CARD_SUIT_SYMBOLS = {
 	C: "♣",
 	D: "♦",
@@ -133,6 +150,10 @@ function formatPercent(numerator, denominator) {
 		return "-";
 	}
 	return `${Math.round((numerator / denominator) * 100)}%`;
+}
+
+function getRandomItem(items) {
+	return items[Math.floor(Math.random() * items.length)];
 }
 
 function getStatsPlayers() {
@@ -485,6 +506,136 @@ function applyBotReveal(player, revealDecision) {
 	updateHandStrengthDisplays();
 }
 
+function clearBotReaction(player) {
+	if (!player?.botReactionEl) {
+		return;
+	}
+	if (player.botReactionTimer) {
+		clearTimeout(player.botReactionTimer);
+		player.botReactionTimer = null;
+	}
+	player.botReactionEl.textContent = "";
+	player.botReactionEl.classList.remove("visible");
+	player.botReactionEl.classList.add("hidden");
+}
+
+function showBotReaction(player, emoji) {
+	if (SPEED_MODE || !emoji || !player?.botReactionEl) {
+		return;
+	}
+	clearBotReaction(player);
+	player.botReactionEl.textContent = emoji;
+	player.botReactionEl.classList.remove("hidden");
+	void player.botReactionEl.offsetWidth;
+	player.botReactionEl.classList.add("visible");
+	player.botReactionTimer = setTimeout(() => {
+		clearBotReaction(player);
+	}, BOT_REACTION_DURATION);
+}
+
+function getVisibleSolvedHand(player, communityCards) {
+	if (!areHoleCardsFaceUp(player) || communityCards.length !== 5) {
+		return null;
+	}
+	return Hand.solve([
+		player.cards[0].dataset.value,
+		player.cards[1].dataset.value,
+		...communityCards,
+	]);
+}
+
+function getBotReactionEmoji(player, context) {
+	if (context.revealedPlayers.has(player)) {
+		return getRandomItem(BOT_REACTION_EMOJIS.reveal);
+	}
+
+	if (context.mainPotWinnerCount > 1) {
+		return getRandomItem(BOT_REACTION_EMOJIS.split);
+	}
+
+	const totalPayout = context.totalPayout;
+	const stackBeforePayout = context.stackBeforePayout;
+	const stackAfterPayout = stackBeforePayout + totalPayout;
+	const bustedOpponents = context.contributors.filter((p) =>
+		p !== player && (context.finalStackByPlayer.get(p) || 0) === 0
+	);
+	if (bustedOpponents.length > 0) {
+		return getRandomItem(BOT_REACTION_EMOJIS.bustout);
+	}
+
+	if (
+		stackBeforePayout <= 6 * context.bigBlind &&
+		stackAfterPayout >= 12 * context.bigBlind &&
+		stackAfterPayout >= stackBeforePayout * 3
+	) {
+		return getRandomItem(BOT_REACTION_EMOJIS.comeback);
+	}
+
+	if (context.hadAllIn) {
+		return getRandomItem(BOT_REACTION_EMOJIS.allIn);
+	}
+
+	if (context.hadShowdown) {
+		const solvedHand = getVisibleSolvedHand(player, context.communityCards);
+		if (solvedHand) {
+			if (
+				solvedHand.descr === "Royal Flush" ||
+				BOT_REACTION_MONSTER_HANDS.has(solvedHand.name)
+			) {
+				return getRandomItem(BOT_REACTION_EMOJIS.monsterHand);
+			}
+			if (BOT_REACTION_STRONG_HANDS.has(solvedHand.name)) {
+				return getRandomItem(BOT_REACTION_EMOJIS.strongHand);
+			}
+		}
+	}
+
+	const otherFinalStacks = players
+		.filter((p) => p !== player)
+		.map((p) => context.finalStackByPlayer.get(p) || p.chips);
+	if (
+		otherFinalStacks.length > 0 && otherFinalStacks.every((stack) => stack < stackAfterPayout)
+	) {
+		return getRandomItem(BOT_REACTION_EMOJIS.chipLeader);
+	}
+
+	if (context.isBlindBattle) {
+		return getRandomItem(BOT_REACTION_EMOJIS.blindBattle);
+	}
+
+	if (context.activePlayerCount === 1) {
+		return getRandomItem(BOT_REACTION_EMOJIS.uncontested);
+	}
+
+	if (totalPayout >= Math.max(12 * context.bigBlind, stackBeforePayout)) {
+		return getRandomItem(BOT_REACTION_EMOJIS.bigPot);
+	}
+
+	return getRandomItem(BOT_REACTION_EMOJIS.fallback);
+}
+
+function triggerBotMainPotReactions(context) {
+	if (SPEED_MODE || context.mainPotWinners.length === 0) {
+		return;
+	}
+
+	context.mainPotWinners.forEach((player) => {
+		if (!player.isBot) {
+			return;
+		}
+		const totalPayout = context.totalPayoutByPlayer.get(player) || 0;
+		if (totalPayout <= 0) {
+			return;
+		}
+		const emoji = getBotReactionEmoji(player, {
+			...context,
+			totalPayout,
+			stackBeforePayout: player.chips,
+		});
+		showBotReaction(player, emoji);
+	});
+}
+
 function updateHandStrengthDisplays() {
 	const communityCards = getCommunityCardsForEquity();
 	const shouldShowPostflop = currentPhaseIndex > 0 && communityCards.length >= 3;
@@ -755,6 +906,8 @@ function createPlayers() {
 			name: player.querySelector("h3").textContent,
 			isBot: player.classList.contains("bot"),
 			seat: player,
+			botReactionEl: player.querySelector(".bot-reaction"),
+			botReactionTimer: null,
 			winProbabilityEl: player.querySelector(".win-probability"),
 			handStrengthEl: player.querySelector(".hand-strength"),
 			actionLabelTimer: null,
@@ -972,6 +1125,7 @@ function preFlop() {
 		p.allIn = false;
 		p.totalBet = 0;
 		p.winProbability = null;
+		clearBotReaction(p);
 		p.seat.classList.remove("folded", "called", "raised", "checked", "allin");
 	});
 
@@ -1558,11 +1712,19 @@ function doShowdown() {
 	if (activePlayers.length === 1) {
 		const winner = activePlayers[0];
 		const communityCards = getCommunityCardsForEquity();
+		const totalPayoutByPlayer = new Map([[winner, pot]]);
+		const revealedPlayers = new Set();
+		const finalStackByPlayer = new Map(
+			players.map((
+				player,
+			) => [player, player.chips + (totalPayoutByPlayer.get(player) || 0)]),
+		);
 		const revealDecision = getBotRevealDecision(winner, communityCards);
 		winner.stats.handsWon++;
 		winner.seat.classList.add("winner");
 		winner.seat.classList.remove("active");
 		if (revealDecision) {
+			revealedPlayers.add(winner);
 			applyBotReveal(winner, revealDecision);
 			registerBotReveal(winner);
 			enqueueNotification(
@@ -1571,6 +1733,23 @@ function doShowdown() {
 		} else {
 			winner.qr.hide();
 		}
+		triggerBotMainPotReactions({
+			activePlayerCount: activePlayers.length,
+			bigBlind,
+			communityCards,
+			contributors,
+			finalStackByPlayer,
+			hadAllIn: activePlayers.some((p) => p.allIn),
+			hadShowdown,
+			isBlindBattle: players.length > 2 &&
+				contributors.length === 2 &&
+				contributors.some((p) => p.smallBlind) &&
+				contributors.some((p) => p.bigBlind),
+			mainPotWinnerCount: 1,
+			mainPotWinners: [winner],
+			revealedPlayers,
+			totalPayoutByPlayer,
+		});
 		enqueueNotification(`${winner.name} wins ${pot}!`);
 		animateChipTransfer(pot, winner, () => {
 			pot = 0;
@@ -1642,6 +1821,7 @@ function doShowdown() {
 	// ---- Collect animated chip transfers ----
 	const transferQueue = [];
 	const winnersSet = new Set();
+	let mainPotWinners = [];
 
 	// ---- Evaluate each side pot ----
 	// Collect results for notification consolidation
@@ -1661,6 +1841,9 @@ function doShowdown() {
 		// --- If only one player is eligible for this pot, refund/award it immediately ---
 		if (sp.eligible.filter((p) => !p.folded).length === 1) {
 			const solePlayer = sp.eligible.find((p) => !p.folded);
+			if (potIdx === 0) {
+				mainPotWinners = [solePlayer];
+			}
 			transferQueue.push({ player: solePlayer, amount: sp.amount });
 			if (!winnersSet.has(solePlayer)) {
 				solePlayer.stats.handsWon++;
@@ -1675,6 +1858,13 @@ function doShowdown() {
 		const winners = Hand.winners(spHands.map((h) => h.handObj));
 		const share = Math.floor(sp.amount / winners.length);
 		let remainder = sp.amount - share * winners.length;
+		const potWinners = winners.map((winnerHand) => {
+			const winnerEntry = spHands.find((h) => h.handObj === winnerHand);
+			return winnerEntry.player;
+		});
+		if (potIdx === 0) {
+			mainPotWinners = potWinners.slice();
+		}
 
 		winners.forEach((w) => {
 			const entry = spHands.find((h) => h.handObj === w);
@@ -1747,6 +1937,32 @@ function doShowdown() {
 			});
 		}
 	}
+
+	const totalPayoutByPlayer = transferQueue.reduce((payouts, transfer) => {
+		const currentTotal = payouts.get(transfer.player) || 0;
+		payouts.set(transfer.player, currentTotal + transfer.amount);
+		return payouts;
+	}, new Map());
+	const finalStackByPlayer = new Map(
+		players.map((player) => [player, player.chips + (totalPayoutByPlayer.get(player) || 0)]),
+	);
+	triggerBotMainPotReactions({
+		activePlayerCount: activePlayers.length,
+		bigBlind,
+		communityCards,
+		contributors,
+		finalStackByPlayer,
+		hadAllIn: activePlayers.some((p) => p.allIn),
+		hadShowdown,
+		isBlindBattle: players.length > 2 &&
+			contributors.length === 2 &&
+			contributors.some((p) => p.smallBlind) &&
+			contributors.some((p) => p.bigBlind),
+		mainPotWinnerCount: mainPotWinners.length,
+		mainPotWinners,
+		revealedPlayers: new Set(),
+		totalPayoutByPlayer,
+	});
 
 	// run all chip transfers in parallel
 	Promise.all(
@@ -1998,7 +2214,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-07-v17";
+const SERVICE_WORKER_VERSION = "2026-03-07-v20";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 /* --------------------------------------------------------------------------------------------------

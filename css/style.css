@@ -640,6 +640,49 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
     padding: 8px;
 }
 
+.bot-reaction {
+    position: absolute;
+    left: 0px;
+    top: 0px;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transform: translateY(0);
+    font-size: clamp(2.8rem, 10vmin, 5.5rem);
+    line-height: 1;
+    pointer-events: none;
+    z-index: 1400;
+    text-shadow: 0 3px 8px rgba(0, 0, 0, 0.35);
+}
+
+.bot-reaction.visible {
+    animation: bot-reaction-fade 2000ms ease-out forwards;
+}
+
+@keyframes bot-reaction-fade {
+    0% {
+        opacity: 0;
+        transform: translateY(6%) scale(0.85);
+    }
+
+    14% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+
+    78% {
+        opacity: 1;
+        transform: translateY(-8%) scale(1);
+    }
+
+    100% {
+        opacity: 0;
+        transform: translateY(-16%) scale(0.96);
+    }
+}
+
 .pill {
     position: absolute;
     background-color: var(--font-color);
