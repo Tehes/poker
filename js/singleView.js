@@ -30,31 +30,12 @@ function parseOptionalInt(value) {
 }
 
 function getInitialViewState() {
-	const card1 = urlParams.get("card1");
-	const card2 = urlParams.get("card2");
-	const playerName = urlParams.get("name");
-	const chips = urlParams.get("chips");
-	const seatIndex = urlParams.get("seatIndex");
-	const hasStructuredParams = [card1, card2, playerName, chips, seatIndex].some((value) =>
-		value !== null
-	);
-
-	if (hasStructuredParams) {
-		return {
-			card1: card1 || "",
-			card2: card2 || "",
-			playerName: playerName || "",
-			chips: parseOptionalInt(chips),
-			seatIndex: parseOptionalInt(seatIndex),
-		};
-	}
-
 	return {
-		card1: "",
-		card2: "",
-		playerName: "",
-		chips: null,
-		seatIndex: null,
+		card1: urlParams.get("card1") || "",
+		card2: urlParams.get("card2") || "",
+		playerName: urlParams.get("name") || "",
+		chips: parseOptionalInt(urlParams.get("chips")),
+		seatIndex: parseOptionalInt(urlParams.get("seatIndex")),
 	};
 }
 
