@@ -30,6 +30,8 @@ tablet or laptop) handles community cards, blinds, pot, and betting rounds.
   their bluffing frequency accordingly.
 - **Context Awareness**: Bots recognize top pair, overpairs, and draw potential to decide between
   check, call, raise, or fold.
+- **Postflop Hand Labels**: When hole cards are visible on the table, the shared screen shows short postflop hand categories like Pair, 2 Pair, 3 of a kind, Straight, or Flush.
+- **Session Stats Overlay**: After each completed hand, open a compact stats view with stack, hands won, showdown results, folds, and all-ins for all active players.
 
 ---
 
