@@ -14,6 +14,10 @@ const closeButtons = document.querySelectorAll(".close");
 const notification = document.querySelector("#notification");
 const foldButton = document.querySelector("#fold-button");
 const actionButton = document.querySelector("#action-button");
+const statsButton = document.querySelector("#stats-button");
+const statsOverlay = document.querySelector("#stats-overlay");
+const statsCloseButton = document.querySelector("#stats-close-button");
+const statsTableBody = document.querySelector("#stats-table-body");
 const amountSlider = document.querySelector("#amount-slider");
 const sliderOutput = document.querySelector("output");
 const Phases = ["preflop", "flop", "turn", "river", "showdown"];
@@ -113,6 +117,68 @@ function logFlow(msg, data) {
 			console.log("%c" + ts, "color:#888", msg);
 		}
 	}
+}
+
+function formatPercent(numerator, denominator) {
+	if (denominator === 0) {
+		return "-";
+	}
+	return `${Math.round((numerator / denominator) * 100)}%`;
+}
+
+function getStatsPlayers() {
+	return players.filter((p) => p.chips > 0).slice().sort((a, b) => a.seatIndex - b.seatIndex);
+}
+
+function createStatsCell(tagName, value) {
+	const cell = document.createElement(tagName);
+	cell.textContent = `${value}`;
+	return cell;
+}
+
+function renderStatsOverlay() {
+	if (!statsTableBody) {
+		return;
+	}
+
+	statsTableBody.replaceChildren();
+	getStatsPlayers().forEach((player) => {
+		const row = document.createElement("tr");
+		row.appendChild(createStatsCell("th", player.name));
+		row.appendChild(createStatsCell("td", player.chips));
+		row.appendChild(createStatsCell("td", player.stats.hands));
+		row.appendChild(createStatsCell("td", player.stats.handsWon));
+		row.appendChild(
+			createStatsCell("td", formatPercent(player.stats.handsWon, player.stats.hands)),
+		);
+		row.appendChild(createStatsCell("td", player.stats.showdowns));
+		row.appendChild(createStatsCell("td", player.stats.showdownsWon));
+		row.appendChild(
+			createStatsCell("td", formatPercent(player.stats.showdownsWon, player.stats.showdowns)),
+		);
+		row.appendChild(createStatsCell("td", player.stats.folds));
+		row.appendChild(createStatsCell("td", player.stats.foldsPreflop));
+		row.appendChild(createStatsCell("td", player.stats.foldsPostflop));
+		row.appendChild(createStatsCell("td", player.stats.allins));
+		statsTableBody.appendChild(row);
+	});
+}
+
+function openStatsOverlay() {
+	renderStatsOverlay();
+	statsOverlay.classList.remove("hidden");
+}
+
+function closeStatsOverlay() {
+	statsOverlay.classList.add("hidden");
+}
+
+function setStatsButtonVisible(isVisible) {
+	if (SPEED_MODE || !isVisible) {
+		statsButton.classList.add("hidden");
+		return;
+	}
+	statsButton.classList.remove("hidden");
 }
 
 function getHandsPlayedBucket(handCount) {
@@ -774,6 +840,8 @@ function preFlop() {
 	}
 
 	startButton.classList.add("hidden");
+	closeStatsOverlay();
+	setStatsButtonVisible(false);
 
 	// Clear folded state and remove CSS-Klasse
 	players.forEach((p) => {
@@ -853,6 +921,8 @@ function preFlop() {
 				handsPlayed: getHandsPlayedBucket(totalHands),
 				finished: true,
 			});
+			renderStatsOverlay();
+			setStatsButtonVisible(true);
 		}
 		return; // skip the rest of preFlop()
 	}
@@ -1385,6 +1455,8 @@ function doShowdown() {
 				preFlop();
 				return;
 			}
+			renderStatsOverlay();
+			setStatsButtonVisible(true);
 			startButton.textContent = "New Round";
 			startButton.classList.remove("hidden");
 			queueStateSync();
@@ -1575,6 +1647,8 @@ function doShowdown() {
 			preFlop();
 			return;
 		}
+		renderStatsOverlay();
+		setStatsButtonVisible(true);
 		startButton.textContent = "New Round";
 		startButton.classList.remove("hidden");
 		queueStateSync();
@@ -1752,7 +1826,19 @@ function init() {
 	}
 
 	document.addEventListener("touchstart", function () {}, false);
+	document.addEventListener("keydown", (ev) => {
+		if (ev.key === "Escape") {
+			closeStatsOverlay();
+		}
+	}, false);
 	startButton.addEventListener("click", startGame, false);
+	statsButton.addEventListener("click", openStatsOverlay, false);
+	statsCloseButton.addEventListener("click", closeStatsOverlay, false);
+	statsOverlay.addEventListener("click", (ev) => {
+		if (ev.target === statsOverlay) {
+			closeStatsOverlay();
+		}
+	}, false);
 	globalThis.addEventListener("pagehide", () => trackUnfinishedExit(), false);
 	globalThis.addEventListener("beforeunload", () => trackUnfinishedExit(), false);
 
@@ -1781,7 +1867,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-07-v4";
+const SERVICE_WORKER_VERSION = "2026-03-07-v6";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 /* --------------------------------------------------------------------------------------------------
