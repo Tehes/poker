@@ -583,6 +583,11 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
     border-radius: 999px;
     font-size: 0.9rem;
     box-shadow: var(--shadow-close);
+    transition: all 0.3s;
+}
+
+.folded .pill {
+    filter: brightness(0.6);
 }
 
 #win-probality {
@@ -593,6 +598,14 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
 #hand-strength {
     left: 0px;
     bottom: 10px;
+}
+
+.folded #win-probality {
+    transform: translateX(-3.5vmin);
+}
+
+.folded #hand-strength {
+    transform: translateX(3.5vmin);
 }
 
 /*

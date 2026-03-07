@@ -318,7 +318,7 @@ function updateHandStrengthDisplays() {
 			return;
 		}
 
-		if (!shouldShowPostflop || p.folded || !areHoleCardsFaceUp(p)) {
+		if (!shouldShowPostflop || !areHoleCardsFaceUp(p)) {
 			handEl.textContent = "";
 			handEl.classList.add("hidden");
 			return;
@@ -366,7 +366,7 @@ function updateWinProbabilityDisplays() {
 		}
 		const shouldShow = (spectatorMode || isAllInRunout()) &&
 			currentPhaseIndex > 0 &&
-			!p.folded &&
+			areHoleCardsFaceUp(p) &&
 			typeof p.winProbability === "number";
 		if (shouldShow) {
 			winEl.textContent = `${Math.round(p.winProbability)}%`;
@@ -1781,7 +1781,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-07-v3";
+const SERVICE_WORKER_VERSION = "2026-03-07-v4";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 /* --------------------------------------------------------------------------------------------------
