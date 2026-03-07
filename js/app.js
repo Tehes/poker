@@ -1862,7 +1862,9 @@ public members, exposed with return statement
 ---------------------------------------------------------------------------------------------------*/
 globalThis.poker = {
 	init,
-	players,
+	get players() {
+		return players;
+	},
 };
 
 poker.init();
