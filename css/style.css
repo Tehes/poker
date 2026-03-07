@@ -655,21 +655,21 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
     filter: brightness(0.6);
 }
 
-#win-probality {
+.win-probability {
     top: 0px;
     right: 0px;
 }
 
-#hand-strength {
+.hand-strength {
     left: 0px;
     bottom: 10px;
 }
 
-.folded #win-probality {
+.folded .win-probability {
     transform: translateX(-3.5vmin);
 }
 
-.folded #hand-strength {
+.folded .hand-strength {
     transform: translateX(3.5vmin);
 }
 
