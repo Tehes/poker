@@ -181,6 +181,13 @@ function setStatsButtonVisible(isVisible) {
 	statsButton.classList.remove("hidden");
 }
 
+function hideActionControls() {
+	foldButton.classList.add("hidden");
+	actionButton.classList.add("hidden");
+	amountSlider.classList.add("hidden");
+	sliderOutput.classList.add("hidden");
+}
+
 function getHandsPlayedBucket(handCount) {
 	if (handCount < 20) return "<20";
 	if (handCount <= 25) return "20-25";
@@ -407,6 +414,7 @@ function updateHandStrengthDisplays() {
 }
 
 function queueRunoutPhaseAdvance(reason = "") {
+	hideActionControls();
 	if (!isAllInRunout() || RUNOUT_PHASE_DELAY === 0) {
 		return setPhase();
 	}
@@ -1123,10 +1131,7 @@ function startBettingRound() {
 		if (player.isBot) {
 			document.querySelectorAll(".seat").forEach((s) => s.classList.remove("active"));
 			player.seat.classList.add("active");
-			actionButton.classList.add("hidden");
-			foldButton.classList.add("hidden");
-			amountSlider.classList.add("hidden");
-			sliderOutput.classList.add("hidden");
+			hideActionControls();
 			const nameEl = player.seat.querySelector("h3");
 			if (player.actionLabelTimer) {
 				clearTimeout(player.actionLabelTimer);
@@ -1453,10 +1458,7 @@ function doShowdown() {
 		animateChipTransfer(pot, winner, () => {
 			pot = 0;
 			document.getElementById("pot").textContent = pot;
-			foldButton.classList.add("hidden");
-			actionButton.classList.add("hidden");
-			amountSlider.classList.add("hidden");
-			sliderOutput.classList.add("hidden");
+			hideActionControls();
 			if (SPEED_MODE) {
 				queueStateSync();
 				preFlop();
@@ -1645,10 +1647,7 @@ function doShowdown() {
 			p.seat.classList.remove("active");
 		});
 
-		foldButton.classList.add("hidden");
-		actionButton.classList.add("hidden");
-		amountSlider.classList.add("hidden");
-		sliderOutput.classList.add("hidden");
+		hideActionControls();
 		if (SPEED_MODE) {
 			queueStateSync();
 			preFlop();
@@ -1876,7 +1875,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-07-v8";
+const SERVICE_WORKER_VERSION = "2026-03-07-v9";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 /* --------------------------------------------------------------------------------------------------
