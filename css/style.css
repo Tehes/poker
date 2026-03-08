@@ -635,7 +635,7 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
     padding: 8px;
 }
 
-.bot-reaction {
+.winner-reaction {
     position: absolute;
     left: 0px;
     top: 0px;
@@ -652,11 +652,11 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
     text-shadow: 0 3px 8px rgba(0, 0, 0, 0.35);
 }
 
-.bot-reaction.visible {
-    animation: bot-reaction-fade 2000ms ease-out forwards;
+.winner-reaction.visible {
+    animation: winner-reaction-fade 2000ms ease-out forwards;
 }
 
-@keyframes bot-reaction-fade {
+@keyframes winner-reaction-fade {
     0% {
         opacity: 0;
         transform: translateY(6%) scale(0.85);

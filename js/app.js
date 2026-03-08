@@ -38,25 +38,24 @@ let isNotifProcessing = false;
 let NOTIF_INTERVAL = 750;
 let ACTION_LABEL_DURATION = 3000;
 let RUNOUT_PHASE_DELAY = 3000;
-const BOT_REACTION_DURATION = 2000;
+const WINNER_REACTION_DURATION = 2000;
 const BOT_REVEAL_CHANCE = 0.3; // Chance that a bot will choose to reveal part of its hand post-flop.
 const BOT_DOUBLE_REVEAL_HANDS = new Set(["Straight Flush", "Four of a Kind", "Full House"]);
-const BOT_REACTION_EMOJIS = {
-	reveal: ["😉"],
+const WINNER_REACTION_EMOJIS = {
+	reveal: ["😉", "😜"],
 	split: ["🤝"],
-	bustout: ["💀"],
-	comeback: ["😮", "💪", "🤯"],
-	allIn: ["🔥", "😅"],
-	strongHand: ["😏"],
-	monsterHand: ["😈", "🤩"],
-	chipLeader: ["👑"],
-	blindBattle: ["⚔️"],
-	uncontested: ["😊", "😌"],
-	bigPot: ["💰", "😎", "🤑"],
-	fallback: ["🙂"],
+	bustout: ["💀", "😬"],
+	comeback: ["🥰", "💪", "😍"],
+	allIn: ["😁", "😅", "😆"],
+	strongHand: ["🤩", "🥹", "🫣"],
+	monsterHand: ["🥳", "🤩", "🤫", "🫨"],
+	chipLeader: ["😋"],
+	uncontested: ["😇", "🙃", "🤓", "😎", "🤐"],
+	bigPot: ["💰", "🤗", "🤑"],
+	fallback: ["🙂", "😊"],
 };
-const BOT_REACTION_MONSTER_HANDS = new Set(["Full House", "Four of a Kind", "Straight Flush"]);
-const BOT_REACTION_STRONG_HANDS = new Set(["Straight", "Flush"]);
+const WINNER_REACTION_MONSTER_HANDS = new Set(["Full House", "Four of a Kind", "Straight Flush"]);
+const WINNER_REACTION_STRONG_HANDS = new Set(["Straight", "Flush"]);
 const CARD_SUIT_SYMBOLS = {
 	C: "♣",
 	D: "♦",
@@ -551,31 +550,31 @@ function applyBotReveal(player, revealDecision) {
 	updateHandStrengthDisplays();
 }
 
-function clearBotReaction(player) {
-	if (!player?.botReactionEl) {
+function clearWinnerReaction(player) {
+	if (!player?.winnerReactionEl) {
 		return;
 	}
-	if (player.botReactionTimer) {
-		clearTimeout(player.botReactionTimer);
-		player.botReactionTimer = null;
+	if (player.winnerReactionTimer) {
+		clearTimeout(player.winnerReactionTimer);
+		player.winnerReactionTimer = null;
 	}
-	player.botReactionEl.textContent = "";
-	player.botReactionEl.classList.remove("visible");
-	player.botReactionEl.classList.add("hidden");
+	player.winnerReactionEl.textContent = "";
+	player.winnerReactionEl.classList.remove("visible");
+	player.winnerReactionEl.classList.add("hidden");
 }
 
-function showBotReaction(player, emoji) {
-	if (SPEED_MODE || !emoji || !player?.botReactionEl) {
+function showWinnerReaction(player, emoji) {
+	if (SPEED_MODE || !emoji || !player?.winnerReactionEl) {
 		return;
 	}
-	clearBotReaction(player);
-	player.botReactionEl.textContent = emoji;
-	player.botReactionEl.classList.remove("hidden");
-	void player.botReactionEl.offsetWidth;
-	player.botReactionEl.classList.add("visible");
-	player.botReactionTimer = setTimeout(() => {
-		clearBotReaction(player);
-	}, BOT_REACTION_DURATION);
+	clearWinnerReaction(player);
+	player.winnerReactionEl.textContent = emoji;
+	player.winnerReactionEl.classList.remove("hidden");
+	void player.winnerReactionEl.offsetWidth;
+	player.winnerReactionEl.classList.add("visible");
+	player.winnerReactionTimer = setTimeout(() => {
+		clearWinnerReaction(player);
+	}, WINNER_REACTION_DURATION);
 }
 
 function getVisibleSolvedHand(player, communityCards) {
@@ -589,13 +588,13 @@ function getVisibleSolvedHand(player, communityCards) {
 	]);
 }
 
-function getBotReactionEmoji(player, context) {
+function getWinnerReactionEmoji(player, context) {
 	if (context.revealedPlayers.has(player)) {
-		return getRandomItem(BOT_REACTION_EMOJIS.reveal);
+		return getRandomItem(WINNER_REACTION_EMOJIS.reveal);
 	}
 
 	if (context.mainPotWinnerCount > 1) {
-		return getRandomItem(BOT_REACTION_EMOJIS.split);
+		return getRandomItem(WINNER_REACTION_EMOJIS.split);
 	}
 
 	const totalPayout = context.totalPayout;
@@ -605,7 +604,7 @@ function getBotReactionEmoji(player, context) {
 		p !== player && (context.finalStackByPlayer.get(p) || 0) === 0
 	);
 	if (bustedOpponents.length > 0) {
-		return getRandomItem(BOT_REACTION_EMOJIS.bustout);
+		return getRandomItem(WINNER_REACTION_EMOJIS.bustout);
 	}
 
 	if (
@@ -613,11 +612,11 @@ function getBotReactionEmoji(player, context) {
 		stackAfterPayout >= 12 * context.bigBlind &&
 		stackAfterPayout >= stackBeforePayout * 3
 	) {
-		return getRandomItem(BOT_REACTION_EMOJIS.comeback);
+		return getRandomItem(WINNER_REACTION_EMOJIS.comeback);
 	}
 
 	if (context.hadAllIn) {
-		return getRandomItem(BOT_REACTION_EMOJIS.allIn);
+		return getRandomItem(WINNER_REACTION_EMOJIS.allIn);
 	}
 
 	if (context.hadShowdown) {
@@ -625,12 +624,12 @@ function getBotReactionEmoji(player, context) {
 		if (solvedHand) {
 			if (
 				solvedHand.descr === "Royal Flush" ||
-				BOT_REACTION_MONSTER_HANDS.has(solvedHand.name)
+				WINNER_REACTION_MONSTER_HANDS.has(solvedHand.name)
 			) {
-				return getRandomItem(BOT_REACTION_EMOJIS.monsterHand);
+				return getRandomItem(WINNER_REACTION_EMOJIS.monsterHand);
 			}
-			if (BOT_REACTION_STRONG_HANDS.has(solvedHand.name)) {
-				return getRandomItem(BOT_REACTION_EMOJIS.strongHand);
+			if (WINNER_REACTION_STRONG_HANDS.has(solvedHand.name)) {
+				return getRandomItem(WINNER_REACTION_EMOJIS.strongHand);
 			}
 		}
 	}
@@ -641,43 +640,36 @@ function getBotReactionEmoji(player, context) {
 	if (
 		otherFinalStacks.length > 0 && otherFinalStacks.every((stack) => stack < stackAfterPayout)
 	) {
-		return getRandomItem(BOT_REACTION_EMOJIS.chipLeader);
-	}
-
-	if (context.isBlindBattle) {
-		return getRandomItem(BOT_REACTION_EMOJIS.blindBattle);
+		return getRandomItem(WINNER_REACTION_EMOJIS.chipLeader);
 	}
 
 	if (context.activePlayerCount === 1) {
-		return getRandomItem(BOT_REACTION_EMOJIS.uncontested);
+		return getRandomItem(WINNER_REACTION_EMOJIS.uncontested);
 	}
 
 	if (totalPayout >= Math.max(12 * context.bigBlind, stackBeforePayout)) {
-		return getRandomItem(BOT_REACTION_EMOJIS.bigPot);
+		return getRandomItem(WINNER_REACTION_EMOJIS.bigPot);
 	}
 
-	return getRandomItem(BOT_REACTION_EMOJIS.fallback);
+	return getRandomItem(WINNER_REACTION_EMOJIS.fallback);
 }
 
-function triggerBotMainPotReactions(context) {
+function triggerMainPotWinnerReactions(context) {
 	if (SPEED_MODE || context.mainPotWinners.length === 0) {
 		return;
 	}
 
 	context.mainPotWinners.forEach((player) => {
-		if (!player.isBot) {
-			return;
-		}
 		const totalPayout = context.totalPayoutByPlayer.get(player) || 0;
 		if (totalPayout <= 0) {
 			return;
 		}
-		const emoji = getBotReactionEmoji(player, {
+		const emoji = getWinnerReactionEmoji(player, {
 			...context,
 			totalPayout,
 			stackBeforePayout: player.chips,
 		});
-		showBotReaction(player, emoji);
+		showWinnerReaction(player, emoji);
 	});
 }
 
@@ -951,8 +943,8 @@ function createPlayers() {
 			name: player.querySelector("h3").textContent,
 			isBot: player.classList.contains("bot"),
 			seat: player,
-			botReactionEl: player.querySelector(".bot-reaction"),
-			botReactionTimer: null,
+			winnerReactionEl: player.querySelector(".winner-reaction"),
+			winnerReactionTimer: null,
 			winProbabilityEl: player.querySelector(".win-probability"),
 			handStrengthEl: player.querySelector(".hand-strength"),
 			actionLabelTimer: null,
@@ -1170,7 +1162,7 @@ function preFlop() {
 		p.allIn = false;
 		p.totalBet = 0;
 		p.winProbability = null;
-		clearBotReaction(p);
+		clearWinnerReaction(p);
 		p.seat.classList.remove("folded", "called", "raised", "checked", "allin");
 	});
 
@@ -1778,7 +1770,7 @@ function doShowdown() {
 		} else {
 			winner.qr.hide();
 		}
-		triggerBotMainPotReactions({
+		triggerMainPotWinnerReactions({
 			activePlayerCount: activePlayers.length,
 			bigBlind,
 			communityCards,
@@ -1786,10 +1778,6 @@ function doShowdown() {
 			finalStackByPlayer,
 			hadAllIn: activePlayers.some((p) => p.allIn),
 			hadShowdown,
-			isBlindBattle: players.length > 2 &&
-				contributors.length === 2 &&
-				contributors.some((p) => p.smallBlind) &&
-				contributors.some((p) => p.bigBlind),
 			mainPotWinnerCount: 1,
 			mainPotWinners: [winner],
 			revealedPlayers,
@@ -1990,7 +1978,7 @@ function doShowdown() {
 	const finalStackByPlayer = new Map(
 		players.map((player) => [player, player.chips + (totalPayoutByPlayer.get(player) || 0)]),
 	);
-	triggerBotMainPotReactions({
+	triggerMainPotWinnerReactions({
 		activePlayerCount: activePlayers.length,
 		bigBlind,
 		communityCards,
@@ -1998,10 +1986,6 @@ function doShowdown() {
 		finalStackByPlayer,
 		hadAllIn: activePlayers.some((p) => p.allIn),
 		hadShowdown,
-		isBlindBattle: players.length > 2 &&
-			contributors.length === 2 &&
-			contributors.some((p) => p.smallBlind) &&
-			contributors.some((p) => p.bigBlind),
 		mainPotWinnerCount: mainPotWinners.length,
 		mainPotWinners,
 		revealedPlayers: new Set(),
@@ -2258,7 +2242,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-08-v2";
+const SERVICE_WORKER_VERSION = "2026-03-08-v4";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 /* --------------------------------------------------------------------------------------------------
