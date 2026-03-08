@@ -393,11 +393,6 @@ STATS OVERLAY
     background-color: hsla(0, 0%, 100%, 0.03);
 }
 
-#stats-table tbody tr:last-child td,
-#stats-table tbody tr:last-child th {
-    border-bottom: none;
-}
-
 /*-------------------------------------------------------------------
 FOOTER
 -------------------------------------------------------------------*/
