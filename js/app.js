@@ -65,6 +65,7 @@ const CARD_SUIT_SYMBOLS = {
 };
 const HISTORY_LOG = false; // Set to true to enable history logging in the console
 let DEBUG_FLOW = false; // Set to true for verbose game-flow logging
+const CHIP_UNIT = 10;
 
 const speedModeParam = new URLSearchParams(globalThis.location.search).get("speedmode");
 const SPEED_MODE = speedModeParam !== null && speedModeParam !== "0" && speedModeParam !== "false";
@@ -154,6 +155,45 @@ function formatPercent(numerator, denominator) {
 
 function getRandomItem(items) {
 	return items[Math.floor(Math.random() * items.length)];
+}
+
+function getOddChipOrder(winners) {
+	const winnerSet = new Set(winners);
+	const dealerIdx = players.findIndex((p) => p.dealer);
+	const orderedWinners = [];
+
+	if (dealerIdx === -1) {
+		return winners.slice().sort((a, b) => a.seatIndex - b.seatIndex);
+	}
+
+	// Odd chips go clockwise from the seat left of the dealer.
+	for (let offset = 1; offset <= players.length; offset++) {
+		const player = players[(dealerIdx + offset) % players.length];
+		if (winnerSet.has(player)) {
+			orderedWinners.push(player);
+		}
+	}
+
+	return orderedWinners;
+}
+
+function buildSplitPayouts(amount, winners) {
+	// Keep split payouts on the 10-chip denomination used throughout the game.
+	const share = Math.floor(amount / winners.length / CHIP_UNIT) * CHIP_UNIT;
+	let remainder = amount - share * winners.length;
+	const payouts = new Map(winners.map((player) => [player, share]));
+	const oddChipOrder = getOddChipOrder(winners);
+
+	// Award each remaining full chip unit as an odd chip in table order.
+	oddChipOrder.forEach((player) => {
+		if (remainder < CHIP_UNIT) {
+			return;
+		}
+		payouts.set(player, payouts.get(player) + CHIP_UNIT);
+		remainder -= CHIP_UNIT;
+	});
+
+	return payouts;
 }
 
 function getStatsPlayers() {
@@ -1861,20 +1901,19 @@ function doShowdown() {
 		}
 
 		const winners = Hand.winners(spHands.map((h) => h.handObj));
-		const share = Math.floor(sp.amount / winners.length);
-		let remainder = sp.amount - share * winners.length;
 		const potWinners = winners.map((winnerHand) => {
 			const winnerEntry = spHands.find((h) => h.handObj === winnerHand);
 			return winnerEntry.player;
 		});
+		// Use odd-chip payouts here so split pots stay on 10-chip stacks.
+		const splitPayouts = buildSplitPayouts(sp.amount, potWinners);
 		if (potIdx === 0) {
 			mainPotWinners = potWinners.slice();
 		}
 
 		winners.forEach((w) => {
 			const entry = spHands.find((h) => h.handObj === w);
-			const payout = share + (remainder > 0 ? 1 : 0);
-			if (remainder > 0) remainder--;
+			const payout = splitPayouts.get(entry.player) || 0;
 			transferQueue.push({ player: entry.player, amount: payout });
 			if (!winnersSet.has(entry.player)) {
 				entry.player.stats.handsWon++;
@@ -2219,7 +2258,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-08-v1";
+const SERVICE_WORKER_VERSION = "2026-03-08-v2";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 /* --------------------------------------------------------------------------------------------------
