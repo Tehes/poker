@@ -49,13 +49,14 @@ const WINNER_REACTION_EMOJIS = {
 	allIn: ["😁", "😅", "😆"],
 	strongHand: ["🤩", "🥹", "🫣"],
 	monsterHand: ["🥳", "🤩", "🤫", "🫨"],
-	chipLeader: ["😋"],
+	chipLeader: ["😋", "🥇"],
 	uncontested: ["😇", "🙃", "🤓", "😎", "🤐"],
 	bigPot: ["💰", "🤗", "🤑"],
 	fallback: ["🙂", "😊"],
 };
 const WINNER_REACTION_MONSTER_HANDS = new Set(["Full House", "Four of a Kind", "Straight Flush"]);
 const WINNER_REACTION_STRONG_HANDS = new Set(["Straight", "Flush"]);
+const CARD_RANK_ORDER = "23456789TJQKA";
 const CARD_SUIT_SYMBOLS = {
 	C: "♣",
 	D: "♦",
@@ -484,6 +485,18 @@ function getSolvedHandCardCodes(solvedHand) {
 	return solvedHand.cards.map((card) => `${card.value}${card.suit.toUpperCase()}`);
 }
 
+function getHighestBoardRank(boardCards) {
+	return boardCards.reduce((highestRank, cardCode) => {
+		if (
+			!highestRank ||
+			CARD_RANK_ORDER.indexOf(cardCode[0]) > CARD_RANK_ORDER.indexOf(highestRank)
+		) {
+			return cardCode[0];
+		}
+		return highestRank;
+	}, "");
+}
+
 function getBotRevealDecision(player, communityCards) {
 	if (!player.isBot || communityCards.length === 0) {
 		return null;
@@ -522,6 +535,9 @@ function getBotRevealDecision(player, communityCards) {
 		count === repeatedCount
 	);
 	if (!madeRankEntry) {
+		return null;
+	}
+	if (solvedHand.name === "Pair" && madeRankEntry[0] !== getHighestBoardRank(communityCards)) {
 		return null;
 	}
 
@@ -2242,7 +2258,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-08-v4";
+const SERVICE_WORKER_VERSION = "2026-03-08-v5";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 /* --------------------------------------------------------------------------------------------------
