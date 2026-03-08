@@ -34,6 +34,7 @@ tablet or laptop) handles community cards, blinds, pot, and betting rounds.
 - **Bot Reveals**: After some uncontested postflop wins, bots may occasionally reveal one or both
   hole cards to create small TV-poker moments.
 - **Session Stats Overlay**: After each completed hand, open a compact stats view with stack, hands won, showdown results, folds, and all-ins for all active players.
+- **Winner Reactions**: After a pot win, the shared table may briefly show a face emoji above each main-pot winner. Reactions are based only on public information such as pot size, split pots, all-ins, visible hand strength, reveals, and stack swings.
 
 ---
 
