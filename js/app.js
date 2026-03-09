@@ -609,6 +609,10 @@ function getWinnerReactionEmoji(player, context) {
 		return getRandomItem(WINNER_REACTION_EMOJIS.reveal);
 	}
 
+	if (context.activePlayerCount === 1) {
+		return getRandomItem(WINNER_REACTION_EMOJIS.uncontested);
+	}
+
 	if (context.mainPotWinnerCount > 1) {
 		return getRandomItem(WINNER_REACTION_EMOJIS.split);
 	}
@@ -635,6 +639,10 @@ function getWinnerReactionEmoji(player, context) {
 		return getRandomItem(WINNER_REACTION_EMOJIS.allIn);
 	}
 
+	if (totalPayout >= Math.max(12 * context.bigBlind, stackBeforePayout)) {
+		return getRandomItem(WINNER_REACTION_EMOJIS.bigPot);
+	}
+
 	if (context.hadShowdown) {
 		const solvedHand = getVisibleSolvedHand(player, context.communityCards);
 		if (solvedHand) {
@@ -657,14 +665,6 @@ function getWinnerReactionEmoji(player, context) {
 		otherFinalStacks.length > 0 && otherFinalStacks.every((stack) => stack < stackAfterPayout)
 	) {
 		return getRandomItem(WINNER_REACTION_EMOJIS.chipLeader);
-	}
-
-	if (context.activePlayerCount === 1) {
-		return getRandomItem(WINNER_REACTION_EMOJIS.uncontested);
-	}
-
-	if (totalPayout >= Math.max(12 * context.bigBlind, stackBeforePayout)) {
-		return getRandomItem(WINNER_REACTION_EMOJIS.bigPot);
 	}
 
 	return getRandomItem(WINNER_REACTION_EMOJIS.fallback);
