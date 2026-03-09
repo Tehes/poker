@@ -49,8 +49,8 @@ const WINNER_REACTION_EMOJIS = {
 	allIn: ["😁", "😅", "😆"],
 	strongHand: ["🤩", "🥹", "🫣"],
 	monsterHand: ["🥳", "🤩", "🤫", "🫨"],
-	chipLeader: ["😋", "🥇", "👑"],
-	uncontested: ["😇", "🙃", "🤓", "😎", "🤐"],
+	chipLeader: ["🥇", "👑"],
+	uncontested: ["😇", "🤓", "😎", "🤐"],
 	bigPot: ["💰", "🤗", "🤑"],
 	fallback: ["🙂", "😊"],
 };
@@ -311,7 +311,7 @@ function registerBotReveal(player) {
 	if (SPEED_MODE) {
 		return;
 	}
-	globalThis.umami?.track("poker", {
+	globalThis.umami?.track("Poker", {
 		botReveal: true,
 	});
 }
