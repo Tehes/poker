@@ -42,16 +42,13 @@ const WINNER_REACTION_DURATION = 2000;
 const BOT_REVEAL_CHANCE = 0.3; // Chance that a bot will choose to reveal part of its hand post-flop.
 const BOT_DOUBLE_REVEAL_HANDS = new Set(["Straight Flush", "Four of a Kind", "Full House"]);
 const WINNER_REACTION_EMOJIS = {
-	reveal: ["😉", "😜"],
+	reveal: ["😉", "😜", "🤭"],
+	uncontested: ["😎", "😏", "😌"],
 	split: ["🤝"],
-	bustout: ["💀", "😬"],
-	comeback: ["🥰", "💪", "😍"],
-	allIn: ["😁", "😅", "😆"],
-	strongHand: ["🤩", "🥹", "🫣"],
-	monsterHand: ["🥳", "🤩", "🤫", "🫨"],
-	chipLeader: ["🥇", "👑"],
-	uncontested: ["😇", "🤓", "😎", "🤐"],
-	bigPot: ["💰", "🤗", "🤑"],
+	comeback: ["💪", "😅"],
+	monsterHand: ["🤩", "🥳"],
+	strongHand: ["😁", "😄", "😬"],
+	bigPot: ["🤑"],
 	fallback: ["🙂", "😊"],
 };
 const WINNER_REACTION_MONSTER_HANDS = new Set(["Full House", "Four of a Kind", "Straight Flush"]);
@@ -620,27 +617,12 @@ function getWinnerReactionEmoji(player, context) {
 	const totalPayout = context.totalPayout;
 	const stackBeforePayout = context.stackBeforePayout;
 	const stackAfterPayout = stackBeforePayout + totalPayout;
-	const bustedOpponents = context.contributors.filter((p) =>
-		p !== player && (context.finalStackByPlayer.get(p) || 0) === 0
-	);
-	if (bustedOpponents.length > 0) {
-		return getRandomItem(WINNER_REACTION_EMOJIS.bustout);
-	}
-
 	if (
 		stackBeforePayout <= 6 * context.bigBlind &&
 		stackAfterPayout >= 12 * context.bigBlind &&
 		stackAfterPayout >= stackBeforePayout * 3
 	) {
 		return getRandomItem(WINNER_REACTION_EMOJIS.comeback);
-	}
-
-	if (context.hadAllIn) {
-		return getRandomItem(WINNER_REACTION_EMOJIS.allIn);
-	}
-
-	if (totalPayout >= Math.max(12 * context.bigBlind, stackBeforePayout)) {
-		return getRandomItem(WINNER_REACTION_EMOJIS.bigPot);
 	}
 
 	if (context.hadShowdown) {
@@ -658,13 +640,8 @@ function getWinnerReactionEmoji(player, context) {
 		}
 	}
 
-	const otherFinalStacks = players
-		.filter((p) => p !== player)
-		.map((p) => context.finalStackByPlayer.get(p) || p.chips);
-	if (
-		otherFinalStacks.length > 0 && otherFinalStacks.every((stack) => stack < stackAfterPayout)
-	) {
-		return getRandomItem(WINNER_REACTION_EMOJIS.chipLeader);
+	if (totalPayout >= Math.max(12 * context.bigBlind, stackBeforePayout)) {
+		return getRandomItem(WINNER_REACTION_EMOJIS.bigPot);
 	}
 
 	return getRandomItem(WINNER_REACTION_EMOJIS.fallback);
@@ -1767,11 +1744,6 @@ function doShowdown() {
 		const communityCards = getCommunityCardsForEquity();
 		const totalPayoutByPlayer = new Map([[winner, pot]]);
 		const revealedPlayers = new Set();
-		const finalStackByPlayer = new Map(
-			players.map((
-				player,
-			) => [player, player.chips + (totalPayoutByPlayer.get(player) || 0)]),
-		);
 		const revealDecision = getBotRevealDecision(winner, communityCards);
 		winner.stats.handsWon++;
 		winner.seat.classList.add("winner");
@@ -1791,8 +1763,6 @@ function doShowdown() {
 			bigBlind,
 			communityCards,
 			contributors,
-			finalStackByPlayer,
-			hadAllIn: activePlayers.some((p) => p.allIn),
 			hadShowdown,
 			mainPotWinnerCount: 1,
 			mainPotWinners: [winner],
@@ -1991,16 +1961,11 @@ function doShowdown() {
 		payouts.set(transfer.player, currentTotal + transfer.amount);
 		return payouts;
 	}, new Map());
-	const finalStackByPlayer = new Map(
-		players.map((player) => [player, player.chips + (totalPayoutByPlayer.get(player) || 0)]),
-	);
 	triggerMainPotWinnerReactions({
 		activePlayerCount: activePlayers.length,
 		bigBlind,
 		communityCards,
 		contributors,
-		finalStackByPlayer,
-		hadAllIn: activePlayers.some((p) => p.allIn),
 		hadShowdown,
 		mainPotWinnerCount: mainPotWinners.length,
 		mainPotWinners,
@@ -2258,7 +2223,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-08-v6";
+const SERVICE_WORKER_VERSION = "2026-03-09-v9";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 /* --------------------------------------------------------------------------------------------------
