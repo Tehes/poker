@@ -130,9 +130,12 @@ function formatCard(code) {
 	return code[0].replace("T", "10") + SUIT_SYMBOLS[code[1]];
 }
 
-// Numeric utility: round to nearest multiple of 10
-function roundTo10(x) {
-	return Math.round(x / 10) * 10;
+function ceilTo10(x) {
+	return Math.ceil(x / 10) * 10;
+}
+
+function floorTo10(x) {
+	return Math.floor(x / 10) * 10;
 }
 
 function handTiebreaker(handObj) {
@@ -846,8 +849,10 @@ export function chooseBotAction(player, ctx) {
 	function capGreenNonPremium(amount) {
 		if (!isGreenZone || premiumHand) return amount;
 		const capRatio = spr < 3 ? 0.3 : spr > 6 ? 0.2 : GREEN_MAX_STACK_BET;
-		const cap = Math.floor(player.chips * capRatio);
-		return Math.min(amount, cap);
+		const rawCap = Math.floor(player.chips * capRatio);
+		const cap = floorTo10(rawCap);
+		const capped = Math.min(amount, cap);
+		return Math.max(0, floorTo10(capped));
 	}
 
 	function valueBetSize() {
@@ -871,7 +876,7 @@ export function chooseBotAction(player, ctx) {
 		else if (spr > 6) base -= 0.05;
 		const rand = Math.random() * 0.2 - 0.1;
 		const factor = Math.min(1, Math.max(0.35, base + rand));
-		const sized = roundTo10(Math.min(player.chips, (pot + needToCall) * factor * betAggFactor));
+		const sized = floorTo10(Math.min(player.chips, (pot + needToCall) * factor * betAggFactor));
 		return capGreenNonPremium(sized);
 	}
 
@@ -883,7 +888,7 @@ export function chooseBotAction(player, ctx) {
 		else if (spr > 5) base -= 0.05;
 		const rand = Math.random() * 0.08 - 0.04;
 		const factor = Math.min(0.45, Math.max(0.2, base + rand));
-		const sized = roundTo10(Math.min(player.chips, (pot + needToCall) * factor * betAggFactor));
+		const sized = floorTo10(Math.min(player.chips, (pot + needToCall) * factor * betAggFactor));
 		return capGreenNonPremium(sized);
 	}
 
@@ -895,7 +900,7 @@ export function chooseBotAction(player, ctx) {
 		else if (spr > 5) base -= 0.05;
 		const rand = Math.random() * 0.1 - 0.05;
 		const factor = Math.min(0.8, Math.max(0.35, base + rand));
-		const sized = roundTo10(Math.min(player.chips, (pot + needToCall) * factor * betAggFactor));
+		const sized = floorTo10(Math.min(player.chips, (pot + needToCall) * factor * betAggFactor));
 		return capGreenNonPremium(sized);
 	}
 
@@ -905,14 +910,15 @@ export function chooseBotAction(player, ctx) {
 		if (spr < 2) base += 0.3;
 		const rand = Math.random() * 0.15 - 0.05;
 		const factor = Math.max(1.1, Math.min(1.5, base + rand));
-		const sized = roundTo10(Math.min(player.chips, (pot + needToCall) * factor * betAggFactor));
+		const sized = floorTo10(Math.min(player.chips, (pot + needToCall) * factor * betAggFactor));
 		return capGreenNonPremium(sized);
 	}
 
 	function yellowRaiseSize() {
 		const base = bigBlind * (2.5 + Math.random() * 0.5);
-		const sized = roundTo10(base * betAggFactor);
-		return Math.min(player.chips, Math.max(minRaiseAmount, sized));
+		const sized = floorTo10(base * betAggFactor);
+		const normalizedMinRaise = ceilTo10(minRaiseAmount);
+		return Math.min(player.chips, Math.max(normalizedMinRaise, sized));
 	}
 
 	function decideCbetIntent(lineAbort) {
@@ -1146,7 +1152,7 @@ export function chooseBotAction(player, ctx) {
 			!nonValueAggressionMade
 		) {
 			if (Math.random() < bluffChance) {
-				const bluffAmt = Math.max(minRaiseAmount, bluffBetSize());
+				const bluffAmt = Math.max(ceilTo10(minRaiseAmount), bluffBetSize());
 				decision = { action: "raise", amount: bluffAmt };
 				isBluff = true;
 			}
@@ -1165,7 +1171,7 @@ export function chooseBotAction(player, ctx) {
 						: bluffBetSize();
 					decision = {
 						action: "raise",
-						amount: Math.min(player.chips, Math.max(lastRaise, bet)),
+						amount: Math.min(player.chips, Math.max(ceilTo10(lastRaise), bet)),
 					};
 					if (wantsBluff) {
 						isBluff = true;
@@ -1179,7 +1185,7 @@ export function chooseBotAction(player, ctx) {
 						: bluffBetSize();
 					decision = {
 						action: "raise",
-						amount: Math.min(player.chips, Math.max(lastRaise, bet)),
+						amount: Math.min(player.chips, Math.max(ceilTo10(lastRaise), bet)),
 					};
 					if (wantsBluff) {
 						isBluff = true;
@@ -1210,7 +1216,7 @@ export function chooseBotAction(player, ctx) {
 			!nonValueAggressionMade
 		) {
 			const betAmt = protectionBetSize();
-			decision = { action: "raise", amount: Math.max(lastRaise, betAmt) };
+			decision = { action: "raise", amount: Math.max(ceilTo10(lastRaise), betAmt) };
 			isStab = true;
 		}
 	}
@@ -1231,11 +1237,21 @@ export function chooseBotAction(player, ctx) {
 	// --- Ensure raises meet the minimum requirements ---
 	if (decision.action === "raise") {
 		const minRaise = needToCall + lastRaise; // minimum legal raise
+		if (decision.amount < player.chips) {
+			decision.amount = Math.min(player.chips, floorTo10(decision.amount));
+		}
 		if (decision.amount < minRaise && decision.amount < player.chips) {
-			// Downgrade to call (or check if nothing to call)
-			decision = needToCall > 0
-				? { action: "call", amount: Math.min(player.chips, needToCall) }
-				: { action: "check" };
+			const roundedMinRaise = ceilTo10(minRaise);
+			if (player.chips >= roundedMinRaise) {
+				decision.amount = roundedMinRaise;
+			} else if (player.chips >= needToCall) {
+				decision.amount = player.chips; // all-in below full raise size is allowed
+			} else {
+				// Downgrade to call (or check if nothing to call)
+				decision = needToCall > 0
+					? { action: "call", amount: Math.min(player.chips, needToCall) }
+					: { action: "check" };
+			}
 		}
 	}
 
