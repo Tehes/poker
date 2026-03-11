@@ -15,9 +15,14 @@ const notification = document.querySelector("#notification");
 const foldButton = document.querySelector("#fold-button");
 const actionButton = document.querySelector("#action-button");
 const statsButton = document.querySelector("#stats-button");
+const logButton = document.querySelector("#log-button");
+const overlayBackdrop = document.querySelector("#overlay-backdrop");
 const statsOverlay = document.querySelector("#stats-overlay");
 const statsCloseButton = document.querySelector("#stats-close-button");
 const statsTableBody = document.querySelector("#stats-table-body");
+const logOverlay = document.querySelector("#log-overlay");
+const logCloseButton = document.querySelector("#log-close-button");
+const logList = document.querySelector("#log-list");
 const amountSlider = document.querySelector("#amount-slider");
 const sliderOutput = document.querySelector("output");
 const Phases = ["preflop", "flop", "turn", "river", "showdown"];
@@ -79,6 +84,7 @@ let tableId = null;
 const STATE_SYNC_DELAY = 750;
 let stateSyncTimer = null;
 let runoutPhaseTimer = null;
+let summaryButtonsVisible = false;
 
 // --- Analytics --------------------------------------------------------------
 let totalHands = 0;
@@ -236,21 +242,50 @@ function renderStatsOverlay() {
 	});
 }
 
+function syncOverlayBackdrop() {
+	const isOverlayOpen = !statsOverlay.classList.contains("hidden") ||
+		!logOverlay.classList.contains("hidden");
+	overlayBackdrop.classList.toggle("hidden", !isOverlayOpen);
+}
+
 function openStatsOverlay() {
+	closeLogOverlay();
 	renderStatsOverlay();
 	statsOverlay.classList.remove("hidden");
+	syncOverlayBackdrop();
 }
 
 function closeStatsOverlay() {
 	statsOverlay.classList.add("hidden");
+	syncOverlayBackdrop();
 }
 
-function setStatsButtonVisible(isVisible) {
-	if (SPEED_MODE || !isVisible) {
-		statsButton.classList.add("hidden");
+function openLogOverlay() {
+	if (!logList || logList.childElementCount === 0) {
 		return;
 	}
-	statsButton.classList.remove("hidden");
+
+	closeStatsOverlay();
+	logOverlay.classList.remove("hidden");
+	syncOverlayBackdrop();
+}
+
+function closeLogOverlay() {
+	logOverlay.classList.add("hidden");
+	syncOverlayBackdrop();
+}
+
+function syncLogUi() {
+	const hasLogHistory = !!logList && logList.childElementCount > 0;
+	const showSummaryButtons = !SPEED_MODE && summaryButtonsVisible;
+
+	statsButton.classList.toggle("hidden", !showSummaryButtons);
+	logButton.classList.toggle("hidden", !showSummaryButtons || !hasLogHistory);
+}
+
+function setSummaryButtonsVisible(isVisible) {
+	summaryButtonsVisible = isVisible;
+	syncLogUi();
 }
 
 function hideActionControls() {
@@ -1147,7 +1182,8 @@ function preFlop() {
 
 	startButton.classList.add("hidden");
 	closeStatsOverlay();
-	setStatsButtonVisible(false);
+	closeLogOverlay();
+	setSummaryButtonsVisible(false);
 
 	// Clear folded state and remove CSS-Klasse
 	players.forEach((p) => {
@@ -1229,7 +1265,7 @@ function preFlop() {
 				finished: true,
 			});
 			renderStatsOverlay();
-			setStatsButtonVisible(true);
+			setSummaryButtonsVisible(true);
 		}
 		return; // skip the rest of preFlop()
 	}
@@ -1780,7 +1816,7 @@ function doShowdown() {
 				return;
 			}
 			renderStatsOverlay();
-			setStatsButtonVisible(true);
+			setSummaryButtonsVisible(true);
 			startButton.textContent = "New Round";
 			startButton.classList.remove("hidden");
 			queueStateSync();
@@ -1996,7 +2032,7 @@ function doShowdown() {
 			return;
 		}
 		renderStatsOverlay();
-		setStatsButtonVisible(true);
+		setSummaryButtonsVisible(true);
 		startButton.textContent = "New Round";
 		startButton.classList.remove("hidden");
 		queueStateSync();
@@ -2144,10 +2180,19 @@ function showNextNotif() {
 	isNotifProcessing = true;
 	const msg = pendingNotif.shift();
 	// newest message first for tracking
+	if (logList) {
+		const logEntry = document.createElement("div");
+		logEntry.textContent = msg;
+		logList.prepend(logEntry);
+	}
 	notifArr.unshift(msg);
 	if (notifArr.length > MAX_ITEMS) notifArr.pop();
+	syncLogUi();
 	queueStateSync();
 	// create a new span for this message
+	if (notification.childElementCount === 0) {
+		notification.textContent = "";
+	}
 	const span = document.createElement("span");
 	span.textContent = msg;
 	// prepend to container
@@ -2177,15 +2222,18 @@ function init() {
 	document.addEventListener("keydown", (ev) => {
 		if (ev.key === "Escape") {
 			closeStatsOverlay();
+			closeLogOverlay();
 		}
 	}, false);
 	startButton.addEventListener("click", startGame, false);
+	notification.addEventListener("click", openLogOverlay, false);
 	statsButton.addEventListener("click", openStatsOverlay, false);
+	logButton.addEventListener("click", openLogOverlay, false);
 	statsCloseButton.addEventListener("click", closeStatsOverlay, false);
-	statsOverlay.addEventListener("click", (ev) => {
-		if (ev.target === statsOverlay) {
-			closeStatsOverlay();
-		}
+	logCloseButton.addEventListener("click", closeLogOverlay, false);
+	overlayBackdrop.addEventListener("click", () => {
+		closeStatsOverlay();
+		closeLogOverlay();
 	}, false);
 	globalThis.addEventListener("pagehide", () => trackUnfinishedExit(), false);
 	globalThis.addEventListener("beforeunload", () => trackUnfinishedExit(), false);
@@ -2223,7 +2271,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-09-v9";
+const SERVICE_WORKER_VERSION = "2026-03-11-v1";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 /* --------------------------------------------------------------------------------------------------

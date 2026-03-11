@@ -278,18 +278,53 @@ TABLE-MIDDLE
     min-width: 85px;
     text-align: center;
     flex: 0 0 auto;
+    height: 34px;
 }
 
 #notification {
     color: var(--blue-lightest);
     flex: 1 1 auto;
+    min-width: 0;
+    position: relative;
     text-align: left;
     text-overflow: ellipsis;
     overflow-x: hidden;
     white-space: nowrap;
+    transition: background-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 
-#notification span::after {
+#notification:has(span) {
+    cursor: pointer;
+    padding-right: 33px;
+}
+
+#notification:has(span)::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    right: 20px;
+    width: 10px;
+    height: 10px;
+    border-top: 2px solid var(--blue-lightest);
+    border-right: 2px solid var(--blue-lightest);
+    transform: translateY(-50%) rotate(45deg);
+}
+
+#notification:has(span):hover {
+    background-color: var(--blue);
+    border: 1px solid hsla(0, 0%, 100%, 0.2);
+    box-shadow: var(--shadow);
+    transform: translateY(-1px);
+}
+
+#notification:has(span):active {
+    background-color: var(--blue-darker);
+    border: none;
+    box-shadow: inset var(--shadow-pressed);
+    transform: translateY(1px);
+}
+
+#notification span:not(:last-child)::after {
     content: " | ";
     color: var(--blue-lightest);
 }
@@ -335,31 +370,39 @@ TABLE-MIDDLE
 
 /*
 -------------------------------------------------------------------
-STATS OVERLAY
+OVERLAY
 -------------------------------------------------------------------
 */
 
-#stats-overlay {
+#overlay-backdrop {
     position: fixed;
     inset: 0;
     z-index: 2000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 2.5vmin;
     background-color: hsla(0, 0%, 0%, 0.4);
 }
 
 .stats-panel {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    z-index: 2001;
+    transform: translate(-50%, -50%);
     max-width: 96vw;
+    max-height: calc(100vh - 5vmin);
     display: flex;
     flex-direction: column;
     gap: 1rem;
+    overflow: hidden;
     padding: 1.25rem;
     border-radius: 15px;
     background-color: var(--blue);
     box-shadow: var(--shadow);
     border: 1px solid hsla(0, 0%, 100%, 0.08);
+}
+
+.log-panel {
+    width: min(720px, 96vw);
+    max-height: min(80vh, 860px);
 }
 
 .stats-close {
@@ -371,6 +414,11 @@ STATS OVERLAY
 
 .stats-table-wrap {
     overflow: auto;
+}
+
+.log-list-wrap {
+    overflow: auto;
+    min-height: 0;
 }
 
 #stats-table {
@@ -390,6 +438,27 @@ STATS OVERLAY
 }
 
 #stats-table tbody tr:nth-child(even) {
+    background-color: hsla(0, 0%, 100%, 0.03);
+}
+
+#log-list {
+    display: flex;
+    flex-direction: column;
+}
+
+#log-list div {
+    padding: 0.75rem 0.9rem;
+    color: var(--blue-lightest);
+    border-bottom: 1px solid hsla(0, 0%, 100%, 0.1);
+    white-space: normal;
+    word-break: break-word;
+}
+
+#log-list div:first-child {
+    color: var(--font-color);
+}
+
+#log-list div:nth-child(even) {
     background-color: hsla(0, 0%, 100%, 0.03);
 }
 

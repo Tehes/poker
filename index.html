@@ -146,6 +146,7 @@
 			<section class="actions">
 				<button type="button" id="start-button" name="button">Start</button>
 				<button type="button" id="stats-button" class="hidden" name="button">Stats</button>
+				<button type="button" id="log-button" class="hidden" name="button">Log</button>
 				<button type="button" id="fold-button" class="hidden" name="button">Fold</button>
 				<button type="button" id="action-button" class="hidden" name="button">Check</button>
 				<input type="range" id="amount-slider" class="hidden" name="amount" value="0" min="0" max="2000"
@@ -163,32 +164,37 @@
 					height="25"></a>
 		</div>
 	</footer>
-		<div id="stats-overlay" class="hidden">
-			<section class="stats-panel">
-				<div class="stats-table-wrap">
-					<table id="stats-table">
-					<thead>
-						<tr>
-							<th>Player</th>
-							<th>Stack</th>
-							<th>Hands</th>
-							<th>Won</th>
-							<th>Win %</th>
-							<th>Showdowns</th>
-							<th>SD Won</th>
-							<th>SD %</th>
-							<th>Folds</th>
-							<th>Pre</th>
-							<th>Post</th>
-							<th>All-ins</th>
-						</tr>
-					</thead>
-						<tbody id="stats-table-body"></tbody>
-					</table>
-				</div>
-				<button type="button" id="stats-close-button" class="stats-close">Close</button>
-			</section>
+	<div id="overlay-backdrop" class="hidden"></div>
+	<section id="stats-overlay" class="stats-panel hidden">
+		<div class="stats-table-wrap">
+			<table id="stats-table">
+				<thead>
+					<tr>
+						<th>Player</th>
+						<th>Stack</th>
+						<th>Hands</th>
+						<th>Won</th>
+						<th>Win %</th>
+						<th>Showdowns</th>
+						<th>SD Won</th>
+						<th>SD %</th>
+						<th>Folds</th>
+						<th>Pre</th>
+						<th>Post</th>
+						<th>All-ins</th>
+					</tr>
+				</thead>
+				<tbody id="stats-table-body"></tbody>
+			</table>
 		</div>
+		<button type="button" id="stats-close-button" class="stats-close">Close</button>
+	</section>
+	<section id="log-overlay" class="stats-panel log-panel hidden">
+		<div class="log-list-wrap">
+			<div id="log-list"></div>
+		</div>
+		<button type="button" id="log-close-button" class="stats-close">Close</button>
+	</section>
 	<script src="./js/kjua.min.js"></script>
 	<script type="module" src="./js/app.js"></script>
 </body>
