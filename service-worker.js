@@ -43,6 +43,7 @@ const CORE_ASSETS = [
 	"./", // resolves to index.html
 	"./index.html",
 	"./js/app.js",
+	"./js/serviceWorkerRegistration.js",
 	"./js/kjua.min.js",
 	"./css/style.css",
 	"./cards/1B.svg",
