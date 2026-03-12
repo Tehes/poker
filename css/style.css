@@ -278,7 +278,6 @@ TABLE-MIDDLE
     min-width: 85px;
     text-align: center;
     flex: 0 0 auto;
-    height: 34px;
 }
 
 #notification {
@@ -312,7 +311,7 @@ TABLE-MIDDLE
 
 #notification:has(span):hover {
     background-color: var(--blue);
-    border: 1px solid hsla(0, 0%, 100%, 0.2);
+    border: 1px solid hsla(0, 0%, 100%, 0.15);
     box-shadow: var(--shadow);
     transform: translateY(-1px);
 }
@@ -334,7 +333,7 @@ TABLE-MIDDLE
 }
 
 #pot::before {
-    content: "💰 ";
+    content: "$ ";
 }
 
 #community-cards {
@@ -656,16 +655,19 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
     gap: 2vmin;
 }
 
+.chips span {
+    border-radius: 999px;
+    padding: 0px 10px;
+    background-color: var(--blue-lighter);
+}
+
 .chips .bet {
     color: var(--yellow);
 }
 
-.chips .bet::before {
-    content: "🎯 ";
-}
-
+.chips .bet::before,
 .chips .total::before {
-    content: "💵 ";
+    content: "$ ";
 }
 
 .hole-cards .blind-icons {
