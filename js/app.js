@@ -349,14 +349,18 @@ function registerBotReveal(player) {
 	});
 }
 
-function collectTableState() {
-	const communityCards = Array.from(
+function getCommunityCardCodes() {
+	return Array.from(
 		document.querySelectorAll("#community-cards .cardslot img"),
 		(img) => {
 			const match = img.src.match(/\/cards\/([2-9TJQKA][CDHS])\.svg$/);
 			return match ? match[1] : null;
 		},
 	).filter(Boolean);
+}
+
+function collectTableState() {
+	const communityCards = getCommunityCardCodes();
 
 	const playerStates = players.map((p, index) => ({
 		name: p.name,
@@ -431,15 +435,6 @@ function combinationCount(n, k) {
 		result = (result * (n - kk + i)) / i;
 	}
 	return Math.round(result);
-}
-
-function getCommunityCardsForEquity() {
-	return Array.from(
-		document.querySelectorAll("#community-cards .cardslot img"),
-	).map((img) => {
-		const match = img.src.match(/\/cards\/([2-9TJQKA][CDHS])\.svg$/);
-		return match ? match[1] : null;
-	}).filter(Boolean);
 }
 
 function isAllInRunout() {
@@ -703,7 +698,7 @@ function triggerMainPotWinnerReactions(context) {
 }
 
 function updateHandStrengthDisplays() {
-	const communityCards = getCommunityCardsForEquity();
+	const communityCards = getCommunityCardCodes();
 	const shouldShowPostflop = currentPhaseIndex > 0 && communityCards.length >= 3;
 
 	players.forEach((p) => {
@@ -783,7 +778,7 @@ function computeSpectatorWinProbabilities(reason = "") {
 		return;
 	}
 
-	const communityCards = getCommunityCardsForEquity();
+	const communityCards = getCommunityCardCodes();
 	const missingCount = 5 - communityCards.length;
 	if (missingCount < 0) {
 		logFlow("winProbability: invalid board state", {
@@ -1778,7 +1773,7 @@ function doShowdown() {
 	// Single-player case: immediate win (no hand needed)
 	if (activePlayers.length === 1) {
 		const winner = activePlayers[0];
-		const communityCards = getCommunityCardsForEquity();
+		const communityCards = getCommunityCardCodes();
 		const totalPayoutByPlayer = new Map([[winner, pot]]);
 		const revealedPlayers = new Set();
 		const revealDecision = getBotRevealDecision(winner, communityCards);
@@ -1826,13 +1821,7 @@ function doShowdown() {
 	}
 
 	// 2) Gather community cards from the DOM
-	const communityCards = Array.from(
-		document.querySelectorAll("#community-cards .cardslot img"),
-	).map((img) => {
-		// Extract card code from src, e.g., ".../cards/Ah.svg" → "Ah"
-		const match = img.src.match(/\/cards\/([2-9TJQKA][CDHS])\.svg$/);
-		return match ? match[1] : null;
-	}).filter(Boolean);
+	const communityCards = getCommunityCardCodes();
 
 	// ---- Build side pots based on each player's totalBet ----
 	const contenders = contributors.slice();
@@ -2272,7 +2261,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-12-v2";
+const SERVICE_WORKER_VERSION = "2026-03-12-v3";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
