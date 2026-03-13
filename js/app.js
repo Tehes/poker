@@ -69,6 +69,7 @@ const CARD_SUIT_SYMBOLS = {
 const HISTORY_LOG = false; // Set to true to enable history logging in the console
 let DEBUG_FLOW = false; // Set to true for verbose game-flow logging
 const CHIP_UNIT = 10;
+const MAX_VISUAL_STACK_CHIPS = 10;
 
 const speedModeParam = new URLSearchParams(globalThis.location.search).get("speedmode");
 const SPEED_MODE = speedModeParam !== null && speedModeParam !== "0" && speedModeParam !== "false";
@@ -198,6 +199,26 @@ function buildSplitPayouts(amount, winners) {
 	});
 
 	return payouts;
+}
+
+function getVisualChipCount(chips, chipLeader) {
+	if (chips <= 0 || chipLeader <= 0) {
+		return 0;
+	}
+
+	return Math.min(MAX_VISUAL_STACK_CHIPS, Math.ceil((chips / chipLeader) * MAX_VISUAL_STACK_CHIPS));
+}
+
+function renderChipStacks(playerList) {
+	const chipLeader = playerList.reduce((maxChips, player) => Math.max(maxChips, player.chips), 0);
+
+	playerList.forEach((player) => {
+		const visibleChips = getVisualChipCount(player.chips, chipLeader);
+
+		player.stackChipEls.forEach((chipEl, index) => {
+			chipEl.classList.toggle("hidden", index >= visibleChips);
+		});
+	});
 }
 
 function getStatsPlayers() {
@@ -967,6 +988,9 @@ function createPlayers() {
 			name: player.querySelector("h3").textContent,
 			isBot: player.classList.contains("bot"),
 			seat: player,
+			totalEl: player.querySelector(".chips .total"),
+			betEl: player.querySelector(".chips .bet"),
+			stackChipEls: player.querySelectorAll(".stack-visual img"),
 			winnerReactionEl: player.querySelector(".winner-reaction"),
 			winnerReactionTimer: null,
 			winProbabilityEl: player.querySelector(".win-probability"),
@@ -1049,14 +1073,14 @@ function createPlayers() {
 				nonValueAggressionMade: false,
 			},
 			showTotal: function () {
-				player.querySelector(".chips .total").textContent = playerObject.chips;
+				playerObject.totalEl.textContent = playerObject.chips;
 			},
 			placeBet: function (x) {
 				// Clamp bet to available chips → prevents negative stacks
 				const bet = Math.min(x, playerObject.chips);
 				playerObject.roundBet += bet;
 				playerObject.totalBet += bet;
-				player.querySelector(".chips .bet").textContent = playerObject.roundBet;
+				playerObject.betEl.textContent = playerObject.roundBet;
 				playerObject.chips -= bet;
 				if (playerObject.chips === 0) {
 					playerObject.allIn = true;
@@ -1066,11 +1090,12 @@ function createPlayers() {
 			},
 			resetRoundBet: function () {
 				playerObject.roundBet = 0;
-				player.querySelector(".chips .bet").textContent = 0;
+				playerObject.betEl.textContent = 0;
 			},
 		};
 		players.push(playerObject);
 	}
+	renderChipStacks(players);
 	allPlayers = players.slice();
 }
 
@@ -1803,6 +1828,7 @@ function doShowdown() {
 		});
 		enqueueNotification(`${winner.name} wins ${pot}!`);
 		animateChipTransfer(pot, winner, () => {
+			renderChipStacks(players);
 			pot = 0;
 			document.getElementById("pot").textContent = pot;
 			hideActionControls();
@@ -2008,6 +2034,7 @@ function doShowdown() {
 		),
 	).then(() => {
 		// All animations done – reset pot, show New Round button
+		renderChipStacks(players);
 		pot = 0;
 		document.getElementById("pot").textContent = pot;
 
@@ -2261,7 +2288,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-13-v1";
+const SERVICE_WORKER_VERSION = "2026-03-13-v2";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
