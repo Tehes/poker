@@ -655,12 +655,6 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
     gap: 2vmin;
 }
 
-.chips span {
-    border-radius: 999px;
-    padding: 0px 10px;
-    background-color: var(--blue-lighter);
-}
-
 .chips .bet {
     color: var(--yellow);
 }
@@ -822,6 +816,10 @@ MEDIA QUERIES
     }
 
     h3:not(:empty):before {
+        display: none;
+    }
+
+    .hole-cards .rotate {
         display: none;
     }
 }
