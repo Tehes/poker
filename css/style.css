@@ -62,7 +62,8 @@ body {
 
 h1,
 h2,
-h3 {
+h3,
+h4 {
     font-weight: normal;
     margin: 0;
     padding: 0;
@@ -98,7 +99,8 @@ button:active {
     transform: translateY(1px);
 }
 
-#start-button {
+#start-button,
+#instructions-button {
     width: auto;
 }
 
@@ -362,6 +364,7 @@ TABLE-MIDDLE
 
 .actions {
     display: flex;
+    flex-wrap: wrap;
     justify-content: center;
     align-items: center;
     width: 100%;
@@ -380,7 +383,7 @@ OVERLAY
     background-color: hsla(0, 0%, 0%, 0.4);
 }
 
-.stats-panel {
+.overlay-panel {
     position: fixed;
     top: 50%;
     left: 50%;
@@ -404,7 +407,12 @@ OVERLAY
     max-height: min(80vh, 860px);
 }
 
-.stats-close {
+.instructions-panel {
+    width: min(860px, 96vw);
+    max-height: min(84vh, 920px);
+}
+
+.overlay-close {
     width: auto;
     margin: 0;
     padding: 0.55rem 1rem;
@@ -418,6 +426,53 @@ OVERLAY
 .log-list-wrap {
     overflow: auto;
     min-height: 0;
+}
+
+#instructions-overlay .instructions-content {
+    overflow: auto;
+}
+
+#instructions-overlay :where(h2, h3, h4) {
+    color: var(--font-color);
+    margin: 0 0 0.45rem;
+}
+
+#instructions-overlay h3 {
+    margin-top: 1.5rem;
+}
+
+#instructions-overlay h2 {
+    font-size: 1.45rem;
+}
+
+#instructions-overlay :where(p, li) {
+    color: var(--blue-lightest);
+    margin: 0;
+}
+
+#instructions-overlay .instructions-modes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+}
+
+#instructions-overlay .instructions-mode-card {
+    background-color: hsla(0, 0%, 0%, 0.12);
+    border-radius: 15px;
+    padding: 1rem;
+}
+
+#instructions-overlay .instructions-note {
+    font-style: italic;
+    margin-top: 0.5rem;
+}
+
+#instructions-overlay .instructions-list {
+    padding-left: 1.2rem;
+}
+
+#instructions-overlay .instructions-list li+li {
+    margin-top: 0.45rem;
 }
 
 #stats-table {
@@ -495,7 +550,8 @@ PLAYER
 -------------------------------------------------------------------
 */
 
-h3 {
+.seat h3,
+#single h3 {
     border-radius: 30px;
     background-color: var(--blue-lightest);
     padding: 1vmin 2vmin;
@@ -509,11 +565,11 @@ h3 {
     user-select: auto;
 }
 
-h3:empty::before {
+.seat h3:empty::before {
     content: "Enter Name";
 }
 
-h3:focus::before {
+.seat h3:focus::before {
     content: "";
 }
 
@@ -665,7 +721,7 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
 }
 
 .chips .stack-visual {
-    --chip-step: max(0.4vmin, 3px);
+    --chip-step: max(0.3vmin, 2.5px);
     position: relative;
     width: max(4vmin, 30px);
     height: max(4vmin, 30px);
@@ -847,11 +903,15 @@ MEDIA QUERIES
         gap: 0;
     }
 
-    h3:not(:empty):before {
+    .seat h3:not(:empty):before {
         display: none;
     }
 
     .hole-cards .rotate {
         display: none;
+    }
+
+    .chips :where(.total, .bet) {
+        min-width: 56px;
     }
 }

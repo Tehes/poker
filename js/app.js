@@ -9,8 +9,9 @@ import { initServiceWorker } from "./serviceWorkerRegistration.js";
 Variables
 ---------------------------------------------------------------------------------------------------*/
 const startButton = document.querySelector("#start-button");
+const instructionsButton = document.querySelector("#instructions-button");
 const rotateIcons = document.querySelectorAll(".seat .rotate");
-const nameBadges = document.querySelectorAll("h3");
+const nameBadges = document.querySelectorAll(".seat h3");
 const closeButtons = document.querySelectorAll(".close");
 const notification = document.querySelector("#notification");
 const foldButton = document.querySelector("#fold-button");
@@ -23,9 +24,24 @@ const statsCloseButton = document.querySelector("#stats-close-button");
 const statsTableBody = document.querySelector("#stats-table-body");
 const logOverlay = document.querySelector("#log-overlay");
 const logCloseButton = document.querySelector("#log-close-button");
+const instructionsOverlay = document.querySelector("#instructions-overlay");
+const instructionsCloseButton = document.querySelector("#instructions-close-button");
 const logList = document.querySelector("#log-list");
 const amountSlider = document.querySelector("#amount-slider");
 const sliderOutput = document.querySelector("output");
+const overlays = {
+	stats: {
+		el: statsOverlay,
+		beforeOpen: () => renderStatsOverlay(),
+	},
+	log: {
+		el: logOverlay,
+		canOpen: () => !!logList && logList.childElementCount > 0,
+	},
+	instructions: {
+		el: instructionsOverlay,
+	},
+};
 const Phases = ["preflop", "flop", "turn", "river", "showdown"];
 let currentPhaseIndex = 0;
 let currentBet = 0;
@@ -206,7 +222,10 @@ function getVisualChipCount(chips, chipLeader) {
 		return 0;
 	}
 
-	return Math.min(MAX_VISUAL_STACK_CHIPS, Math.ceil((chips / chipLeader) * MAX_VISUAL_STACK_CHIPS));
+	return Math.min(
+		MAX_VISUAL_STACK_CHIPS,
+		Math.ceil((chips / chipLeader) * MAX_VISUAL_STACK_CHIPS),
+	);
 }
 
 function renderChipStacks(playerList) {
@@ -265,35 +284,40 @@ function renderStatsOverlay() {
 }
 
 function syncOverlayBackdrop() {
-	const isOverlayOpen = !statsOverlay.classList.contains("hidden") ||
-		!logOverlay.classList.contains("hidden");
+	const isOverlayOpen = Object.values(overlays).some(({ el }) =>
+		!el.classList.contains("hidden")
+	);
 	overlayBackdrop.classList.toggle("hidden", !isOverlayOpen);
 }
 
-function openStatsOverlay() {
-	closeLogOverlay();
-	renderStatsOverlay();
-	statsOverlay.classList.remove("hidden");
-	syncOverlayBackdrop();
-}
-
-function closeStatsOverlay() {
-	statsOverlay.classList.add("hidden");
-	syncOverlayBackdrop();
-}
-
-function openLogOverlay() {
-	if (!logList || logList.childElementCount === 0) {
+function openOverlay(name) {
+	const overlay = overlays[name];
+	if (!overlay) {
 		return;
 	}
-
-	closeStatsOverlay();
-	logOverlay.classList.remove("hidden");
+	if (overlay.canOpen && !overlay.canOpen()) {
+		return;
+	}
+	Object.entries(overlays).forEach(([key, entry]) => {
+		entry.el.classList.toggle("hidden", key !== name);
+	});
+	overlay.beforeOpen?.();
 	syncOverlayBackdrop();
 }
 
-function closeLogOverlay() {
-	logOverlay.classList.add("hidden");
+function closeOverlay(name) {
+	const overlay = overlays[name];
+	if (!overlay) {
+		return;
+	}
+	overlay.el.classList.add("hidden");
+	syncOverlayBackdrop();
+}
+
+function closeAllOverlays() {
+	Object.values(overlays).forEach(({ el }) => {
+		el.classList.add("hidden");
+	});
 	syncOverlayBackdrop();
 }
 
@@ -940,6 +964,8 @@ function startGame(event) {
 				name.contentEditable = "false";
 			}
 			event.target.classList.add("hidden");
+			instructionsButton.classList.add("hidden");
+			closeAllOverlays();
 			gameStarted = true;
 
 			const tableUrl = new URL(globalThis.location.href);
@@ -1202,8 +1228,7 @@ function preFlop() {
 	}
 
 	startButton.classList.add("hidden");
-	closeStatsOverlay();
-	closeLogOverlay();
+	closeAllOverlays();
 	setSummaryButtonsVisible(false);
 
 	// Clear folded state and remove CSS-Klasse
@@ -2238,20 +2263,18 @@ function init() {
 	document.addEventListener("touchstart", function () {}, false);
 	document.addEventListener("keydown", (ev) => {
 		if (ev.key === "Escape") {
-			closeStatsOverlay();
-			closeLogOverlay();
+			closeAllOverlays();
 		}
 	}, false);
 	startButton.addEventListener("click", startGame, false);
-	notification.addEventListener("click", openLogOverlay, false);
-	statsButton.addEventListener("click", openStatsOverlay, false);
-	logButton.addEventListener("click", openLogOverlay, false);
-	statsCloseButton.addEventListener("click", closeStatsOverlay, false);
-	logCloseButton.addEventListener("click", closeLogOverlay, false);
-	overlayBackdrop.addEventListener("click", () => {
-		closeStatsOverlay();
-		closeLogOverlay();
-	}, false);
+	instructionsButton.addEventListener("click", () => openOverlay("instructions"), false);
+	notification.addEventListener("click", () => openOverlay("log"), false);
+	statsButton.addEventListener("click", () => openOverlay("stats"), false);
+	logButton.addEventListener("click", () => openOverlay("log"), false);
+	statsCloseButton.addEventListener("click", () => closeOverlay("stats"), false);
+	logCloseButton.addEventListener("click", () => closeOverlay("log"), false);
+	instructionsCloseButton.addEventListener("click", () => closeOverlay("instructions"), false);
+	overlayBackdrop.addEventListener("click", closeAllOverlays, false);
 	globalThis.addEventListener("pagehide", () => trackUnfinishedExit(), false);
 	globalThis.addEventListener("beforeunload", () => trackUnfinishedExit(), false);
 
@@ -2288,7 +2311,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-13-v2";
+const SERVICE_WORKER_VERSION = "2026-03-14-v1";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
