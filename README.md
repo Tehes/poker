@@ -1,6 +1,6 @@
 # Digital Poker Table
 
-![Demo screenshot](img/demo.png)
+![Demo screenshot](img/demo.jpeg)
 
 A browser-based, zero-setup poker table to play Texas Hold'em with friends using only your devices.
 Scan a QR code to see your hole cards privately on your phone, while the shared table (e.g., on a
@@ -24,6 +24,7 @@ tablet or laptop) handles community cards, blinds, pot, and betting rounds.
   the minimum legal raise when released.
 - **Fast & Offline-Ready**: Loads fast, works without internet once cached.
 - **Built‑in Bots**: Empty player slots are automatically filled with bots.
+- **Fast Forward for Bot-Only Hands**: When no human can act in the current hand, a Fast Forward button lets you speed through the remaining bot action. If no humans have chips left after that, the game keeps fast-forwarding until a winner remains.
 - **Bot Intelligence**: Bots evaluate hand strength, pot odds, stack size, and position to make
   informed decisions.
 - **Adaptive Behavior**: Bots track how often opponents fold, detect frequent all-ins, and adjust
