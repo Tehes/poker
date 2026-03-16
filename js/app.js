@@ -368,6 +368,48 @@ function scheduleNextNotif() {
 	}, getNotifInterval());
 }
 
+function deliverNotification(msg) {
+	// newest message first for tracking
+	if (logList) {
+		const logEntry = document.createElement("div");
+		logEntry.textContent = msg;
+		logList.prepend(logEntry);
+	}
+	notifArr.unshift(msg);
+	if (notifArr.length > MAX_ITEMS) notifArr.pop();
+	syncLogUi();
+	queueStateSync();
+	// create a new span for this message
+	if (notification.childElementCount === 0) {
+		notification.textContent = "";
+	}
+	const span = document.createElement("span");
+	span.textContent = msg;
+	// prepend to container
+	notification.prepend(span);
+	// remove excess spans from end if over limit
+	while (notification.childElementCount > MAX_ITEMS) {
+		notification.removeChild(notification.lastChild);
+	}
+	logHistory(msg);
+}
+
+function flushPendingNotifications() {
+	if (notifTimer) {
+		clearTimeout(notifTimer);
+		notifTimer = null;
+	}
+	if (pendingNotif.length === 0) {
+		isNotifProcessing = false;
+		return;
+	}
+	isNotifProcessing = true;
+	while (pendingNotif.length > 0) {
+		deliverNotification(pendingNotif.shift());
+	}
+	isNotifProcessing = false;
+}
+
 function refreshNotificationPlayback() {
 	if (!isNotifProcessing || pendingNotif.length === 0) {
 		return;
@@ -377,6 +419,10 @@ function refreshNotificationPlayback() {
 
 function syncRuntimePlayback() {
 	setBotPlaybackFast(handFastForwardActive || autoplayToGameEnd);
+	if (isFastPlaybackActive()) {
+		flushPendingNotifications();
+		return;
+	}
 	refreshNotificationPlayback();
 }
 
@@ -408,15 +454,15 @@ function updateFastForwardButton() {
 		return;
 	}
 	const humanPlayers = getHumanPlayers();
+	const noHumanCanAct = humanPlayers.length === 0 ||
+		humanPlayers.every((player) => player.folded);
 	const shouldShow = !SPEED_MODE &&
 		hadHumansAtStart &&
-		!spectatorMode &&
 		handInProgress &&
 		!gameFinished &&
 		!handFastForwardActive &&
 		!autoplayToGameEnd &&
-		humanPlayers.length > 0 &&
-		humanPlayers.every((player) => player.folded);
+		noHumanCanAct;
 	fastForwardButton.classList.toggle("hidden", !shouldShow);
 }
 
@@ -2345,6 +2391,10 @@ function notifyPlayerAction(player, action = "", amount = 0) {
 
 function enqueueNotification(msg) {
 	pendingNotif.push(msg);
+	if (isFastPlaybackActive()) {
+		flushPendingNotifications();
+		return;
+	}
 	if (!isNotifProcessing) {
 		showNextNotif();
 	}
@@ -2357,30 +2407,7 @@ function showNextNotif() {
 		return;
 	}
 	isNotifProcessing = true;
-	const msg = pendingNotif.shift();
-	// newest message first for tracking
-	if (logList) {
-		const logEntry = document.createElement("div");
-		logEntry.textContent = msg;
-		logList.prepend(logEntry);
-	}
-	notifArr.unshift(msg);
-	if (notifArr.length > MAX_ITEMS) notifArr.pop();
-	syncLogUi();
-	queueStateSync();
-	// create a new span for this message
-	if (notification.childElementCount === 0) {
-		notification.textContent = "";
-	}
-	const span = document.createElement("span");
-	span.textContent = msg;
-	// prepend to container
-	notification.prepend(span);
-	// remove excess spans from end if over limit
-	while (notification.childElementCount > MAX_ITEMS) {
-		notification.removeChild(notification.lastChild);
-	}
-	logHistory(msg);
+	deliverNotification(pendingNotif.shift());
 	scheduleNextNotif();
 }
 
@@ -2449,7 +2476,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-16-v1";
+const SERVICE_WORKER_VERSION = "2026-03-16-v2";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
