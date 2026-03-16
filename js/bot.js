@@ -16,6 +16,7 @@ import { Card, Hand } from "./pokersolver.js";
 // Configuration constants
 // Delay in milliseconds between enqueued bot actions
 export let BOT_ACTION_DELAY = 3000;
+const FAST_FORWARD_BOT_ACTION_DELAY = 140;
 
 // Enable verbose logging of bot decisions
 let DEBUG_DECISIONS = false;
@@ -94,7 +95,13 @@ let botActionTimer = null;
 let runtimeBotPlaybackFast = false;
 
 function getBotActionDelay() {
-	return SPEED_MODE || runtimeBotPlaybackFast ? 0 : BOT_ACTION_DELAY;
+	if (SPEED_MODE) {
+		return 0;
+	}
+	if (runtimeBotPlaybackFast) {
+		return FAST_FORWARD_BOT_ACTION_DELAY;
+	}
+	return BOT_ACTION_DELAY;
 }
 
 /* ===========================

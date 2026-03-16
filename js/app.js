@@ -61,10 +61,15 @@ let isNotifProcessing = false;
 let notifTimer = null;
 const DEFAULT_NOTIF_INTERVAL = 750;
 let NOTIF_INTERVAL = DEFAULT_NOTIF_INTERVAL;
+const FAST_FORWARD_NOTIF_INTERVAL = 0;
 const DEFAULT_ACTION_LABEL_DURATION = 3000;
 let ACTION_LABEL_DURATION = DEFAULT_ACTION_LABEL_DURATION;
+const FAST_FORWARD_ACTION_LABEL_DURATION = 180;
 const DEFAULT_RUNOUT_PHASE_DELAY = 3000;
 let RUNOUT_PHASE_DELAY = DEFAULT_RUNOUT_PHASE_DELAY;
+const FAST_FORWARD_RUNOUT_PHASE_DELAY = 320;
+const FAST_FORWARD_CHIP_TRANSFER_DURATION = 160;
+const FAST_FORWARD_CHIP_TRANSFER_STEPS = 8;
 const WINNER_REACTION_DURATION = 2000;
 const BOT_REVEAL_CHANCE = 0.3; // Chance that a bot will choose to reveal part of its hand post-flop.
 const BOT_DOUBLE_REVEAL_HANDS = new Set(["Straight Flush", "Four of a Kind", "Full House"]);
@@ -346,16 +351,38 @@ function isFastPlaybackActive() {
 	return SPEED_MODE || handFastForwardActive || autoplayToGameEnd;
 }
 
+function isTurboPlaybackActive() {
+	return handFastForwardActive || autoplayToGameEnd;
+}
+
 function getNotifInterval() {
-	return isFastPlaybackActive() ? 0 : NOTIF_INTERVAL;
+	if (SPEED_MODE) {
+		return 0;
+	}
+	if (isTurboPlaybackActive()) {
+		return FAST_FORWARD_NOTIF_INTERVAL;
+	}
+	return NOTIF_INTERVAL;
 }
 
 function getActionLabelDuration() {
-	return isFastPlaybackActive() ? 0 : ACTION_LABEL_DURATION;
+	if (SPEED_MODE) {
+		return 0;
+	}
+	if (isTurboPlaybackActive()) {
+		return FAST_FORWARD_ACTION_LABEL_DURATION;
+	}
+	return ACTION_LABEL_DURATION;
 }
 
 function getRunoutPhaseDelay() {
-	return isFastPlaybackActive() ? 0 : RUNOUT_PHASE_DELAY;
+	if (SPEED_MODE) {
+		return 0;
+	}
+	if (isTurboPlaybackActive()) {
+		return FAST_FORWARD_RUNOUT_PHASE_DELAY;
+	}
+	return RUNOUT_PHASE_DELAY;
 }
 
 function scheduleNextNotif() {
@@ -1918,7 +1945,7 @@ function startBettingRound() {
  * onDone   – callback after animation completes
  */
 function animateChipTransfer(amount, playerObj, onDone) {
-	if (isFastPlaybackActive()) {
+	if (SPEED_MODE) {
 		const potElem = document.getElementById("pot");
 		let potVal = parseInt(potElem.textContent, 10);
 		potVal -= amount;
@@ -1931,8 +1958,10 @@ function animateChipTransfer(amount, playerObj, onDone) {
 		return;
 	}
 
-	const steps = 30;
-	const totalDuration = Math.min(Math.max(amount * 20, 300), 3000);
+	const steps = isTurboPlaybackActive() ? FAST_FORWARD_CHIP_TRANSFER_STEPS : 30;
+	const totalDuration = isTurboPlaybackActive()
+		? FAST_FORWARD_CHIP_TRANSFER_DURATION
+		: Math.min(Math.max(amount * 20, 300), 3000);
 	const delay = totalDuration / steps;
 	const increment = Math.floor(amount / steps);
 	const remainder = amount - increment * steps;
@@ -2476,7 +2505,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-16-v2";
+const SERVICE_WORKER_VERSION = "2026-03-16-v3";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
