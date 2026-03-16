@@ -1,7 +1,7 @@
 /* --------------------------------------------------------------------------------------------------
 Imports
 ---------------------------------------------------------------------------------------------------*/
-import { chooseBotAction, enqueueBotAction } from "./bot.js";
+import { chooseBotAction, enqueueBotAction, setBotPlaybackFast } from "./bot.js";
 import { Hand } from "./pokersolver.js";
 import { initServiceWorker } from "./serviceWorkerRegistration.js";
 
@@ -18,6 +18,7 @@ const foldButton = document.querySelector("#fold-button");
 const actionButton = document.querySelector("#action-button");
 const statsButton = document.querySelector("#stats-button");
 const logButton = document.querySelector("#log-button");
+const fastForwardButton = document.querySelector("#fast-forward-button");
 const overlayBackdrop = document.querySelector("#overlay-backdrop");
 const statsOverlay = document.querySelector("#stats-overlay");
 const statsCloseButton = document.querySelector("#stats-close-button");
@@ -57,9 +58,13 @@ const MAX_ITEMS = 8;
 const notifArr = [];
 const pendingNotif = [];
 let isNotifProcessing = false;
-let NOTIF_INTERVAL = 750;
-let ACTION_LABEL_DURATION = 3000;
-let RUNOUT_PHASE_DELAY = 3000;
+let notifTimer = null;
+const DEFAULT_NOTIF_INTERVAL = 750;
+let NOTIF_INTERVAL = DEFAULT_NOTIF_INTERVAL;
+const DEFAULT_ACTION_LABEL_DURATION = 3000;
+let ACTION_LABEL_DURATION = DEFAULT_ACTION_LABEL_DURATION;
+const DEFAULT_RUNOUT_PHASE_DELAY = 3000;
+let RUNOUT_PHASE_DELAY = DEFAULT_RUNOUT_PHASE_DELAY;
 const WINNER_REACTION_DURATION = 2000;
 const BOT_REVEAL_CHANCE = 0.3; // Chance that a bot will choose to reveal part of its hand post-flop.
 const BOT_DOUBLE_REVEAL_HANDS = new Set(["Straight Flush", "Four of a Kind", "Full House"]);
@@ -103,6 +108,9 @@ const STATE_SYNC_DELAY = 750;
 let stateSyncTimer = null;
 let runoutPhaseTimer = null;
 let summaryButtonsVisible = false;
+let handFastForwardActive = false;
+let autoplayToGameEnd = false;
+let handInProgress = false;
 
 // --- Analytics --------------------------------------------------------------
 let totalHands = 0;
@@ -334,11 +342,112 @@ function setSummaryButtonsVisible(isVisible) {
 	syncLogUi();
 }
 
+function isFastPlaybackActive() {
+	return SPEED_MODE || handFastForwardActive || autoplayToGameEnd;
+}
+
+function getNotifInterval() {
+	return isFastPlaybackActive() ? 0 : NOTIF_INTERVAL;
+}
+
+function getActionLabelDuration() {
+	return isFastPlaybackActive() ? 0 : ACTION_LABEL_DURATION;
+}
+
+function getRunoutPhaseDelay() {
+	return isFastPlaybackActive() ? 0 : RUNOUT_PHASE_DELAY;
+}
+
+function scheduleNextNotif() {
+	if (notifTimer) {
+		clearTimeout(notifTimer);
+	}
+	notifTimer = setTimeout(() => {
+		notifTimer = null;
+		showNextNotif();
+	}, getNotifInterval());
+}
+
+function refreshNotificationPlayback() {
+	if (!isNotifProcessing || pendingNotif.length === 0) {
+		return;
+	}
+	scheduleNextNotif();
+}
+
+function syncRuntimePlayback() {
+	setBotPlaybackFast(handFastForwardActive || autoplayToGameEnd);
+	refreshNotificationPlayback();
+}
+
+function clearActionLabels() {
+	players.forEach((player) => {
+		if (!player?.actionLabelTimer) {
+			return;
+		}
+		clearTimeout(player.actionLabelTimer);
+		player.actionLabelTimer = null;
+		player.seat.classList.remove("action-label");
+		const nameEl = player.seat.querySelector("h3");
+		if (nameEl) {
+			nameEl.textContent = player.name;
+		}
+	});
+}
+
+function getHumanPlayers() {
+	return players.filter((p) => !p.isBot);
+}
+
+function getHumansWithChipsCount() {
+	return players.filter((p) => !p.isBot && p.chips > 0).length;
+}
+
+function updateFastForwardButton() {
+	if (!fastForwardButton) {
+		return;
+	}
+	const humanPlayers = getHumanPlayers();
+	const shouldShow = !SPEED_MODE &&
+		hadHumansAtStart &&
+		!spectatorMode &&
+		handInProgress &&
+		!gameFinished &&
+		!handFastForwardActive &&
+		!autoplayToGameEnd &&
+		humanPlayers.length > 0 &&
+		humanPlayers.every((player) => player.folded);
+	fastForwardButton.classList.toggle("hidden", !shouldShow);
+}
+
+function resetRuntimeFastForward() {
+	handFastForwardActive = false;
+	autoplayToGameEnd = false;
+	syncRuntimePlayback();
+	updateFastForwardButton();
+}
+
+function activateFastForward() {
+	if (!handInProgress || handFastForwardActive || autoplayToGameEnd || SPEED_MODE) {
+		return;
+	}
+	handFastForwardActive = true;
+	clearActionLabels();
+	syncRuntimePlayback();
+	updateFastForwardButton();
+	if (runoutPhaseTimer) {
+		clearTimeout(runoutPhaseTimer);
+		runoutPhaseTimer = null;
+		setPhase();
+	}
+}
+
 function hideActionControls() {
 	foldButton.classList.add("hidden");
 	actionButton.classList.add("hidden");
 	amountSlider.classList.add("hidden");
 	sliderOutput.classList.add("hidden");
+	updateFastForwardButton();
 }
 
 function getHandsPlayedBucket(handCount) {
@@ -653,7 +762,7 @@ function clearWinnerReaction(player) {
 }
 
 function showWinnerReaction(player, emoji) {
-	if (SPEED_MODE || !emoji || !player?.winnerReactionEl) {
+	if (isFastPlaybackActive() || !emoji || !player?.winnerReactionEl) {
 		return;
 	}
 	clearWinnerReaction(player);
@@ -776,7 +885,8 @@ function updateHandStrengthDisplays() {
 
 function queueRunoutPhaseAdvance(reason = "") {
 	hideActionControls();
-	if (!isAllInRunout() || RUNOUT_PHASE_DELAY === 0) {
+	const runoutPhaseDelay = getRunoutPhaseDelay();
+	if (!isAllInRunout() || runoutPhaseDelay === 0) {
 		return setPhase();
 	}
 	if (runoutPhaseTimer) {
@@ -785,12 +895,12 @@ function queueRunoutPhaseAdvance(reason = "") {
 	logFlow("delay runout phase", {
 		reason,
 		phase: Phases[currentPhaseIndex],
-		delay: RUNOUT_PHASE_DELAY,
+		delay: runoutPhaseDelay,
 	});
 	runoutPhaseTimer = setTimeout(() => {
 		runoutPhaseTimer = null;
 		setPhase();
-	}, RUNOUT_PHASE_DELAY);
+	}, runoutPhaseDelay);
 }
 
 function updateWinProbabilityDisplays() {
@@ -949,6 +1059,8 @@ function computeSpectatorWinProbabilities(reason = "") {
 
 function startGame(event) {
 	if (!gameStarted) {
+		resetRuntimeFastForward();
+		handInProgress = false;
 		createPlayers();
 		hadHumansAtStart = players.some((p) => !p.isBot);
 		exitEventSent = false;
@@ -1222,6 +1334,8 @@ function preFlop() {
 	totalHands++;
 	// Reset phase to preflop
 	currentPhaseIndex = 0;
+	gameFinished = false;
+	handInProgress = false;
 	if (runoutPhaseTimer) {
 		clearTimeout(runoutPhaseTimer);
 		runoutPhaseTimer = null;
@@ -1230,6 +1344,7 @@ function preFlop() {
 	startButton.classList.add("hidden");
 	closeAllOverlays();
 	setSummaryButtonsVisible(false);
+	clearActionLabels();
 
 	// Clear folded state and remove CSS-Klasse
 	players.forEach((p) => {
@@ -1303,6 +1418,8 @@ function preFlop() {
 		champion.seat.classList.add("winner");
 		logFlow("tournament_end", { champion: champion.name });
 		gameFinished = true;
+		hideActionControls();
+		resetRuntimeFastForward();
 		if (!SPEED_MODE) {
 			globalThis.umami?.track("Poker", {
 				champion: champion.name,
@@ -1316,6 +1433,9 @@ function preFlop() {
 		return; // skip the rest of preFlop()
 	}
 	// ----------------------------------------------------------
+
+	handInProgress = true;
+	updateFastForwardButton();
 
 	// Assign dealer
 	setDealer();
@@ -1752,7 +1872,7 @@ function startBettingRound() {
  * onDone   – callback after animation completes
  */
 function animateChipTransfer(amount, playerObj, onDone) {
-	if (SPEED_MODE) {
+	if (isFastPlaybackActive()) {
 		const potElem = document.getElementById("pot");
 		let potVal = parseInt(potElem.textContent, 10);
 		potVal -= amount;
@@ -1800,6 +1920,46 @@ function animateChipTransfer(amount, playerObj, onDone) {
 		}
 	}
 	step();
+}
+
+function finishHandAfterShowdown() {
+	renderChipStacks(players);
+	pot = 0;
+	document.getElementById("pot").textContent = pot;
+
+	players.forEach((p) => {
+		p.seat.classList.remove("active");
+	});
+
+	handInProgress = false;
+	hideActionControls();
+	if (SPEED_MODE) {
+		queueStateSync();
+		preFlop();
+		return;
+	}
+	if (autoplayToGameEnd) {
+		queueStateSync();
+		preFlop();
+		return;
+	}
+	if (handFastForwardActive && getHumansWithChipsCount() === 0) {
+		handFastForwardActive = false;
+		autoplayToGameEnd = true;
+		syncRuntimePlayback();
+		updateFastForwardButton();
+		queueStateSync();
+		preFlop();
+		return;
+	}
+	handFastForwardActive = false;
+	syncRuntimePlayback();
+	updateFastForwardButton();
+	renderStatsOverlay();
+	setSummaryButtonsVisible(true);
+	startButton.textContent = "New Round";
+	startButton.classList.remove("hidden");
+	queueStateSync();
 }
 
 function doShowdown() {
@@ -1853,20 +2013,7 @@ function doShowdown() {
 		});
 		enqueueNotification(`${winner.name} wins ${pot}!`);
 		animateChipTransfer(pot, winner, () => {
-			renderChipStacks(players);
-			pot = 0;
-			document.getElementById("pot").textContent = pot;
-			hideActionControls();
-			if (SPEED_MODE) {
-				queueStateSync();
-				preFlop();
-				return;
-			}
-			renderStatsOverlay();
-			setSummaryButtonsVisible(true);
-			startButton.textContent = "New Round";
-			startButton.classList.remove("hidden");
-			queueStateSync();
+			finishHandAfterShowdown();
 		});
 		return;
 	}
@@ -2058,26 +2205,7 @@ function doShowdown() {
 			})
 		),
 	).then(() => {
-		// All animations done – reset pot, show New Round button
-		renderChipStacks(players);
-		pot = 0;
-		document.getElementById("pot").textContent = pot;
-
-		players.forEach((p) => {
-			p.seat.classList.remove("active");
-		});
-
-		hideActionControls();
-		if (SPEED_MODE) {
-			queueStateSync();
-			preFlop();
-			return;
-		}
-		renderStatsOverlay();
-		setSummaryButtonsVisible(true);
-		startButton.textContent = "New Round";
-		startButton.classList.remove("hidden");
-		queueStateSync();
+		finishHandAfterShowdown();
 	});
 	return; // exit doShowdown early because UI flow continues in animation
 }
@@ -2175,11 +2303,18 @@ function notifyPlayerAction(player, action = "", amount = 0) {
 		}
 		player.seat.classList.add("action-label");
 		nameEl.textContent = actionLabel.split(" ")[0];
-		player.actionLabelTimer = setTimeout(() => {
+		const actionLabelDuration = getActionLabelDuration();
+		if (actionLabelDuration === 0) {
 			nameEl.textContent = player.name;
 			player.seat.classList.remove("action-label");
 			player.actionLabelTimer = null;
-		}, ACTION_LABEL_DURATION);
+		} else {
+			player.actionLabelTimer = setTimeout(() => {
+				nameEl.textContent = player.name;
+				player.seat.classList.remove("action-label");
+				player.actionLabelTimer = null;
+			}, actionLabelDuration);
+		}
 	}
 
 	if (action === "fold") {
@@ -2204,6 +2339,7 @@ function notifyPlayerAction(player, action = "", amount = 0) {
 			logFlow("winProbability: preflop fold skipped", { name: player.name });
 		}
 	}
+	updateFastForwardButton();
 	enqueueNotification(msg);
 }
 
@@ -2217,6 +2353,7 @@ function enqueueNotification(msg) {
 function showNextNotif() {
 	if (pendingNotif.length === 0) {
 		isNotifProcessing = false;
+		notifTimer = null;
 		return;
 	}
 	isNotifProcessing = true;
@@ -2244,7 +2381,7 @@ function showNextNotif() {
 		notification.removeChild(notification.lastChild);
 	}
 	logHistory(msg);
-	setTimeout(showNextNotif, NOTIF_INTERVAL);
+	scheduleNextNotif();
 }
 
 function init() {
@@ -2271,6 +2408,7 @@ function init() {
 	notification.addEventListener("click", () => openOverlay("log"), false);
 	statsButton.addEventListener("click", () => openOverlay("stats"), false);
 	logButton.addEventListener("click", () => openOverlay("log"), false);
+	fastForwardButton.addEventListener("click", activateFastForward, false);
 	statsCloseButton.addEventListener("click", () => closeOverlay("stats"), false);
 	logCloseButton.addEventListener("click", () => closeOverlay("log"), false);
 	instructionsCloseButton.addEventListener("click", () => closeOverlay("instructions"), false);
@@ -2311,7 +2449,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-14-v1";
+const SERVICE_WORKER_VERSION = "2026-03-16-v1";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

@@ -100,7 +100,8 @@ button:active {
 }
 
 #start-button,
-#instructions-button {
+#instructions-button,
+#fast-forward-button {
     width: auto;
 }
 

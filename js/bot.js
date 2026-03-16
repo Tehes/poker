@@ -90,17 +90,45 @@ const ELIMINATION_PENALTY_MAX = 0.25;
 
 const botActionQueue = [];
 let processingBotActions = false;
+let botActionTimer = null;
+let runtimeBotPlaybackFast = false;
+
+function getBotActionDelay() {
+	return SPEED_MODE || runtimeBotPlaybackFast ? 0 : BOT_ACTION_DELAY;
+}
 
 /* ===========================
    Action Queue Management
 ========================== */
+function scheduleBotQueue() {
+	if (!processingBotActions || botActionQueue.length === 0 || botActionTimer) {
+		return;
+	}
+	botActionTimer = setTimeout(() => {
+		botActionTimer = null;
+		processBotQueue();
+	}, getBotActionDelay());
+}
+
+export function setBotPlaybackFast(enabled) {
+	runtimeBotPlaybackFast = enabled;
+	if (!processingBotActions || botActionQueue.length === 0) {
+		return;
+	}
+	if (botActionTimer) {
+		clearTimeout(botActionTimer);
+		botActionTimer = null;
+	}
+	scheduleBotQueue();
+}
+
 // Task queue management: enqueue bot actions for delayed execution
 export function enqueueBotAction(fn) {
 	botActionQueue.push(fn);
 	if (!processingBotActions) {
 		processingBotActions = true;
-		setTimeout(processBotQueue, BOT_ACTION_DELAY);
 	}
+	scheduleBotQueue();
 }
 
 // Execute queued actions at fixed intervals
@@ -112,7 +140,7 @@ function processBotQueue() {
 	const fn = botActionQueue.shift();
 	fn();
 	if (botActionQueue.length > 0) {
-		setTimeout(processBotQueue, BOT_ACTION_DELAY);
+		scheduleBotQueue();
 	} else {
 		processingBotActions = false;
 	}
