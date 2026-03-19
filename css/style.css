@@ -262,12 +262,9 @@ SINGLE VIEW
     border-bottom: 1px dashed var(--font-color);
 }
 
-#single-action-panel {
-    margin-top: 1.5rem;
-}
-
-#single #single-fold-button {
-    width: auto;
+#single input[type=range] {
+    width: calc(100% - 58px);
+    margin: 1.5rem 0;
 }
 
 #single-action-status {
