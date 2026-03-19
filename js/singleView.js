@@ -158,13 +158,13 @@ function handleVisibilityChange() {
 }
 
 function applyRemoteState(payload) {
-	if (!payload || !payload.state || !Array.isArray(payload.state.players)) return;
-	const player = payload.state.players.find((p) => p.seatIndex === seatIndexParam);
+	if (!payload || !payload.gameState || !Array.isArray(payload.gameState.players)) return;
+	const player = payload.gameState.players.find((p) => p.seatIndex === seatIndexParam);
 	if (!player) return;
 	nameBadge.textContent = player.name;
-	const pot = payload.state.pot || 0;
+	const pot = payload.gameState.pot || 0;
 
-	setCards(player.cards?.[0], player.cards?.[1], player.folded);
+	setCards(player.holeCards?.[0], player.holeCards?.[1], player.folded);
 	setChips(player.chips, player.roundBet, pot);
 	renderNotifications(payload.notifications);
 }
