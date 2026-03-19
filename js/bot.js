@@ -429,15 +429,6 @@ function preflopHandScore(cardA, cardB) {
 /* ===========================
    Decision Helpers
 ========================== */
-function getCommunityCardsFromDom() {
-	return Array.from(
-		document.querySelectorAll("#community-cards .cardslot img"),
-	).map((img) => {
-		const m = img.src.match(/\/cards\/([2-9TJQKA][CDHS])\.svg$/);
-		return m ? m[1] : null;
-	}).filter(Boolean);
-}
-
 function findNextActivePlayer(players, startIdx) {
 	for (let i = 1; i <= players.length; i++) {
 		const idx = (startIdx + i) % players.length;
@@ -459,19 +450,12 @@ function computePositionFactor(players, active, player, currentPhaseIndex) {
 function evaluateHandStrength(player, communityCards, preflop) {
 	if (preflop) {
 		return {
-			strength: preflopHandScore(
-				player.cards[0].dataset.value,
-				player.cards[1].dataset.value,
-			),
+			strength: preflopHandScore(player.holeCards[0], player.holeCards[1]),
 			solvedHand: null,
 		};
 	}
 
-	const cards = [
-		player.cards[0].dataset.value,
-		player.cards[1].dataset.value,
-		...communityCards,
-	];
+	const cards = [...player.holeCards, ...communityCards];
 	const solvedHand = Hand.solve(cards);
 	// pokersolver: rank is a category score (1..9, higher is stronger) + small tiebreaker
 	return { strength: solvedHand.rank + handTiebreaker(solvedHand), solvedHand };
@@ -491,10 +475,7 @@ function computePostflopContext(player, communityCards, preflop) {
 		return context;
 	}
 
-	const hole = [
-		player.cards[0].dataset.value,
-		player.cards[1].dataset.value,
-	];
+	const hole = player.holeCards.slice();
 	const ctxInfo = analyzeHandContext(hole, communityCards);
 	context.topPair = ctxInfo.isTopPair;
 	context.overPair = ctxInfo.isOverPair;
@@ -645,7 +626,7 @@ function decideHarringtonAction({
 /* ===========================
    Decision Engine: Bot Action Selection
 ========================== */
-export function chooseBotAction(player, ctx) {
+export function chooseBotAction(player, gameState) {
 	const {
 		currentBet,
 		pot,
@@ -655,7 +636,8 @@ export function chooseBotAction(player, ctx) {
 		currentPhaseIndex,
 		players,
 		lastRaise,
-	} = ctx;
+		communityCards,
+	} = gameState;
 	// Determine amount needed to call the current bet
 	const needToCall = currentBet - player.roundBet;
 	const needsToCall = needToCall > 0;
@@ -691,18 +673,12 @@ export function chooseBotAction(player, ctx) {
 
 	const positionFactor = computePositionFactor(players, active, player, currentPhaseIndex);
 
-	// Collect community cards from the board
-	const communityCards = getCommunityCardsFromDom();
-
 	// Determine if we are in pre-flop stage
 	const preflop = communityCards.length === 0;
 
 	// Evaluate hand strength
 	const { strength, solvedHand } = evaluateHandStrength(player, communityCards, preflop);
-	const holeCards = [
-		player.cards[0].dataset.value,
-		player.cards[1].dataset.value,
-	];
+	const holeCards = player.holeCards.slice();
 	let holeImprovesHand = false;
 
 	/* Hybrid check: Do hole cards improve the hand?
@@ -1265,8 +1241,8 @@ export function chooseBotAction(player, ctx) {
 		isStab = false;
 	}
 
-	const h1 = formatCard(player.cards[0].dataset.value);
-	const h2 = formatCard(player.cards[1].dataset.value);
+	const h1 = formatCard(player.holeCards[0]);
+	const h2 = formatCard(player.holeCards[1]);
 	const handName = !preflop ? solvedHand.name : "preflop";
 
 	// --- Ensure raises meet the minimum requirements ---
