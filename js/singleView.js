@@ -13,7 +13,6 @@ const betEl = document.querySelector(".bet");
 const potEl = document.querySelector("#pot");
 const notificationsEl = document.querySelector("#singleview-notifications");
 const singleActionPanelEl = document.getElementById("single-action-panel");
-const singleActionStatusEl = document.getElementById("single-action-status");
 const singleFoldButton = document.getElementById("single-fold-button");
 const singleActionButton = document.getElementById("single-action-button");
 const singleAmountSlider = document.getElementById("single-amount-slider");
@@ -167,7 +166,6 @@ function renderActionControls(player, pendingAction) {
 
 	const isNewTurn = currentPendingAction?.turnToken !== pendingAction.turnToken;
 	currentPendingAction = pendingAction;
-	singleActionStatusEl.textContent = "Your turn";
 	singleActionPanelEl.classList.remove("hidden");
 
 	singleAmountSlider.min = pendingAction.minAmount;
