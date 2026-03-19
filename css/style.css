@@ -99,6 +99,12 @@ button:active {
     transform: translateY(1px);
 }
 
+button:disabled {
+    opacity: 0.7;
+    cursor: default;
+    box-shadow: var(--shadow-light);
+}
+
 #start-button,
 #instructions-button,
 #fast-forward-button {
@@ -135,6 +141,10 @@ input[type=range]::-moz-range-thumb {
     cursor: pointer;
     border-radius: 50%;
     box-shadow: var(--shadow);
+}
+
+input[type=range]:disabled {
+    opacity: 0.7;
 }
 
 output {
@@ -243,12 +253,32 @@ SINGLE VIEW
     display: flex;
     flex-direction: column;
     gap: 1rem;
-    margin-top: 2rem
+    margin-top: 2rem;
+    max-height: min(32vh, 18rem);
+    overflow-y: auto;
+    padding-bottom: 0.5rem;
 }
 
 #singleview-notifications div {
     padding-bottom: 0.5rem;
     border-bottom: 1px dashed var(--font-color);
+}
+
+#single-action-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    margin-top: 2rem;
+    padding: 1.5rem 0 calc(1.5rem + env(safe-area-inset-bottom));
+    background: linear-gradient(180deg, hsla(220, 40%, 30%, 0) 0%, var(--blue) 18%);
+}
+
+#single-action-status {
+    color: var(--yellow);
+    text-align: center;
 }
 
 /*

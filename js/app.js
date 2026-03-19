@@ -100,8 +100,10 @@ if (SPEED_MODE) {
 }
 
 const STATE_SYNC_ENDPOINT = "https://poker.tehes.deno.net/state";
+const ACTION_SYNC_ENDPOINT = "https://poker.tehes.deno.net/action";
 let tableId = null;
 const STATE_SYNC_DELAY = 750;
+const ACTION_POLL_INTERVAL = 1000;
 let stateSyncTimer = null;
 let runoutPhaseTimer = null;
 let summaryButtonsVisible = false;
@@ -153,6 +155,7 @@ const gameState = {
 	communityCards: [],
 	players: [],
 	allPlayers: [],
+	pendingAction: null,
 	smallBlind: INITIAL_SMALL_BLIND,
 	bigBlind: INITIAL_BIG_BLIND,
 	lastRaise: INITIAL_BIG_BLIND,
@@ -169,6 +172,7 @@ gameState.toJSON = function () {
 		raisesThisRound: this.raisesThisRound,
 		dealerOrbitCount: this.dealerOrbitCount,
 		communityCards: this.communityCards.slice(),
+		pendingAction: this.pendingAction ? { ...this.pendingAction } : null,
 		players: this.players,
 		timestamp: Date.now(),
 	};
@@ -679,6 +683,132 @@ function getCommunityCardCodes() {
 	return gameState.communityCards.slice();
 }
 
+function hasStateSyncEnabled() {
+	return tableId !== null;
+}
+
+function getHumanPlayerCount(players = gameState.players) {
+	return players.filter((player) => !player.isBot).length;
+}
+
+function shouldEnableStateSyncForGame() {
+	return getHumanPlayerCount() >= 2;
+}
+
+function syncTableUrlWithState() {
+	const tableUrl = new URL(globalThis.location.href);
+	if (tableId === null) {
+		tableUrl.searchParams.delete("tableId");
+	} else {
+		tableUrl.searchParams.set("tableId", tableId);
+	}
+	globalThis.history.replaceState(null, "", tableUrl.toString());
+}
+
+function initStateSyncForGame() {
+	if (!shouldEnableStateSyncForGame()) {
+		tableId = null;
+		syncTableUrlWithState();
+		return;
+	}
+
+	const tableUrl = new URL(globalThis.location.href);
+	tableId = tableUrl.searchParams.get("tableId") || Math.random().toString(36).slice(2, 8);
+	syncTableUrlWithState();
+}
+
+function createTurnToken() {
+	return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function getPlayerActionState(player) {
+	const needToCall = Math.max(0, gameState.currentBet - player.roundBet);
+	const minAmount = gameState.currentPhaseIndex > 0 && gameState.currentBet === 0
+		? 0
+		: Math.min(needToCall, player.chips);
+	const maxAmount = player.chips;
+	const minRaise = needToCall + gameState.lastRaise;
+	return {
+		needToCall,
+		minAmount,
+		maxAmount,
+		minRaise,
+		canCheck: needToCall === 0,
+	};
+}
+
+function getActionButtonLabel(amount, actionState) {
+	if (amount === 0) {
+		return "Check";
+	}
+	if (amount === actionState.maxAmount) {
+		return "All-In";
+	}
+	if (amount === actionState.needToCall) {
+		return "Call";
+	}
+	return "Raise";
+}
+
+function setPendingAction(player) {
+	if (!hasStateSyncEnabled() || !player || player.isBot || player.folded || player.allIn) {
+		if (gameState.pendingAction !== null) {
+			gameState.pendingAction = null;
+			queueStateSync();
+		}
+		return null;
+	}
+
+	const actionState = getPlayerActionState(player);
+	const pendingAction = {
+		seatIndex: player.seatIndex,
+		turnToken: createTurnToken(),
+		needToCall: actionState.needToCall,
+		minAmount: actionState.minAmount,
+		maxAmount: actionState.maxAmount,
+		minRaise: actionState.minRaise,
+		canCheck: actionState.canCheck,
+		buttonLabel: getActionButtonLabel(actionState.minAmount, actionState),
+	};
+	gameState.pendingAction = pendingAction;
+	queueStateSync();
+	return pendingAction;
+}
+
+function clearPendingAction() {
+	if (gameState.pendingAction === null) {
+		return;
+	}
+	gameState.pendingAction = null;
+	queueStateSync();
+}
+
+async function fetchPendingRemoteAction(turnToken) {
+	if (!hasStateSyncEnabled() || !turnToken) {
+		return null;
+	}
+
+	try {
+		const url = `${ACTION_SYNC_ENDPOINT}?tableId=${encodeURIComponent(tableId)}&turnToken=${
+			encodeURIComponent(turnToken)
+		}`;
+		const res = await fetch(url, {
+			cache: "no-store",
+		});
+		if (res.status === 204) {
+			return null;
+		}
+		if (!res.ok) {
+			logFlow("remote action poll failed", { status: res.status });
+			return null;
+		}
+		return await res.json();
+	} catch (error) {
+		logFlow("remote action poll failed", error);
+		return null;
+	}
+}
+
 async function sendTableState() {
 	const payload = {
 		tableId: tableId,
@@ -698,7 +828,7 @@ async function sendTableState() {
 }
 
 function queueStateSync() {
-	if (stateSyncTimer || gameState.openCardsMode || gameState.spectatorMode) return;
+	if (stateSyncTimer || !hasStateSyncEnabled()) return;
 	stateSyncTimer = setTimeout(() => {
 		stateSyncTimer = null;
 		sendTableState();
@@ -1189,14 +1319,7 @@ function startGame(event) {
 			instructionsButton.classList.add("hidden");
 			closeAllOverlays();
 			gameState.gameStarted = true;
-
-			const tableUrl = new URL(globalThis.location.href);
-			tableId = tableUrl.searchParams.get("tableId");
-			if (!tableId) {
-				tableId = Math.random().toString(36).slice(2, 8);
-			}
-			tableUrl.searchParams.set("tableId", tableId);
-			globalThis.history.replaceState(null, "", tableUrl.toString());
+			initStateSyncForGame();
 
 			preFlop();
 		} else {
@@ -1261,7 +1384,9 @@ function createPlayers() {
 					holeCardsUrl.searchParams.set("name", playerObject.name);
 					holeCardsUrl.searchParams.set("chips", `${playerObject.chips}`);
 					holeCardsUrl.searchParams.set("seatIndex", `${playerObject.seatIndex}`);
-					holeCardsUrl.searchParams.set("tableId", tableId);
+					if (tableId !== null) {
+						holeCardsUrl.searchParams.set("tableId", tableId);
+					}
 					holeCardsUrl.searchParams.set("t", `${Date.now()}`);
 					const url = holeCardsUrl.toString();
 					qrContainer.innerHTML = "";
@@ -1518,7 +1643,7 @@ function preFlop() {
 		}
 	});
 	gameState.players = remainingPlayers;
-	const humanCount = gameState.players.filter((p) => !p.isBot).length;
+	const humanCount = getHumanPlayerCount();
 	gameState.openCardsMode = humanCount === 1;
 	gameState.spectatorMode = humanCount === 0;
 	updateWinProbabilityDisplays();
@@ -1556,6 +1681,7 @@ function preFlop() {
 		champion.seat.classList.add("winner");
 		logFlow("tournament_end", { champion: champion.name });
 		gameState.gameFinished = true;
+		clearPendingAction();
 		hideActionControls();
 		resetRuntimeFastForward();
 		if (!SPEED_MODE) {
@@ -1649,6 +1775,224 @@ function dealCommunityCards(amount) {
 	}
 }
 
+function handleHumanTurn({ player, cycles, anyUncalled, nextPlayer }) {
+	document.querySelectorAll(".seat").forEach((s) => s.classList.remove("active"));
+	player.seat.classList.add("active");
+	actionButton.classList.remove("hidden");
+	foldButton.classList.remove("hidden");
+	amountSlider.classList.remove("hidden");
+	sliderOutput.classList.remove("hidden");
+
+	const actionState = getPlayerActionState(player);
+	const pendingAction = setPendingAction(player);
+	let remoteActionTimer = null;
+	let remoteActionInFlight = false;
+	let turnResolved = false;
+
+	amountSlider.min = actionState.minAmount;
+	amountSlider.max = actionState.maxAmount;
+	amountSlider.step = CHIP_UNIT;
+	amountSlider.value = actionState.minAmount;
+	sliderOutput.value = actionState.minAmount;
+
+	function onSliderInput() {
+		const val = Number.parseInt(amountSlider.value, 10);
+		const isInvalidRaise = val > actionState.needToCall &&
+			val < actionState.minRaise &&
+			val < player.chips;
+		if (isInvalidRaise) {
+			sliderOutput.classList.add("invalid");
+		} else {
+			sliderOutput.classList.remove("invalid");
+		}
+		actionButton.textContent = getActionButtonLabel(val, actionState);
+	}
+
+	function onSliderChange() {
+		const val = Number.parseInt(amountSlider.value, 10);
+		if (val > actionState.needToCall && val < actionState.minRaise) {
+			const minRaiseValue = Math.min(player.chips, actionState.minRaise);
+			amountSlider.value = minRaiseValue;
+			sliderOutput.value = minRaiseValue;
+			sliderOutput.classList.remove("invalid");
+			onSliderInput();
+		}
+	}
+
+	function cleanupHumanTurn() {
+		player.seat.classList.remove("active");
+		amountSlider.removeEventListener("input", onSliderInput);
+		amountSlider.removeEventListener("change", onSliderChange);
+		foldButton.removeEventListener("click", onFold);
+		actionButton.removeEventListener("click", onAction);
+		hideActionControls();
+		if (remoteActionTimer !== null) {
+			clearTimeout(remoteActionTimer);
+			remoteActionTimer = null;
+		}
+	}
+
+	function continueHumanTurn(logPrefix, advanceReason) {
+		if (cycles < gameState.players.length) {
+			logFlow(`${logPrefix} next`, { name: player.name });
+			nextPlayer();
+		} else if (anyUncalled()) {
+			logFlow(`${logPrefix} wait`, { name: player.name });
+			nextPlayer();
+		} else {
+			logFlow(`${logPrefix} advance`, { name: player.name });
+			queueRunoutPhaseAdvance(advanceReason);
+		}
+	}
+
+	function applyHumanBetAction(rawAmount) {
+		const currentActionState = getPlayerActionState(player);
+		let bet = Number.isNaN(rawAmount) ? currentActionState.minAmount : rawAmount;
+		bet = Math.max(0, Math.min(bet, player.chips));
+
+		if (bet === 0) {
+			notifyPlayerAction(player, "check", 0);
+			return "human";
+		}
+		if (bet === player.chips) {
+			const actual = player.placeBet(bet);
+			addToPot(actual);
+			if (actual >= currentActionState.minRaise) {
+				gameState.currentBet = player.roundBet;
+				gameState.lastRaise = actual - currentActionState.needToCall;
+				gameState.raisesThisRound++;
+			} else if (actual >= currentActionState.needToCall) {
+				gameState.currentBet = Math.max(gameState.currentBet, player.roundBet);
+			}
+			notifyPlayerAction(player, "allin", actual);
+			return "human-allin";
+		}
+		if (bet === currentActionState.needToCall) {
+			const actual = player.placeBet(bet);
+			addToPot(actual);
+			notifyPlayerAction(player, "call", actual);
+			return "human";
+		}
+
+		const autoMin = bet < currentActionState.minRaise && bet < player.chips;
+		if (autoMin) {
+			bet = Math.min(player.chips, currentActionState.minRaise);
+		}
+		const actual = player.placeBet(bet);
+		gameState.currentBet = player.roundBet;
+		addToPot(actual);
+		notifyPlayerAction(player, "raise", actual);
+		gameState.lastRaise = actual - currentActionState.needToCall;
+		gameState.raisesThisRound++;
+		return "human";
+	}
+
+	function normalizeRemoteActionRequest(remoteAction) {
+		if (
+			!remoteAction ||
+			remoteAction.seatIndex !== player.seatIndex ||
+			remoteAction.turnToken !== pendingAction?.turnToken
+		) {
+			return null;
+		}
+
+		switch (remoteAction.action) {
+			case "fold":
+				return { type: "fold" };
+			case "check":
+				return actionState.canCheck ? { type: "bet", amount: 0 } : null;
+			case "call":
+				return actionState.needToCall > 0
+					? { type: "bet", amount: Math.min(actionState.needToCall, player.chips) }
+					: null;
+			case "allin":
+				return player.chips > 0 ? { type: "bet", amount: player.chips } : null;
+			case "raise": {
+				const amount = Number.parseInt(remoteAction.amount, 10);
+				if (Number.isNaN(amount) || amount <= actionState.needToCall) {
+					return null;
+				}
+				return { type: "bet", amount: Math.min(amount, player.chips) };
+			}
+			default:
+				return null;
+		}
+	}
+
+	function submitHumanTurn(request) {
+		if (turnResolved) {
+			return false;
+		}
+
+		turnResolved = true;
+		clearPendingAction();
+		cleanupHumanTurn();
+
+		if (request.type === "fold") {
+			player.folded = true;
+			notifyPlayerAction(player, "fold", 0);
+			player.qr.hide();
+			continueHumanTurn("fold", "fold");
+			return true;
+		}
+
+		const advanceReason = applyHumanBetAction(request.amount);
+		continueHumanTurn("human", advanceReason);
+		return true;
+	}
+
+	function scheduleRemoteActionPoll() {
+		if (!pendingAction?.turnToken || turnResolved) {
+			return;
+		}
+		remoteActionTimer = setTimeout(pollRemoteAction, ACTION_POLL_INTERVAL);
+	}
+
+	async function pollRemoteAction() {
+		remoteActionTimer = null;
+		if (turnResolved || remoteActionInFlight || !pendingAction?.turnToken) {
+			return;
+		}
+
+		remoteActionInFlight = true;
+		try {
+			const remoteAction = await fetchPendingRemoteAction(pendingAction.turnToken);
+			if (turnResolved) {
+				return;
+			}
+			const normalizedRequest = normalizeRemoteActionRequest(remoteAction);
+			if (normalizedRequest) {
+				submitHumanTurn(normalizedRequest);
+				return;
+			}
+		} finally {
+			remoteActionInFlight = false;
+		}
+
+		if (!turnResolved) {
+			scheduleRemoteActionPoll();
+		}
+	}
+
+	function onAction() {
+		const amount = Number.parseInt(amountSlider.value, 10);
+		submitHumanTurn({ type: "bet", amount });
+	}
+
+	function onFold() {
+		submitHumanTurn({ type: "fold" });
+	}
+
+	amountSlider.addEventListener("input", onSliderInput);
+	amountSlider.addEventListener("change", onSliderChange);
+	foldButton.addEventListener("click", onFold);
+	actionButton.addEventListener("click", onAction);
+	onSliderInput();
+	if (pendingAction?.turnToken) {
+		scheduleRemoteActionPoll();
+	}
+}
+
 function startBettingRound() {
 	if (gameState.currentPhaseIndex > 0) {
 		// Reset state for post-flop rounds before any checks/logging
@@ -1664,6 +2008,7 @@ function startBettingRound() {
 	});
 	// Clear action indicators from the previous betting round
 	gameState.players.forEach((p) => p.seat.classList.remove("checked", "called", "raised"));
+	clearPendingAction();
 
 	// EARLY EXIT: Skip betting if only one player remains or all are all-in
 	const activePlayers = gameState.players.filter((p) => !p.folded);
@@ -1673,6 +2018,7 @@ function startBettingRound() {
 			active: activePlayers.length,
 			actionable: actionable.length,
 		});
+		clearPendingAction();
 		return queueRunoutPhaseAdvance("startBettingRound");
 	}
 
@@ -1718,6 +2064,7 @@ function startBettingRound() {
 					roundBet: p.roundBet,
 				})),
 			});
+			clearPendingAction();
 			return queueRunoutPhaseAdvance("nextPlayer");
 		}
 
@@ -1761,6 +2108,7 @@ function startBettingRound() {
 					return setTimeout(nextPlayer, 0); // schedule asynchronously to break call chain
 				}
 				logFlow("advance phase", { name: player.name });
+				clearPendingAction();
 				return queueRunoutPhaseAdvance("matched");
 			}
 		}
@@ -1824,14 +2172,8 @@ function startBettingRound() {
 			return;
 		}
 
-		// Highlight active player
-		// remove previous highlight
-		document.querySelectorAll(".seat").forEach((s) => s.classList.remove("active"));
-		player.seat.classList.add("active");
-		actionButton.classList.remove("hidden");
-		foldButton.classList.remove("hidden");
-		amountSlider.classList.remove("hidden");
-		sliderOutput.classList.remove("hidden");
+		return handleHumanTurn({ player, cycles, anyUncalled, nextPlayer });
+		/*
 
 		const needToCall = gameState.currentBet - player.roundBet;
 
@@ -1990,6 +2332,7 @@ function startBettingRound() {
 
 		foldButton.addEventListener("click", onFold);
 		actionButton.addEventListener("click", onAction);
+		*/
 	}
 
 	nextPlayer();
@@ -2051,6 +2394,7 @@ function finishHandAfterShowdown() {
 	});
 
 	gameState.handInProgress = false;
+	clearPendingAction();
 	hideActionControls();
 	if (SPEED_MODE) {
 		queueStateSync();
@@ -2546,7 +2890,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-19-v3";
+const SERVICE_WORKER_VERSION = "2026-03-19-v7";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

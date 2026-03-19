@@ -42,7 +42,9 @@ const RANKS = ["A", "K", "Q", "J", "T", "9", "8", "7", "6", "5", "4", "3", "2"];
 const CORE_ASSETS = [
 	"./", // resolves to index.html
 	"./index.html",
+	"./hole-cards.html",
 	"./js/app.js",
+	"./js/singleView.js",
 	"./js/serviceWorkerRegistration.js",
 	"./js/kjua.min.js",
 	"./css/style.css",
