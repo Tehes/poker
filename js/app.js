@@ -1,13 +1,15 @@
 /* --------------------------------------------------------------------------------------------------
 Imports
 ---------------------------------------------------------------------------------------------------*/
+
 import { chooseBotAction, enqueueBotAction, setBotPlaybackFast } from "./bot.js";
 import { Hand } from "./pokersolver.js";
 import { initServiceWorker } from "./serviceWorkerRegistration.js";
 
 /* --------------------------------------------------------------------------------------------------
-Variables
+Configuration And DOM References
 ---------------------------------------------------------------------------------------------------*/
+
 const startButton = document.querySelector("#start-button");
 const instructionsButton = document.querySelector("#instructions-button");
 const rotateIcons = document.querySelectorAll(".seat .rotate");
@@ -45,7 +47,10 @@ const overlays = {
 		el: instructionsOverlay,
 	},
 };
-const Phases = ["preflop", "flop", "turn", "river", "showdown"];
+
+/* --------------------------------------------------------------------------------------------------
+Runtime Flags And Mutable UI State
+---------------------------------------------------------------------------------------------------*/
 
 const MAX_ITEMS = 8;
 const notifArr = [];
@@ -64,27 +69,7 @@ const FAST_FORWARD_RUNOUT_PHASE_DELAY = 320;
 const FAST_FORWARD_CHIP_TRANSFER_DURATION = 160;
 const FAST_FORWARD_CHIP_TRANSFER_STEPS = 8;
 const WINNER_REACTION_DURATION = 2000;
-const BOT_REVEAL_CHANCE = 0.3; // Chance that a bot will choose to reveal part of its hand post-flop.
-const BOT_DOUBLE_REVEAL_HANDS = new Set(["Straight Flush", "Four of a Kind", "Full House"]);
-const WINNER_REACTION_EMOJIS = {
-	reveal: ["😉", "😜", "🤭"],
-	uncontested: ["😎", "😏", "😌"],
-	split: ["🤝"],
-	comeback: ["💪", "😅"],
-	monsterHand: ["🤩", "🥳"],
-	strongHand: ["😁", "😄", "😬"],
-	bigPot: ["🤑"],
-	fallback: ["🙂", "😊"],
-};
-const WINNER_REACTION_MONSTER_HANDS = new Set(["Full House", "Four of a Kind", "Straight Flush"]);
-const WINNER_REACTION_STRONG_HANDS = new Set(["Straight", "Flush"]);
-const CARD_RANK_ORDER = "23456789TJQKA";
-const CARD_SUIT_SYMBOLS = {
-	C: "♣",
-	D: "♦",
-	H: "♥",
-	S: "♠",
-};
+
 const HISTORY_LOG = false; // Set to true to enable history logging in the console
 let DEBUG_FLOW = false; // Set to true for verbose game-flow logging
 const CHIP_UNIT = 10;
@@ -114,6 +99,34 @@ let autoplayToGameEnd = false;
 let totalHands = 0;
 let hadHumansAtStart = false;
 let exitEventSent = false;
+
+/* --------------------------------------------------------------------------------------------------
+Game Constants And Game State
+---------------------------------------------------------------------------------------------------*/
+
+const Phases = ["preflop", "flop", "turn", "river", "showdown"];
+
+const BOT_REVEAL_CHANCE = 0.3; // Chance that a bot will choose to reveal part of its hand post-flop.
+const BOT_DOUBLE_REVEAL_HANDS = new Set(["Straight Flush", "Four of a Kind", "Full House"]);
+const WINNER_REACTION_EMOJIS = {
+	reveal: ["😉", "😜", "🤭"],
+	uncontested: ["😎", "😏", "😌"],
+	split: ["🤝"],
+	comeback: ["💪", "😅"],
+	monsterHand: ["🤩", "🥳"],
+	strongHand: ["😁", "😄", "😬"],
+	bigPot: ["🤑"],
+	fallback: ["🙂", "😊"],
+};
+const WINNER_REACTION_MONSTER_HANDS = new Set(["Full House", "Four of a Kind", "Straight Flush"]);
+const WINNER_REACTION_STRONG_HANDS = new Set(["Straight", "Flush"]);
+const CARD_RANK_ORDER = "23456789TJQKA";
+const CARD_SUIT_SYMBOLS = {
+	C: "♣",
+	D: "♦",
+	H: "♥",
+	S: "♠",
+};
 
 // Clubs, Diamonds, Hearts, Spades
 // 2,3,4,5,6,7,8,9,T,J,Q,K,A
@@ -179,8 +192,9 @@ gameState.toJSON = function () {
 };
 
 /* --------------------------------------------------------------------------------------------------
-functions
+Low-Level Utilities And Formatting Helpers
 ---------------------------------------------------------------------------------------------------*/
+
 Array.prototype.shuffle = function () {
 	let i = this.length;
 	while (i) {
@@ -194,67 +208,6 @@ Array.prototype.shuffle = function () {
 
 function getCurrentPhase() {
 	return Phases[gameState.currentPhaseIndex] ?? null;
-}
-
-function renderPot() {
-	potEl.textContent = gameState.pot;
-}
-
-function setPot(amount) {
-	gameState.pot = amount;
-	renderPot();
-}
-
-function addToPot(amount) {
-	gameState.pot += amount;
-	renderPot();
-}
-
-function renderCommunityCards() {
-	communityCardSlots.forEach((slot, index) => {
-		const cardCode = gameState.communityCards[index];
-		if (!cardCode) {
-			slot.innerHTML = "";
-			return;
-		}
-		slot.innerHTML = `<img src="cards/${cardCode}.svg">`;
-	});
-}
-
-function setCommunityCards(cardCodes) {
-	gameState.communityCards = cardCodes.slice();
-	renderCommunityCards();
-}
-
-function appendCommunityCards(cardCodes) {
-	gameState.communityCards = gameState.communityCards.concat(cardCodes);
-	renderCommunityCards();
-}
-
-function setPlayerHoleCards(player, holeCards) {
-	player.holeCards = holeCards.slice();
-	renderPlayerHoleCards(player);
-}
-
-function setPlayerVisibleHoleCards(player, visibleHoleCards) {
-	player.visibleHoleCards = visibleHoleCards.slice();
-	renderPlayerHoleCards(player);
-}
-
-function renderPlayerHoleCards(player) {
-	player.cardEls.forEach((cardEl, index) => {
-		const cardCode = player.holeCards[index];
-		const isVisible = player.visibleHoleCards[index] && cardCode;
-		cardEl.src = isVisible ? `cards/${cardCode}.svg` : "cards/1B.svg";
-	});
-}
-
-function revealPlayerHoleCards(player) {
-	setPlayerVisibleHoleCards(player, [true, true]);
-}
-
-function hidePlayerHoleCards(player) {
-	setPlayerVisibleHoleCards(player, [false, false]);
 }
 
 function takeDeckCard() {
@@ -342,6 +295,75 @@ function getVisualChipCount(chips, chipLeader) {
 		MAX_VISUAL_STACK_CHIPS,
 		Math.ceil((chips / chipLeader) * MAX_VISUAL_STACK_CHIPS),
 	);
+}
+
+function combinationCount(n, k) {
+	if (k < 0 || k > n) {
+		return 0;
+	}
+	const kk = Math.min(k, n - k);
+	let result = 1;
+	for (let i = 1; i <= kk; i++) {
+		result = (result * (n - kk + i)) / i;
+	}
+	return Math.round(result);
+}
+
+/* --------------------------------------------------------------------------------------------------
+Render And Overlay Helpers
+---------------------------------------------------------------------------------------------------*/
+
+function renderPot() {
+	potEl.textContent = gameState.pot;
+}
+
+function setPot(amount) {
+	gameState.pot = amount;
+	renderPot();
+}
+
+function addToPot(amount) {
+	gameState.pot += amount;
+	renderPot();
+}
+
+function renderCommunityCards() {
+	communityCardSlots.forEach((slot, index) => {
+		const cardCode = gameState.communityCards[index];
+		if (!cardCode) {
+			slot.innerHTML = "";
+			return;
+		}
+		slot.innerHTML = `<img src="cards/${cardCode}.svg">`;
+	});
+}
+
+function setCommunityCards(cardCodes) {
+	gameState.communityCards = cardCodes.slice();
+	renderCommunityCards();
+}
+
+function appendCommunityCards(cardCodes) {
+	gameState.communityCards = gameState.communityCards.concat(cardCodes);
+	renderCommunityCards();
+}
+
+function setPlayerHoleCards(player, holeCards) {
+	player.holeCards = holeCards.slice();
+	renderPlayerHoleCards(player);
+}
+
+function setPlayerVisibleHoleCards(player, visibleHoleCards) {
+	player.visibleHoleCards = visibleHoleCards.slice();
+	renderPlayerHoleCards(player);
+}
+
+function renderPlayerHoleCards(player) {
+	player.cardEls.forEach((cardEl, index) => {
+		const cardCode = player.holeCards[index];
+		const isVisible = player.visibleHoleCards[index] && cardCode;
+		cardEl.src = isVisible ? `cards/${cardCode}.svg` : "cards/1B.svg";
+	});
 }
 
 function renderChipStacks(playerList) {
@@ -450,6 +472,10 @@ function setSummaryButtonsVisible(isVisible) {
 	syncLogUi();
 }
 
+/* --------------------------------------------------------------------------------------------------
+Notification And Playback Helpers
+---------------------------------------------------------------------------------------------------*/
+
 function isFastPlaybackActive() {
 	return SPEED_MODE || handFastForwardActive || autoplayToGameEnd;
 }
@@ -556,6 +582,28 @@ function syncRuntimePlayback() {
 	refreshNotificationPlayback();
 }
 
+function enqueueNotification(msg) {
+	pendingNotif.push(msg);
+	if (isFastPlaybackActive()) {
+		flushPendingNotifications();
+		return;
+	}
+	if (!isNotifProcessing) {
+		showNextNotif();
+	}
+}
+
+function showNextNotif() {
+	if (pendingNotif.length === 0) {
+		isNotifProcessing = false;
+		notifTimer = null;
+		return;
+	}
+	isNotifProcessing = true;
+	deliverNotification(pendingNotif.shift());
+	scheduleNextNotif();
+}
+
 function clearActionLabels() {
 	gameState.players.forEach((player) => {
 		if (!player?.actionLabelTimer) {
@@ -626,6 +674,10 @@ function hideActionControls() {
 	updateFastForwardButton();
 }
 
+/* --------------------------------------------------------------------------------------------------
+Analytics And Remote State-Sync Helpers
+---------------------------------------------------------------------------------------------------*/
+
 function getHandsPlayedBucket(handCount) {
 	if (handCount < 20) return "<20";
 	if (handCount <= 25) return "20-25";
@@ -677,10 +729,6 @@ function registerBotReveal(player) {
 	globalThis.umami?.track("Poker", {
 		botReveal: true,
 	});
-}
-
-function getCommunityCardCodes() {
-	return gameState.communityCards.slice();
 }
 
 function hasStateSyncEnabled() {
@@ -835,16 +883,20 @@ function queueStateSync() {
 	}, STATE_SYNC_DELAY);
 }
 
-function combinationCount(n, k) {
-	if (k < 0 || k > n) {
-		return 0;
-	}
-	const kk = Math.min(k, n - k);
-	let result = 1;
-	for (let i = 1; i <= kk; i++) {
-		result = (result * (n - kk + i)) / i;
-	}
-	return Math.round(result);
+/* --------------------------------------------------------------------------------------------------
+Card Visibility, Hand-Strength, Reveal, And Winner-Reaction Logic
+---------------------------------------------------------------------------------------------------*/
+
+function revealPlayerHoleCards(player) {
+	setPlayerVisibleHoleCards(player, [true, true]);
+}
+
+function hidePlayerHoleCards(player) {
+	setPlayerVisibleHoleCards(player, [false, false]);
+}
+
+function getCommunityCardCodes() {
+	return gameState.communityCards.slice();
 }
 
 function isAllInRunout() {
@@ -1123,26 +1175,6 @@ function updateHandStrengthDisplays() {
 	});
 }
 
-function queueRunoutPhaseAdvance(reason = "") {
-	hideActionControls();
-	const runoutPhaseDelay = getRunoutPhaseDelay();
-	if (!isAllInRunout() || runoutPhaseDelay === 0) {
-		return setPhase();
-	}
-	if (runoutPhaseTimer) {
-		return;
-	}
-	logFlow("delay runout phase", {
-		reason,
-		phase: getCurrentPhase(),
-		delay: runoutPhaseDelay,
-	});
-	runoutPhaseTimer = setTimeout(() => {
-		runoutPhaseTimer = null;
-		setPhase();
-	}, runoutPhaseDelay);
-}
-
 function updateWinProbabilityDisplays() {
 	gameState.players.forEach((p) => {
 		const winEl = p.winProbabilityEl || p.seat.querySelector(".win-probability");
@@ -1296,6 +1328,10 @@ function computeSpectatorWinProbabilities(reason = "") {
 		})),
 	});
 }
+
+/* --------------------------------------------------------------------------------------------------
+Game Setup And Hand Lifecycle
+---------------------------------------------------------------------------------------------------*/
 
 function startGame(event) {
 	if (!gameState.gameStarted) {
@@ -1595,6 +1631,7 @@ function dealCards() {
  * Execute the standard pre-flop steps: rotate dealer, post blinds, deal cards, start betting.
  */
 function preFlop() {
+	// --- Hand Start And Reset ---------------------------------------------------
 	// Analytics: count hands and mark start time
 	totalHands++;
 	// Reset phase to preflop
@@ -1630,6 +1667,7 @@ function preFlop() {
 	// Clear community cards from last hand
 	setCommunityCards([]);
 
+	// --- Busted Player Cleanup ---------------------------------------------------
 	// Remove players with zero chips from the table
 	const remainingPlayers = [];
 	gameState.players.forEach((p) => {
@@ -1643,12 +1681,14 @@ function preFlop() {
 		}
 	});
 	gameState.players = remainingPlayers;
+	// --- Visibility Mode Recalculation -------------------------------------------
 	const humanCount = getHumanPlayerCount();
 	gameState.openCardsMode = humanCount === 1;
 	gameState.spectatorMode = humanCount === 0;
 	updateWinProbabilityDisplays();
 	updateHandStrengthDisplays();
 
+	// --- Per-Hand Stats Reset ----------------------------------------------------
 	// Start statistics for a new hand
 	gameState.players.forEach((p) => {
 		p.stats.hands++;
@@ -1671,7 +1711,7 @@ function preFlop() {
 		gameState.dealerOrbitCount = -1;
 	}
 
-	// ----------------------------------------------------------
+	// --- Game Over Check ---------------------------------------------------------
 	// GAME OVER: only one player left at the table
 	if (gameState.players.length === 1) {
 		const champion = gameState.players[0];
@@ -1698,6 +1738,7 @@ function preFlop() {
 	}
 	// ----------------------------------------------------------
 
+	// --- Dealer, Blinds, Deal, And First Round ----------------------------------
 	gameState.handInProgress = true;
 	updateFastForwardButton();
 
@@ -1720,6 +1761,27 @@ function preFlop() {
 	// Start first betting round (preflop)
 	queueStateSync();
 	startBettingRound();
+}
+
+function dealCommunityCards(amount) {
+	if (communityCardSlots.length - gameState.communityCards.length < amount) {
+		console.warn("Not enough empty slots for", amount);
+		logFlow("dealCommunityCards: not enough slots");
+		return;
+	}
+	trackUsedCard(takeDeckCard()); // burn
+	const dealtCards = [];
+	for (let i = 0; i < amount; i++) {
+		const card = trackUsedCard(takeDeckCard());
+		if (card) {
+			dealtCards.push(card);
+		}
+	}
+	appendCommunityCards(dealtCards);
+	updateHandStrengthDisplays();
+	if (gameState.spectatorMode || isAllInRunout()) {
+		computeSpectatorWinProbabilities("dealCommunityCards");
+	}
 }
 
 function setPhase() {
@@ -1754,25 +1816,150 @@ function setPhase() {
 	queueStateSync();
 }
 
-function dealCommunityCards(amount) {
-	if (communityCardSlots.length - gameState.communityCards.length < amount) {
-		console.warn("Not enough empty slots for", amount);
-		logFlow("dealCommunityCards: not enough slots");
+function queueRunoutPhaseAdvance(reason = "") {
+	hideActionControls();
+	const runoutPhaseDelay = getRunoutPhaseDelay();
+	if (!isAllInRunout() || runoutPhaseDelay === 0) {
+		return setPhase();
+	}
+	if (runoutPhaseTimer) {
 		return;
 	}
-	trackUsedCard(takeDeckCard()); // burn
-	const dealtCards = [];
-	for (let i = 0; i < amount; i++) {
-		const card = trackUsedCard(takeDeckCard());
-		if (card) {
-			dealtCards.push(card);
+	logFlow("delay runout phase", {
+		reason,
+		phase: getCurrentPhase(),
+		delay: runoutPhaseDelay,
+	});
+	runoutPhaseTimer = setTimeout(() => {
+		runoutPhaseTimer = null;
+		setPhase();
+	}, runoutPhaseDelay);
+}
+
+/* --------------------------------------------------------------------------------------------------
+Turn Handling And Betting Round Flow
+---------------------------------------------------------------------------------------------------*/
+
+function notifyPlayerAction(player, action = "", amount = 0) {
+	// Remove any previous action indicator before adding a new one
+	player.seat.classList.remove("checked", "called", "raised", "allin");
+	// Update statistics based on action and phase
+	if (gameState.currentPhaseIndex === 0) {
+		if (action === "call" || action === "raise" || action === "allin") {
+			player.stats.vpip++;
+		}
+		if (action === "raise" || action === "allin") {
+			player.stats.pfr++;
+		}
+	} else {
+		if (action === "raise" || action === "allin") {
+			player.stats.aggressiveActs++;
+		}
+		if (action === "call") {
+			player.stats.calls++;
 		}
 	}
-	appendCommunityCards(dealtCards);
-	updateHandStrengthDisplays();
-	if (gameState.spectatorMode || isAllInRunout()) {
-		computeSpectatorWinProbabilities("dealCommunityCards");
+
+	if (gameState.currentPhaseIndex === 0 && (action === "raise" || action === "allin")) {
+		gameState.players.forEach((p) => {
+			if (p.botLine) {
+				p.botLine.preflopAggressor = false;
+			}
+		});
+		if (player.botLine) {
+			player.botLine.preflopAggressor = true;
+		}
 	}
+
+	if (action === "allin") {
+		player.stats.allins++;
+	}
+
+	if (action === "fold") {
+		player.stats.folds++;
+		if (gameState.currentPhaseIndex === 0) {
+			player.stats.foldsPreflop++;
+		} else {
+			player.stats.foldsPostflop++;
+		}
+	}
+
+	let msg = "";
+	let actionLabel = "";
+	switch (action) {
+		case "fold":
+			player.seat.classList.add("folded");
+			actionLabel = "Fold";
+			msg = `${player.name} folded.`;
+			break;
+		case "check":
+			player.seat.classList.add("checked");
+			actionLabel = "Check";
+			msg = `${player.name} checked.`;
+			break;
+		case "call":
+			player.seat.classList.add("called");
+			actionLabel = `Call ${amount}`;
+			msg = `${player.name} called ${amount}.`;
+			break;
+		case "raise":
+			player.seat.classList.add("raised");
+			actionLabel = `Raise ${amount}`;
+			msg = `${player.name} raised to ${amount}.`;
+			break;
+		case "allin":
+			player.seat.classList.add("allin");
+			actionLabel = `All-In ${amount}`;
+			msg = `${player.name} is all-in.`;
+			break;
+		default:
+			msg = `${player.name} did something…`;
+	}
+	if (actionLabel) {
+		const nameEl = player.seat.querySelector("h3");
+		if (player.actionLabelTimer) {
+			clearTimeout(player.actionLabelTimer);
+		}
+		player.seat.classList.add("action-label");
+		nameEl.textContent = actionLabel.split(" ")[0];
+		const actionLabelDuration = getActionLabelDuration();
+		if (actionLabelDuration === 0) {
+			nameEl.textContent = player.name;
+			player.seat.classList.remove("action-label");
+			player.actionLabelTimer = null;
+		} else {
+			player.actionLabelTimer = setTimeout(() => {
+				nameEl.textContent = player.name;
+				player.seat.classList.remove("action-label");
+				player.actionLabelTimer = null;
+			}, actionLabelDuration);
+		}
+	}
+
+	if (action === "fold") {
+		player.winProbability = 0;
+		updateHandStrengthDisplays();
+	}
+
+	if (action !== "check" && isAllInRunout()) {
+		revealActiveHoleCards();
+		if (gameState.currentPhaseIndex > 0) {
+			computeSpectatorWinProbabilities("allin-runout");
+		} else {
+			logFlow("winProbability: preflop all-in runout pending", {
+				action,
+				name: player.name,
+			});
+		}
+	} else if (gameState.spectatorMode && action === "fold") {
+		if (gameState.currentPhaseIndex > 0) {
+			computeSpectatorWinProbabilities("fold");
+		} else {
+			logFlow("winProbability: preflop fold skipped", { name: player.name });
+		}
+	}
+	updateFastForwardButton();
+	enqueueNotification(msg);
 }
 
 function handleHumanTurn({ player, cycles, anyUncalled, nextPlayer }) {
@@ -1994,6 +2181,7 @@ function handleHumanTurn({ player, cycles, anyUncalled, nextPlayer }) {
 }
 
 function startBettingRound() {
+	// --- Round Reset -------------------------------------------------------------
 	if (gameState.currentPhaseIndex > 0) {
 		// Reset state for post-flop rounds before any checks/logging
 		gameState.currentBet = 0;
@@ -2010,6 +2198,7 @@ function startBettingRound() {
 	gameState.players.forEach((p) => p.seat.classList.remove("checked", "called", "raised"));
 	clearPendingAction();
 
+	// --- Early Exit Checks -------------------------------------------------------
 	// EARLY EXIT: Skip betting if only one player remains or all are all-in
 	const activePlayers = gameState.players.filter((p) => !p.folded);
 	const actionable = activePlayers.filter((p) => !p.allIn);
@@ -2022,6 +2211,7 @@ function startBettingRound() {
 		return queueRunoutPhaseAdvance("startBettingRound");
 	}
 
+	// --- Start Index -------------------------------------------------------------
 	// 2) Determine start index
 	let startIdx;
 	if (gameState.currentPhaseIndex === 0) {
@@ -2050,6 +2240,7 @@ function startBettingRound() {
 		);
 	}
 
+	// --- Turn Loop ----------------------------------------------------------------
 	function nextPlayer() {
 		// --- GLOBAL GUARD -------------------------------------------------
 		// If no player can act anymore (all folded or all all-in),
@@ -2113,6 +2304,7 @@ function startBettingRound() {
 			}
 		}
 
+		// --- Bot Branch --------------------------------------------------------------
 		// If this is a bot, choose an action based on hand strength
 		if (player.isBot) {
 			document.querySelectorAll(".seat").forEach((s) => s.classList.remove("active"));
@@ -2172,6 +2364,7 @@ function startBettingRound() {
 			return;
 		}
 
+		// --- Human Branch ------------------------------------------------------------
 		return handleHumanTurn({ player, cycles, anyUncalled, nextPlayer });
 		/*
 
@@ -2338,6 +2531,10 @@ function startBettingRound() {
 	nextPlayer();
 }
 
+/* --------------------------------------------------------------------------------------------------
+Showdown And Payout Flow
+---------------------------------------------------------------------------------------------------*/
+
 /**
  * Animate chip transfer from the pot display to a player's total chips.
  * amount   – integer to transfer
@@ -2426,6 +2623,7 @@ function finishHandAfterShowdown() {
 }
 
 function doShowdown() {
+	// --- Active Players And Showdown State ---------------------------------------
 	// Reset round bets now that they are in the pot
 	gameState.players.forEach((p) => p.resetRoundBet());
 
@@ -2443,6 +2641,7 @@ function doShowdown() {
 		revealActiveHoleCards();
 	}
 
+	// --- Single Winner Path ------------------------------------------------------
 	// Single-player case: immediate win (no hand needed)
 	if (activePlayers.length === 1) {
 		const winner = activePlayers[0];
@@ -2483,6 +2682,7 @@ function doShowdown() {
 
 	const communityCards = getCommunityCardCodes();
 
+	// --- Side Pot Construction ---------------------------------------------------
 	// ---- Build side pots based on each player's totalBet ----
 	const contenders = contributors.slice();
 	const sidePots = [];
@@ -2528,6 +2728,7 @@ function doShowdown() {
 	const winnersSet = new Set();
 	let mainPotWinners = [];
 
+	// --- Pot Evaluation ----------------------------------------------------------
 	// ---- Evaluate each side pot ----
 	// Collect results for notification consolidation
 	const potResults = [];
@@ -2615,6 +2816,7 @@ function doShowdown() {
 	// Filter out side-pots where the winner only gets their own bet back (no profit)
 	const filteredResults = potResults.filter((r) => !(r.players.length === 1 && r.hand === null));
 
+	// --- Notification Consolidation ----------------------------------------------
 	// Consolidate notifications: if same player wins all pots, combine amounts
 	if (filteredResults.length > 0) {
 		const allSame = filteredResults.every((r) =>
@@ -2655,6 +2857,7 @@ function doShowdown() {
 		totalPayoutByPlayer,
 	});
 
+	// --- Payout Animation --------------------------------------------------------
 	// run all chip transfers in parallel
 	Promise.all(
 		transferQueue.map((t) =>
@@ -2668,6 +2871,10 @@ function doShowdown() {
 	return; // exit doShowdown early because UI flow continues in animation
 }
 
+/* --------------------------------------------------------------------------------------------------
+Seat-Editing Helpers
+---------------------------------------------------------------------------------------------------*/
+
 function rotateSeat(ev) {
 	const seat = ev.target.parentElement.parentElement;
 	seat.dataset.rotation = parseInt(seat.dataset.rotation) + 90;
@@ -2679,149 +2886,9 @@ function deletePlayer(ev) {
 	seat.classList.add("hidden");
 }
 
-function notifyPlayerAction(player, action = "", amount = 0) {
-	// Remove any previous action indicator before adding a new one
-	player.seat.classList.remove("checked", "called", "raised", "allin");
-	// Update statistics based on action and phase
-	if (gameState.currentPhaseIndex === 0) {
-		if (action === "call" || action === "raise" || action === "allin") {
-			player.stats.vpip++;
-		}
-		if (action === "raise" || action === "allin") {
-			player.stats.pfr++;
-		}
-	} else {
-		if (action === "raise" || action === "allin") {
-			player.stats.aggressiveActs++;
-		}
-		if (action === "call") {
-			player.stats.calls++;
-		}
-	}
-
-	if (gameState.currentPhaseIndex === 0 && (action === "raise" || action === "allin")) {
-		gameState.players.forEach((p) => {
-			if (p.botLine) {
-				p.botLine.preflopAggressor = false;
-			}
-		});
-		if (player.botLine) {
-			player.botLine.preflopAggressor = true;
-		}
-	}
-
-	if (action === "allin") {
-		player.stats.allins++;
-	}
-
-	if (action === "fold") {
-		player.stats.folds++;
-		if (gameState.currentPhaseIndex === 0) {
-			player.stats.foldsPreflop++;
-		} else {
-			player.stats.foldsPostflop++;
-		}
-	}
-
-	let msg = "";
-	let actionLabel = "";
-	switch (action) {
-		case "fold":
-			player.seat.classList.add("folded");
-			actionLabel = "Fold";
-			msg = `${player.name} folded.`;
-			break;
-		case "check":
-			player.seat.classList.add("checked");
-			actionLabel = "Check";
-			msg = `${player.name} checked.`;
-			break;
-		case "call":
-			player.seat.classList.add("called");
-			actionLabel = `Call ${amount}`;
-			msg = `${player.name} called ${amount}.`;
-			break;
-		case "raise":
-			player.seat.classList.add("raised");
-			actionLabel = `Raise ${amount}`;
-			msg = `${player.name} raised to ${amount}.`;
-			break;
-		case "allin":
-			player.seat.classList.add("allin");
-			actionLabel = `All-In ${amount}`;
-			msg = `${player.name} is all-in.`;
-			break;
-		default:
-			msg = `${player.name} did something…`;
-	}
-	if (actionLabel) {
-		const nameEl = player.seat.querySelector("h3");
-		if (player.actionLabelTimer) {
-			clearTimeout(player.actionLabelTimer);
-		}
-		player.seat.classList.add("action-label");
-		nameEl.textContent = actionLabel.split(" ")[0];
-		const actionLabelDuration = getActionLabelDuration();
-		if (actionLabelDuration === 0) {
-			nameEl.textContent = player.name;
-			player.seat.classList.remove("action-label");
-			player.actionLabelTimer = null;
-		} else {
-			player.actionLabelTimer = setTimeout(() => {
-				nameEl.textContent = player.name;
-				player.seat.classList.remove("action-label");
-				player.actionLabelTimer = null;
-			}, actionLabelDuration);
-		}
-	}
-
-	if (action === "fold") {
-		player.winProbability = 0;
-		updateHandStrengthDisplays();
-	}
-
-	if (action !== "check" && isAllInRunout()) {
-		revealActiveHoleCards();
-		if (gameState.currentPhaseIndex > 0) {
-			computeSpectatorWinProbabilities("allin-runout");
-		} else {
-			logFlow("winProbability: preflop all-in runout pending", {
-				action,
-				name: player.name,
-			});
-		}
-	} else if (gameState.spectatorMode && action === "fold") {
-		if (gameState.currentPhaseIndex > 0) {
-			computeSpectatorWinProbabilities("fold");
-		} else {
-			logFlow("winProbability: preflop fold skipped", { name: player.name });
-		}
-	}
-	updateFastForwardButton();
-	enqueueNotification(msg);
-}
-
-function enqueueNotification(msg) {
-	pendingNotif.push(msg);
-	if (isFastPlaybackActive()) {
-		flushPendingNotifications();
-		return;
-	}
-	if (!isNotifProcessing) {
-		showNextNotif();
-	}
-}
-
-function showNextNotif() {
-	if (pendingNotif.length === 0) {
-		isNotifProcessing = false;
-		notifTimer = null;
-		return;
-	}
-	isNotifProcessing = true;
-	deliverNotification(pendingNotif.shift());
-	scheduleNextNotif();
-}
+/* --------------------------------------------------------------------------------------------------
+App Bootstrap And Public API
+---------------------------------------------------------------------------------------------------*/
 
 function init() {
 	// Prevent framing
@@ -2865,9 +2932,6 @@ function init() {
 	}
 }
 
-/* --------------------------------------------------------------------------------------------------
-public members, exposed with return statement
----------------------------------------------------------------------------------------------------*/
 globalThis.poker = {
 	init,
 	get players() {
