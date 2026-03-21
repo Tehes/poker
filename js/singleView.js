@@ -78,6 +78,7 @@ function init() {
 	singleActionButton.addEventListener("click", handlePrimaryAction);
 	clearSyncedDisplays();
 	applyParams();
+	consumeLaunchParams();
 	if (!tableId || seatIndexParam === null) {
 		setOnlineElementsVisible(false);
 		hideActionControls();
@@ -92,6 +93,20 @@ function applyParams() {
 	if (typeof initialViewState.chips === "number") {
 		chipsEl.textContent = initialViewState.chips;
 	}
+}
+
+function consumeLaunchParams() {
+	if (!globalThis.location.search) {
+		return;
+	}
+
+	const cleanUrl = new URL(globalThis.location.href);
+	cleanUrl.searchParams.delete("card1");
+	cleanUrl.searchParams.delete("card2");
+	cleanUrl.searchParams.delete("name");
+	cleanUrl.searchParams.delete("chips");
+	cleanUrl.searchParams.delete("t");
+	globalThis.history.replaceState(globalThis.history.state, "", cleanUrl.toString());
 }
 
 function setCards(card1, card2, folded = false) {
