@@ -581,17 +581,18 @@ PLAYER
 
 .seat h3,
 #single h3 {
+    position: relative;
     border-radius: 30px;
     background-color: var(--blue-lightest);
     padding: 1vmin 2vmin;
     color: var(--blue-darker);
     margin-bottom: 1vmin;
-    text-align: center;
     box-shadow: var(--shadow-light);
     font-size: 1.1em;
     line-height: 1.1;
     -webkit-user-select: auto;
     user-select: auto;
+    text-align: center;
 }
 
 .seat h3:empty::before {
@@ -634,40 +635,10 @@ PLAYER
     color: var(--blue-lightest);
 }
 
-.folded h3::before {
-    content: "❌ ";
-    font-size: 0.9rem;
-}
-
-.checked h3::before {
-    content: "✅ ";
-    font-size: 0.95rem;
-}
-
-.called h3::before {
-    content: "📞 ";
-    font-size: 1rem;
-}
-
-.raised h3::before {
-    content: "⬆️ ";
-    font-size: 0.95rem;
-}
-
-.allin h3::before {
-    content: "💥 ";
-    font-size: 1rem;
-}
-
 .winner h3 {
     border: 3px solid var(--yellow);
     font-size: 1rem;
 }
-
-.winner h3::before {
-    content: "🥇 ";
-}
-
 
 .hole-cards {
     position: relative;
@@ -921,7 +892,7 @@ MEDIA QUERIES
     }
 }
 
-@media (max-width: 600px) and (orientation: portrait) {
+@media (max-width: 820px) and (orientation: portrait) {
     .seat .chips {
         align-items: flex-end;
         gap: 3vmin;
@@ -930,10 +901,6 @@ MEDIA QUERIES
     .seat .chips .stack-values {
         flex-direction: column;
         gap: 0;
-    }
-
-    .seat h3:not(:empty):before {
-        display: none;
     }
 
     .hole-cards .rotate {
