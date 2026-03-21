@@ -374,7 +374,7 @@ TABLE-MIDDLE
 }
 
 .cardslot {
-    width: 18vmin;
+    width: 16vmin;
     height: auto;
     aspect-ratio: 5/7;
     border-radius: 1vmin;
@@ -893,6 +893,10 @@ MEDIA QUERIES
 }
 
 @media (max-width: 820px) and (orientation: portrait) {
+    .cardslot {
+        width: 18vmin;
+    }
+
     .seat .chips {
         align-items: flex-end;
         gap: 3vmin;
