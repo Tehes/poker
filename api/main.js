@@ -16,6 +16,9 @@ const baseCorsHeaders = {
 	"Vary": "Origin",
 };
 
+// This file is the Deno Deploy entry point.
+// Keep the small seat-projection helpers local here instead of importing browser modules, so
+// the backend remains deployable as a standalone Deno entry and does not depend on GitHub Pages.
 function withCors(origin, headers = {}) {
 	const corsHeaders = { ...baseCorsHeaders };
 	if (origin && allowedOrigins.has(origin)) {
@@ -95,6 +98,8 @@ async function saveState(tableId, payload) {
 	const current = await getState(tableId);
 	const version = (current?.version ?? 0) + 1;
 	const record = {
+		// The backend persists the already-prepared view model.
+		// The table is the canonical computation source; this endpoint only stores and projects it.
 		view: payload.view,
 		updatedAt: new Date().toISOString(),
 		version,
@@ -169,6 +174,8 @@ async function handleGetState(url, origin) {
 		return textResponse("Not found", 404, origin);
 	}
 
+	// The single view never receives the full synchronized table state.
+	// It only gets its own seat projection plus the public table projection.
 	const payload = createSeatSyncPayload(record, seatIndex);
 	if (!payload) {
 		return textResponse("Seat not found", 404, origin);

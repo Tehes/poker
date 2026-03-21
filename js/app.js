@@ -4,6 +4,12 @@ Imports
 
 import { chooseBotAction, enqueueBotAction, setBotPlaybackFast } from "./bot.js";
 import { Hand } from "./pokersolver.js";
+import {
+	getActionButtonLabel,
+	getPlayerActionState,
+	isInvalidRaiseAmount,
+	normalizeActionAmount,
+} from "./shared/actionModel.js";
 import { initServiceWorker } from "./serviceWorkerRegistration.js";
 
 /* --------------------------------------------------------------------------------------------------
@@ -769,35 +775,6 @@ function createTurnToken() {
 	return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function getPlayerActionState(player) {
-	const needToCall = Math.max(0, gameState.currentBet - player.roundBet);
-	const minAmount = gameState.currentPhaseIndex > 0 && gameState.currentBet === 0
-		? 0
-		: Math.min(needToCall, player.chips);
-	const maxAmount = player.chips;
-	const minRaise = needToCall + gameState.lastRaise;
-	return {
-		needToCall,
-		minAmount,
-		maxAmount,
-		minRaise,
-		canCheck: needToCall === 0,
-	};
-}
-
-function getActionButtonLabel(amount, actionState) {
-	if (amount === 0) {
-		return "Check";
-	}
-	if (amount === actionState.maxAmount) {
-		return "All-In";
-	}
-	if (amount === actionState.needToCall) {
-		return "Call";
-	}
-	return "Raise";
-}
-
 function setPendingAction(player) {
 	if (!hasStateSyncEnabled() || !player || player.isBot || player.folded || player.allIn) {
 		if (gameState.pendingAction !== null) {
@@ -807,7 +784,7 @@ function setPendingAction(player) {
 		return null;
 	}
 
-	const actionState = getPlayerActionState(player);
+	const actionState = getPlayerActionState(gameState, player);
 	const pendingAction = {
 		seatIndex: player.seatIndex,
 		turnToken: createTurnToken(),
@@ -829,6 +806,73 @@ function clearPendingAction() {
 	}
 	gameState.pendingAction = null;
 	queueStateSync();
+}
+
+function buildPublicPlayerView(player) {
+	return {
+		seatIndex: player.seatIndex,
+		name: player.name,
+		chips: player.chips,
+		roundBet: player.roundBet,
+		folded: player.folded,
+		allIn: player.allIn,
+		dealer: player.dealer,
+		smallBlind: player.smallBlind,
+		bigBlind: player.bigBlind,
+	};
+}
+
+// The table stays the canonical source for private display values.
+// Seat views receive already-decided visibility and computed display fields instead of recomputing
+// them on the phone, which keeps the single view thin and prevents rule drift.
+function shouldShowSeatHandStrength(player, communityCards) {
+	return gameState.currentPhaseIndex > 0 &&
+		communityCards.length >= 3 &&
+		!player.folded &&
+		player.holeCards.every(Boolean);
+}
+
+function shouldShowSeatWinProbability(player) {
+	return (gameState.spectatorMode || isAllInRunout()) &&
+		gameState.currentPhaseIndex > 0 &&
+		!player.folded &&
+		player.holeCards.every(Boolean) &&
+		typeof player.winProbability === "number";
+}
+
+function buildSeatView(player, communityCards) {
+	return {
+		seatIndex: player.seatIndex,
+		name: player.name,
+		chips: player.chips,
+		roundBet: player.roundBet,
+		folded: player.folded,
+		allIn: player.allIn,
+		holeCards: player.holeCards.slice(),
+		handStrengthLabel: shouldShowSeatHandStrength(player, communityCards)
+			? getPlayerHandStrengthLabel(player, communityCards)
+			: "",
+		winProbability: player.winProbability,
+		showWinProbability: shouldShowSeatWinProbability(player),
+	};
+}
+
+function buildSyncView() {
+	const communityCards = getCommunityCardCodes();
+
+	return {
+		table: {
+			// table contains public/shared state only.
+			phase: getCurrentPhase(),
+			pot: gameState.pot,
+			communityCards,
+			notifications: notifArr.slice(0, MAX_ITEMS),
+			playersPublic: gameState.players.map((player) => buildPublicPlayerView(player)),
+			pendingAction: gameState.pendingAction ? { ...gameState.pendingAction } : null,
+		},
+		// seatViews carries one private projection per seat; the backend narrows this to one seat.
+		seatViews: gameState.players.map((player) => buildSeatView(player, communityCards)),
+	};
 }
 
 async function fetchPendingRemoteAction(turnToken) {
@@ -860,8 +904,7 @@ async function fetchPendingRemoteAction(turnToken) {
 async function sendTableState() {
 	const payload = {
 		tableId: tableId,
-		gameState: gameState,
-		notifications: notifArr.slice(0, MAX_ITEMS),
+		view: buildSyncView(),
 	};
 
 	try {
@@ -1147,9 +1190,36 @@ function triggerMainPotWinnerReactions(context) {
 	});
 }
 
+function getPlayerSolvedHand(player, communityCards) {
+	if (!player.holeCards.every(Boolean) || communityCards.length < 3) {
+		return null;
+	}
+	return Hand.solve([...player.holeCards, ...communityCards]);
+}
+
+function getPlayerHandStrengthLabel(player, communityCards) {
+	const solvedHand = getPlayerSolvedHand(player, communityCards);
+	if (!solvedHand) {
+		return "";
+	}
+	return getShortHandStrengthLabel(solvedHand);
+}
+
+function shouldShowTableHandStrength(player, communityCards) {
+	return gameState.currentPhaseIndex > 0 &&
+		communityCards.length >= 3 &&
+		areHoleCardsFaceUp(player);
+}
+
+function shouldShowTableWinProbability(player) {
+	return (gameState.spectatorMode || isAllInRunout()) &&
+		gameState.currentPhaseIndex > 0 &&
+		areHoleCardsFaceUp(player) &&
+		typeof player.winProbability === "number";
+}
+
 function updateHandStrengthDisplays() {
 	const communityCards = getCommunityCardCodes();
-	const shouldShowPostflop = gameState.currentPhaseIndex > 0 && communityCards.length >= 3;
 
 	gameState.players.forEach((p) => {
 		const handEl = p.handStrengthEl || p.seat.querySelector(".hand-strength");
@@ -1157,20 +1227,20 @@ function updateHandStrengthDisplays() {
 			return;
 		}
 
-		if (!shouldShowPostflop || !areHoleCardsFaceUp(p)) {
+		if (!shouldShowTableHandStrength(p, communityCards)) {
 			handEl.textContent = "";
 			handEl.classList.add("hidden");
 			return;
 		}
 
-		const solvedHand = Hand.solve([...p.holeCards, ...communityCards]);
-		if (!solvedHand) {
+		const label = getPlayerHandStrengthLabel(p, communityCards);
+		if (!label) {
 			handEl.textContent = "";
 			handEl.classList.add("hidden");
 			return;
 		}
 
-		handEl.textContent = getShortHandStrengthLabel(solvedHand);
+		handEl.textContent = label;
 		handEl.classList.remove("hidden");
 	});
 }
@@ -1181,10 +1251,7 @@ function updateWinProbabilityDisplays() {
 		if (!winEl) {
 			return;
 		}
-		const shouldShow = (gameState.spectatorMode || isAllInRunout()) &&
-			gameState.currentPhaseIndex > 0 &&
-			areHoleCardsFaceUp(p) &&
-			typeof p.winProbability === "number";
+		const shouldShow = shouldShowTableWinProbability(p);
 		if (shouldShow) {
 			winEl.textContent = `${Math.round(p.winProbability)}%`;
 			winEl.classList.remove("hidden");
@@ -1970,7 +2037,7 @@ function handleHumanTurn({ player, cycles, anyUncalled, nextPlayer }) {
 	amountSlider.classList.remove("hidden");
 	sliderOutput.classList.remove("hidden");
 
-	const actionState = getPlayerActionState(player);
+	const actionState = getPlayerActionState(gameState, player);
 	const pendingAction = setPendingAction(player);
 	let remoteActionTimer = null;
 	let remoteActionInFlight = false;
@@ -1984,26 +2051,17 @@ function handleHumanTurn({ player, cycles, anyUncalled, nextPlayer }) {
 
 	function onSliderInput() {
 		const val = Number.parseInt(amountSlider.value, 10);
-		const isInvalidRaise = val > actionState.needToCall &&
-			val < actionState.minRaise &&
-			val < player.chips;
-		if (isInvalidRaise) {
-			sliderOutput.classList.add("invalid");
-		} else {
-			sliderOutput.classList.remove("invalid");
-		}
+		sliderOutput.classList.toggle("invalid", isInvalidRaiseAmount(val, actionState));
 		actionButton.textContent = getActionButtonLabel(val, actionState);
 	}
 
 	function onSliderChange() {
 		const val = Number.parseInt(amountSlider.value, 10);
-		if (val > actionState.needToCall && val < actionState.minRaise) {
-			const minRaiseValue = Math.min(player.chips, actionState.minRaise);
-			amountSlider.value = minRaiseValue;
-			sliderOutput.value = minRaiseValue;
-			sliderOutput.classList.remove("invalid");
-			onSliderInput();
-		}
+		const normalizedAmount = normalizeActionAmount(val, actionState);
+		amountSlider.value = normalizedAmount;
+		sliderOutput.value = normalizedAmount;
+		sliderOutput.classList.remove("invalid");
+		onSliderInput();
 	}
 
 	function cleanupHumanTurn() {
@@ -2033,9 +2091,8 @@ function handleHumanTurn({ player, cycles, anyUncalled, nextPlayer }) {
 	}
 
 	function applyHumanBetAction(rawAmount) {
-		const currentActionState = getPlayerActionState(player);
-		let bet = Number.isNaN(rawAmount) ? currentActionState.minAmount : rawAmount;
-		bet = Math.max(0, Math.min(bet, player.chips));
+		const currentActionState = getPlayerActionState(gameState, player);
+		const bet = normalizeActionAmount(rawAmount, currentActionState);
 
 		if (bet === 0) {
 			notifyPlayerAction(player, "check", 0);
@@ -2061,10 +2118,6 @@ function handleHumanTurn({ player, cycles, anyUncalled, nextPlayer }) {
 			return "human";
 		}
 
-		const autoMin = bet < currentActionState.minRaise && bet < player.chips;
-		if (autoMin) {
-			bet = Math.min(player.chips, currentActionState.minRaise);
-		}
 		const actual = player.placeBet(bet);
 		gameState.currentBet = player.roundBet;
 		addToPot(actual);
@@ -2794,7 +2847,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-21-v4";
+const SERVICE_WORKER_VERSION = "2026-03-21-v5";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

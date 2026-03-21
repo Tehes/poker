@@ -2,16 +2,30 @@
 Imports
 ---------------------------------------------------------------------------------------------------*/
 
+import {
+	clampActionAmount,
+	getActionButtonLabel,
+	getActionRequestForAmount,
+	isInvalidRaiseAmount,
+	normalizeActionAmount,
+} from "./shared/actionModel.js";
+import { getSeatView, getTableView } from "./shared/syncViewModel.js";
+
 /* --------------------------------------------------------------------------------------------------
 Variables
 ---------------------------------------------------------------------------------------------------*/
+
+// The single view is a projection consumer.
+// It renders the synced seat/table payload and must not reimplement poker logic or visibility rules.
 const singleViewEl = document.getElementById("single");
-const cardSlots = document.querySelectorAll("img");
+const cardSlots = document.querySelectorAll(".hole-cards img");
 const nameBadge = document.querySelector("h3");
 const chipsEl = document.querySelector(".total");
 const betEl = document.querySelector(".bet");
 const potEl = document.querySelector("#pot");
 const notificationsEl = document.querySelector("#singleview-notifications");
+const handStrengthEl = document.querySelector("#single .hand-strength");
+const winProbabilityEl = document.querySelector("#single .win-probability");
 const singleActionPanelEl = document.getElementById("single-action-panel");
 const singleFoldButton = document.getElementById("single-fold-button");
 const singleActionButton = document.getElementById("single-action-button");
@@ -52,7 +66,7 @@ const initialViewState = getInitialViewState();
 const seatIndexParam = initialViewState.seatIndex;
 
 /* --------------------------------------------------------------------------------------------------
-functions
+Functions
 ---------------------------------------------------------------------------------------------------*/
 
 function init() {
@@ -62,8 +76,9 @@ function init() {
 	singleAmountSlider.addEventListener("change", handleActionSliderChange);
 	singleFoldButton.addEventListener("click", handleFoldAction);
 	singleActionButton.addEventListener("click", handlePrimaryAction);
+	clearSyncedDisplays();
 	applyParams();
-	if (!tableId) {
+	if (!tableId || seatIndexParam === null) {
 		setOnlineElementsVisible(false);
 		hideActionControls();
 		return;
@@ -80,12 +95,9 @@ function applyParams() {
 }
 
 function setCards(card1, card2, folded = false) {
-	if (card1) {
-		cardSlots[0].src = `cards/${card1}.svg`;
-	}
-	if (card2) {
-		cardSlots[1].src = `cards/${card2}.svg`;
-	}
+	cardSlots[0].src = card1 ? `cards/${card1}.svg` : "cards/1B.svg";
+	cardSlots[1].src = card2 ? `cards/${card2}.svg` : "cards/1B.svg";
+
 	if (folded) {
 		singleViewEl.classList.add("folded");
 	} else {
@@ -107,16 +119,24 @@ function setChips(amount, roundBet, pot) {
 
 function setOnlineElementsVisible(isOnline) {
 	onlineOnlyElements.forEach((el) => {
-		if (!el) return;
+		if (!el) {
+			return;
+		}
 		el.classList.toggle("hidden", !isOnline);
 	});
 	if (!isOnline) {
 		notificationsEl.classList.add("hidden");
 		hideActionControls();
+		clearSyncedDisplays();
 	}
 }
 
-function renderNotifications(notifications) {
+function clearSyncedDisplays() {
+	renderHandStrength("");
+	renderWinProbability(null, false);
+}
+
+function renderNotifications(notifications = []) {
 	notificationsEl.textContent = "";
 	for (const message of notifications) {
 		const item = document.createElement("div");
@@ -126,17 +146,21 @@ function renderNotifications(notifications) {
 	notificationsEl.classList.toggle("hidden", notifications.length === 0);
 }
 
-function getActionButtonLabel(amount, pendingAction) {
-	if (amount === 0) {
-		return "Check";
+function renderHandStrength(label) {
+	if (!handStrengthEl) {
+		return;
 	}
-	if (amount === pendingAction.maxAmount) {
-		return "All-In";
+	handStrengthEl.textContent = label || "";
+	handStrengthEl.classList.toggle("hidden", !label);
+}
+
+function renderWinProbability(value, shouldShow) {
+	if (!winProbabilityEl) {
+		return;
 	}
-	if (amount === pendingAction.needToCall) {
-		return "Call";
-	}
-	return "Raise";
+	const showValue = shouldShow && typeof value === "number";
+	winProbabilityEl.textContent = showValue ? `${Math.round(value)}%` : "";
+	winProbabilityEl.classList.toggle("hidden", !showValue);
 }
 
 function setActionControlsEnabled(enabled) {
@@ -153,12 +177,20 @@ function hideActionControls() {
 	setActionControlsEnabled(false);
 }
 
-function renderActionControls(player, pendingAction) {
+function getSeatPendingAction(tableView) {
+	const tablePendingAction = tableView?.pendingAction ?? null;
+	if (tablePendingAction?.seatIndex === seatIndexParam) {
+		return tablePendingAction;
+	}
+	return null;
+}
+
+function renderActionControls(seatView, pendingAction) {
 	if (
 		!pendingAction ||
 		pendingAction.seatIndex !== seatIndexParam ||
-		player.folded ||
-		player.allIn
+		seatView.folded ||
+		seatView.allIn
 	) {
 		hideActionControls();
 		return;
@@ -177,11 +209,7 @@ function renderActionControls(player, pendingAction) {
 		singleAmountSlider.value = pendingAction.minAmount;
 	} else {
 		const currentAmount = Number.parseInt(singleAmountSlider.value, 10);
-		const nextAmount = Number.isNaN(currentAmount) ? pendingAction.minAmount : Math.max(
-			pendingAction.minAmount,
-			Math.min(currentAmount, pendingAction.maxAmount),
-		);
-		singleAmountSlider.value = nextAmount;
+		singleAmountSlider.value = clampActionAmount(currentAmount, pendingAction);
 	}
 
 	updatePrimaryActionLabel();
@@ -192,16 +220,16 @@ function updatePrimaryActionLabel() {
 	if (!currentPendingAction) {
 		return;
 	}
-	const amount = Number.parseInt(singleAmountSlider.value, 10);
-	singleSliderOutput.value = Number.isNaN(amount) ? 0 : amount;
-	const isInvalidRaise = amount > currentPendingAction.needToCall &&
-		amount < currentPendingAction.minRaise &&
-		amount < currentPendingAction.maxAmount;
-	if (isInvalidRaise) {
-		singleSliderOutput.classList.add("invalid");
-	} else {
-		singleSliderOutput.classList.remove("invalid");
-	}
+
+	const amount = clampActionAmount(
+		Number.parseInt(singleAmountSlider.value, 10),
+		currentPendingAction,
+	);
+	singleSliderOutput.value = amount;
+	singleSliderOutput.classList.toggle(
+		"invalid",
+		isInvalidRaiseAmount(amount, currentPendingAction),
+	);
 	singleActionButton.textContent = getActionButtonLabel(amount, currentPendingAction);
 }
 
@@ -214,15 +242,10 @@ function handleActionSliderChange() {
 		return;
 	}
 	const amount = Number.parseInt(singleAmountSlider.value, 10);
-	if (amount > currentPendingAction.needToCall && amount < currentPendingAction.minRaise) {
-		const minRaiseValue = Math.min(
-			currentPendingAction.maxAmount,
-			currentPendingAction.minRaise,
-		);
-		singleAmountSlider.value = minRaiseValue;
-		singleSliderOutput.value = minRaiseValue;
-		singleSliderOutput.classList.remove("invalid");
-	}
+	const normalizedAmount = normalizeActionAmount(amount, currentPendingAction);
+	singleAmountSlider.value = normalizedAmount;
+	singleSliderOutput.value = normalizedAmount;
+	singleSliderOutput.classList.remove("invalid");
 	updatePrimaryActionLabel();
 }
 
@@ -260,23 +283,14 @@ function handlePrimaryAction() {
 	if (!currentPendingAction) {
 		return;
 	}
+
 	const amount = Number.parseInt(singleAmountSlider.value, 10);
 	if (Number.isNaN(amount)) {
 		return;
 	}
-	if (amount === 0) {
-		submitActionRequest("check", 0);
-		return;
-	}
-	if (amount === currentPendingAction.maxAmount) {
-		submitActionRequest("allin", amount);
-		return;
-	}
-	if (amount === currentPendingAction.needToCall) {
-		submitActionRequest("call", amount);
-		return;
-	}
-	submitActionRequest("raise", amount);
+
+	const request = getActionRequestForAmount(amount, currentPendingAction);
+	submitActionRequest(request.action, request.amount);
 }
 
 function handleFoldAction() {
@@ -286,14 +300,16 @@ function handleFoldAction() {
 // Constant polling is intentional.
 // Poker tables have bursty activity; 204 does not imply inactivity ahead.
 async function pollState() {
-	if (!tableId || isPolling || document.visibilityState !== "visible") {
+	if (
+		!tableId || seatIndexParam === null || isPolling || document.visibilityState !== "visible"
+	) {
 		return;
 	}
 	isPolling = true;
 	try {
 		const url = `${STATE_ENDPOINT}?tableId=${
 			encodeURIComponent(tableId)
-		}&sinceVersion=${lastVersion}`;
+		}&seatIndex=${seatIndexParam}&sinceVersion=${lastVersion}`;
 		const res = await fetch(url);
 		if (res.status === 204) {
 			setOnlineElementsVisible(true);
@@ -338,24 +354,29 @@ function handleVisibilityChange() {
 }
 
 function applyRemoteState(payload) {
-	if (!payload || !payload.gameState || !Array.isArray(payload.gameState.players)) return;
-	const player = payload.gameState.players.find((p) => p.seatIndex === seatIndexParam);
-	if (!player) {
+	const tableView = getTableView(payload);
+	const seatView = getSeatView(payload);
+	if (!tableView || !seatView || seatView.seatIndex !== seatIndexParam) {
 		hideActionControls();
+		clearSyncedDisplays();
 		return;
 	}
-	nameBadge.textContent = player.name;
-	const pot = payload.gameState.pot || 0;
 
-	setCards(player.holeCards?.[0], player.holeCards?.[1], player.folded);
-	setChips(player.chips, player.roundBet, pot);
-	renderNotifications(payload.notifications);
-	renderActionControls(player, payload.gameState.pendingAction ?? null);
+	nameBadge.textContent = seatView.name;
+	setCards(seatView.holeCards?.[0], seatView.holeCards?.[1], seatView.folded);
+	setChips(seatView.chips, seatView.roundBet, tableView.pot);
+	renderNotifications(tableView.notifications);
+	// Display values are prepared by the table before syncing.
+	// The single view only applies them and does not compute odds or hand labels itself.
+	renderHandStrength(seatView.handStrengthLabel || "");
+	renderWinProbability(seatView.winProbability, seatView.showWinProbability === true);
+	renderActionControls(seatView, getSeatPendingAction(tableView));
 }
 
 /* --------------------------------------------------------------------------------------------------
-public members, exposed with return statement
+Public API
 ---------------------------------------------------------------------------------------------------*/
+
 globalThis.app = {
 	init,
 };

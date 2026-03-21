@@ -46,6 +46,8 @@ const CORE_ASSETS = [
 	"./js/app.js",
 	"./js/singleView.js",
 	"./js/serviceWorkerRegistration.js",
+	"./js/shared/actionModel.js",
+	"./js/shared/syncViewModel.js",
 	"./js/kjua.min.js",
 	"./css/style.css",
 	"./cards/1B.svg",
