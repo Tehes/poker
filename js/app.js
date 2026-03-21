@@ -1499,7 +1499,14 @@ function createPlayers() {
 						fill: "#333",
 						crisp: true,
 					});
-					qrContainer.appendChild(qrEl);
+					const qrLink = document.createElement("a");
+					qrLink.className = "qr-link";
+					qrLink.href = url;
+					qrLink.target = "_blank";
+					qrLink.rel = "noopener noreferrer";
+					qrLink.title = "Open player view";
+					qrLink.appendChild(qrEl);
+					qrContainer.appendChild(qrLink);
 					qrContainer.dataset.url = url;
 				},
 				hide: function () {
@@ -2847,7 +2854,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-21-v5";
+const SERVICE_WORKER_VERSION = "2026-03-21-v6";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

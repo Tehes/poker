@@ -700,6 +700,13 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
     border-radius: 5%;
 }
 
+.qr .qr-link {
+    display: block;
+    width: 100%;
+    line-height: 0;
+    cursor: pointer;
+}
+
 .qr svg {
     width: 100% !important;
     height: auto !important;
