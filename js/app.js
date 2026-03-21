@@ -195,16 +195,16 @@ gameState.toJSON = function () {
 Low-Level Utilities And Formatting Helpers
 ---------------------------------------------------------------------------------------------------*/
 
-Array.prototype.shuffle = function () {
-	let i = this.length;
+function shuffleArray(array) {
+	let i = array.length;
 	while (i) {
 		const j = Math.floor(Math.random() * i);
-		const t = this[--i];
-		this[i] = this[j];
-		this[j] = t;
+		const t = array[--i];
+		array[i] = array[j];
+		array[j] = t;
 	}
-	return this;
-};
+	return array;
+}
 
 function getCurrentPhase() {
 	return Phases[gameState.currentPhaseIndex] ?? null;
@@ -1605,7 +1605,7 @@ function setBlinds() {
 function dealCards() {
 	gameState.deck = gameState.deck.concat(gameState.cardGraveyard);
 	gameState.cardGraveyard = [];
-	gameState.deck.shuffle();
+	shuffleArray(gameState.deck);
 
 	for (const player of gameState.players) {
 		const card1 = trackUsedCard(takeDeckCard());
@@ -2366,166 +2366,6 @@ function startBettingRound() {
 
 		// --- Human Branch ------------------------------------------------------------
 		return handleHumanTurn({ player, cycles, anyUncalled, nextPlayer });
-		/*
-
-		const needToCall = gameState.currentBet - player.roundBet;
-
-		// UI: prepare slider and buttons
-		if (gameState.currentPhaseIndex > 0 && gameState.currentBet === 0) {
-			// First bet post-flop: allow Check (0) or at least big blind
-			amountSlider.min = 0;
-			amountSlider.max = player.chips;
-			amountSlider.step = 10;
-			amountSlider.value = 0;
-			sliderOutput.value = 0;
-		} else {
-			// Determine minimum bet as the lesser of needToCall and player chips
-			const minBet = Math.min(needToCall, player.chips);
-			amountSlider.min = minBet;
-			amountSlider.max = player.chips;
-			amountSlider.step = 10;
-			amountSlider.value = minBet;
-			sliderOutput.value = minBet;
-		}
-
-		// Update button label on slider input
-		function onSliderInput() {
-			const val = parseInt(amountSlider.value, 10);
-			const minRaise = needToCall + gameState.lastRaise;
-			// Only flag *raises* that fall below the minimum‑raise threshold
-			const isInvalidRaise = val > needToCall && val < minRaise && val < player.chips;
-			if (isInvalidRaise) {
-				sliderOutput.classList.add("invalid");
-			} else {
-				sliderOutput.classList.remove("invalid");
-			}
-			if (val === 0) {
-				actionButton.textContent = "Check";
-			} else if (val === player.chips) {
-				actionButton.textContent = "All-In";
-			} else if (val === needToCall) {
-				actionButton.textContent = "Call";
-			} else {
-				actionButton.textContent = "Raise";
-			}
-		}
-		// Snap slider to min-raise on change if needed
-		function onSliderChange() {
-			const val = parseInt(amountSlider.value, 10);
-			const minRaise = needToCall + gameState.lastRaise;
-			// If value is between Call and Min‑Raise, snap to minRaise
-			if (val > needToCall && val < minRaise) {
-				amountSlider.value = minRaise;
-				sliderOutput.value = minRaise;
-				sliderOutput.classList.remove("invalid");
-				onSliderInput(); // refresh button label & invalid state
-			}
-		}
-		amountSlider.addEventListener("input", onSliderInput);
-		amountSlider.addEventListener("change", onSliderChange);
-		onSliderInput();
-
-		// Event handlers
-		function onAction() {
-			let bet = parseInt(amountSlider.value, 10);
-			const needToCall = gameState.currentBet - player.roundBet;
-			const minRaise = needToCall + gameState.lastRaise;
-
-			// Remove active highlight and slider listener
-			player.seat.classList.remove("active");
-			amountSlider.removeEventListener("input", onSliderInput);
-			amountSlider.removeEventListener("change", onSliderChange);
-
-			// Handle action types
-			if (bet === 0) {
-				// Check
-				notifyPlayerAction(player, "check", 0);
-			} else if (bet === player.chips) {
-				// All-In
-				player.placeBet(bet);
-				addToPot(bet);
-				// If this all-in meets or exceeds the call amount, treat it as a raise
-				if (bet >= minRaise) {
-					gameState.currentBet = player.roundBet;
-					gameState.lastRaise = bet - needToCall;
-					gameState.raisesThisRound++;
-				} else if (bet >= needToCall) {
-					gameState.currentBet = Math.max(gameState.currentBet, player.roundBet);
-				}
-				notifyPlayerAction(player, "allin", bet);
-				foldButton.removeEventListener("click", onFold);
-				actionButton.removeEventListener("click", onAction);
-				// Decide whether to continue the betting loop or advance the phase
-				if (cycles < gameState.players.length) {
-					logFlow("human next", { name: player.name });
-					nextPlayer();
-				} else if (anyUncalled()) {
-					logFlow("human wait", { name: player.name });
-					nextPlayer();
-				} else {
-					logFlow("human advance", { name: player.name });
-					queueRunoutPhaseAdvance("human-allin");
-				}
-				return;
-			} else if (bet === needToCall) {
-				// Call
-				player.placeBet(bet);
-				addToPot(bet);
-				notifyPlayerAction(player, "call", bet);
-			} else {
-				// Raise
-				const autoMin = bet < minRaise && bet < player.chips;
-				if (autoMin) {
-					bet = Math.min(player.chips, minRaise);
-				}
-				player.placeBet(bet);
-				gameState.currentBet = player.roundBet;
-				addToPot(bet);
-				notifyPlayerAction(player, "raise", bet);
-				gameState.lastRaise = bet - needToCall;
-				gameState.raisesThisRound++;
-			}
-
-			foldButton.removeEventListener("click", onFold);
-			actionButton.removeEventListener("click", onAction);
-
-			// Decide whether to continue the betting loop or advance the phase
-			if (cycles < gameState.players.length) {
-				logFlow("human next", { name: player.name });
-				nextPlayer();
-			} else if (anyUncalled()) {
-				logFlow("human wait", { name: player.name });
-				nextPlayer();
-			} else {
-				logFlow("human advance", { name: player.name });
-				queueRunoutPhaseAdvance("human");
-			}
-		}
-		function onFold() {
-			player.folded = true;
-			notifyPlayerAction(player, "fold", 0);
-			player.qr.hide();
-			player.seat.classList.remove("active");
-			amountSlider.removeEventListener("input", onSliderInput);
-			amountSlider.removeEventListener("change", onSliderChange);
-			foldButton.removeEventListener("click", onFold);
-			actionButton.removeEventListener("click", onAction);
-			// Decide whether to continue the betting loop or advance the phase
-			if (cycles < gameState.players.length) {
-				logFlow("fold next", { name: player.name });
-				nextPlayer();
-			} else if (anyUncalled()) {
-				logFlow("fold wait", { name: player.name });
-				nextPlayer();
-			} else {
-				logFlow("fold advance", { name: player.name });
-				queueRunoutPhaseAdvance("fold");
-			}
-		}
-
-		foldButton.addEventListener("click", onFold);
-		actionButton.addEventListener("click", onAction);
-		*/
 	}
 
 	nextPlayer();
@@ -2954,7 +2794,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-19-v8";
+const SERVICE_WORKER_VERSION = "2026-03-21-v1";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

@@ -938,6 +938,9 @@ MEDIA QUERIES
 
     .chips :where(.total, .bet) {
         min-width: 56px;
+    }
+
+    #single .chips :where(.total, .bet) {
         text-align: center;
     }
 }
