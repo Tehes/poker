@@ -112,7 +112,7 @@ button:disabled {
 }
 
 input[type=range] {
-    width: 36vmin;
+    flex: 1 0 auto;
     margin: 2vmin;
     -webkit-appearance: none;
     appearance: none;
@@ -263,12 +263,16 @@ SINGLE VIEW
 }
 
 #single input[type=range] {
-    width: calc(100% - 58px);
+    flex-basis: 80%;
     margin: 1.5rem 0;
 }
 
 #single-action-status {
     color: var(--yellow);
+    text-align: center;
+}
+
+#single .chips :where(.total, .bet) {
     text-align: center;
 }
 
@@ -938,9 +942,5 @@ MEDIA QUERIES
 
     .chips :where(.total, .bet) {
         min-width: 56px;
-    }
-
-    #single .chips :where(.total, .bet) {
-        text-align: center;
     }
 }
