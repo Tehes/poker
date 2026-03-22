@@ -75,7 +75,7 @@ The table works fully offline after the first complete load.
 
 - **HTML/CSS/JavaScript** only – no frameworks
 - **Vanilla JS Game Engine**
-- **kjua** – lightweight QR code generation for offline play
+- **qr-creator** – QR code generation for offline play
 - **pokersolver** (ES module) – for hand evaluation at showdown
 
 ---
@@ -156,4 +156,4 @@ Set `DEBUG_FLOW` to `true` in `js/app.js` to print detailed, timestamped message
 ## 🙌 Credits
 
 - [pokersolver](https://github.com/goldfire/pokersolver) for hand ranking logic
-- [kjua](https://github.com/lrsjng/kjua) for QR code generation
+- [qr-creator](https://github.com/nimiq/qr-creator) for QR code generation
