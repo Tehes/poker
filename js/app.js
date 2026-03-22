@@ -12,7 +12,13 @@ import {
 	isInvalidRaiseAmount,
 	normalizeActionAmount,
 } from "./shared/actionModel.js";
-import { renderChipStacks, renderNotificationBar } from "./shared/tableRenderer.js";
+import {
+	renderChipStacks,
+	renderCommunityCards as renderTableCommunityCards,
+	renderNotificationBar,
+	renderSeatCards,
+	renderSeatPill,
+} from "./shared/tableRenderer.js";
 import { initServiceWorker } from "./serviceWorkerRegistration.js";
 
 /* --------------------------------------------------------------------------------------------------
@@ -331,25 +337,14 @@ function addToPot(amount) {
 	renderPot();
 }
 
-function renderCommunityCards() {
-	communityCardSlots.forEach((slot, index) => {
-		const cardCode = gameState.communityCards[index];
-		if (!cardCode) {
-			slot.innerHTML = "";
-			return;
-		}
-		slot.innerHTML = `<img src="cards/${cardCode}.svg">`;
-	});
-}
-
 function setCommunityCards(cardCodes) {
 	gameState.communityCards = cardCodes.slice();
-	renderCommunityCards();
+	renderTableCommunityCards(communityCardSlots, gameState.communityCards);
 }
 
 function appendCommunityCards(cardCodes) {
 	gameState.communityCards = gameState.communityCards.concat(cardCodes);
-	renderCommunityCards();
+	renderTableCommunityCards(communityCardSlots, gameState.communityCards);
 }
 
 function setPlayerHoleCards(player, holeCards) {
@@ -363,11 +358,10 @@ function setPlayerVisibleHoleCards(player, visibleHoleCards) {
 }
 
 function renderPlayerHoleCards(player) {
-	player.cardEls.forEach((cardEl, index) => {
-		const cardCode = player.holeCards[index];
-		const isVisible = player.visibleHoleCards[index] && cardCode;
-		cardEl.src = isVisible ? `cards/${cardCode}.svg` : "cards/1B.svg";
-	});
+	const visibleCards = player.holeCards.map((cardCode, index) =>
+		player.visibleHoleCards[index] ? cardCode : null
+	);
+	renderSeatCards(player.cardEls, visibleCards);
 }
 
 function getStatsPlayers() {
@@ -1232,21 +1226,9 @@ function updateHandStrengthDisplays() {
 			return;
 		}
 
-		if (!shouldShowTableHandStrength(p, communityCards)) {
-			handEl.textContent = "";
-			handEl.classList.add("hidden");
-			return;
-		}
-
-		const label = getPlayerHandStrengthLabel(p, communityCards);
-		if (!label) {
-			handEl.textContent = "";
-			handEl.classList.add("hidden");
-			return;
-		}
-
-		handEl.textContent = label;
-		handEl.classList.remove("hidden");
+		const shouldShow = shouldShowTableHandStrength(p, communityCards);
+		const label = shouldShow ? getPlayerHandStrengthLabel(p, communityCards) : "";
+		renderSeatPill(handEl, label, shouldShow);
 	});
 }
 
@@ -1257,13 +1239,8 @@ function updateWinProbabilityDisplays() {
 			return;
 		}
 		const shouldShow = shouldShowTableWinProbability(p);
-		if (shouldShow) {
-			winEl.textContent = `${Math.round(p.winProbability)}%`;
-			winEl.classList.remove("hidden");
-		} else {
-			winEl.textContent = "";
-			winEl.classList.add("hidden");
-		}
+		const label = shouldShow ? `${Math.round(p.winProbability)}%` : "";
+		renderSeatPill(winEl, label, shouldShow);
 	});
 }
 
@@ -2939,7 +2916,7 @@ function init() {
 	globalThis.addEventListener("pagehide", () => trackUnfinishedExit(), false);
 	globalThis.addEventListener("beforeunload", () => trackUnfinishedExit(), false);
 	renderPot();
-	renderCommunityCards();
+	renderTableCommunityCards(communityCardSlots, gameState.communityCards);
 
 	for (const rotateIcon of rotateIcons) {
 		rotateIcon.addEventListener("click", rotateSeat, false);
@@ -2971,7 +2948,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-22-v20";
+const SERVICE_WORKER_VERSION = "2026-03-22-v22";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
