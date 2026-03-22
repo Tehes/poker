@@ -707,7 +707,7 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
     cursor: pointer;
 }
 
-.qr svg {
+.qr canvas {
     width: 100% !important;
     height: auto !important;
 }

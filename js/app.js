@@ -4,6 +4,7 @@ Imports
 
 import { chooseBotAction, enqueueBotAction, setBotPlaybackFast } from "./bot.js";
 import { Hand } from "./pokersolver.js";
+import QrCreator from "./qr-creator.js";
 import {
 	getActionButtonLabel,
 	getActionRequestForAmount,
@@ -1512,20 +1513,20 @@ function createPlayers() {
 					holeCardsUrl.searchParams.set("t", `${Date.now()}`);
 					const url = holeCardsUrl.toString();
 					qrContainer.innerHTML = "";
-					const qrEl = globalThis.kjua({
-						text: url,
-						render: "svg",
-						fill: "#333",
-						crisp: true,
-					});
 					const qrLink = document.createElement("a");
 					qrLink.className = "qr-link";
 					qrLink.href = url;
 					qrLink.target = "_blank";
 					qrLink.rel = "noopener noreferrer";
 					qrLink.title = "Open player view";
-					qrLink.appendChild(qrEl);
 					qrContainer.appendChild(qrLink);
+					QrCreator.render({
+						text: url,
+						size: 200,
+						fill: "#333",
+						background: "#fff",
+						radius: 0,
+					}, qrLink);
 					qrContainer.dataset.url = url;
 				},
 				hide: function () {
@@ -2951,7 +2952,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-22-v9";
+const SERVICE_WORKER_VERSION = "2026-03-22-v10";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
