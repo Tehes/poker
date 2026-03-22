@@ -278,6 +278,29 @@ SINGLE VIEW
 
 /*
 -------------------------------------------------------------------
+REMOTE TABLE
+-------------------------------------------------------------------
+*/
+
+#remote-table #notification:has(span) {
+    cursor: default;
+    padding-right: 20px;
+}
+
+#remote-table #notification:has(span)::after {
+    content: none;
+}
+
+#remote-table #notification:has(span):hover,
+#remote-table #notification:has(span):active {
+    background-color: var(--blue);
+    border: none;
+    box-shadow: inset var(--shadow-pressed);
+    transform: none;
+}
+
+/*
+-------------------------------------------------------------------
 TABLE-MIDDLE
 -------------------------------------------------------------------
 */
@@ -684,8 +707,10 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
 
 .hole-cards .qr {
     display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
+    gap: 5px;
     position: absolute;
     top: 50%;
     left: 50%;
@@ -694,7 +719,7 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
     padding: 5px;
     background-color: #fff;
     width: 12vmin;
-    aspect-ratio: 1/1;
+    min-height: 12vmin;
     min-width: 80px;
     z-index: 1000;
     border-radius: 5%;
@@ -710,6 +735,18 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
 .qr canvas {
     width: 100% !important;
     height: auto !important;
+}
+
+.remote-table-link {
+    color: var(--blue-darker);
+    font-size: 0.9rem;
+    line-height: 1.1;
+    text-decoration: underline;
+    text-align: center;
+}
+
+.remote-table-link:where(:hover, :focus) {
+    color: var(--blue);
 }
 
 .chips {

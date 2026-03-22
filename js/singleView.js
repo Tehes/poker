@@ -2,13 +2,7 @@
 Imports
 ---------------------------------------------------------------------------------------------------*/
 
-import {
-	clampActionAmount,
-	getActionButtonLabel,
-	getActionRequestForAmount,
-	isInvalidRaiseAmount,
-	normalizeActionAmount,
-} from "./shared/actionModel.js";
+import { createSeatActionControls } from "./shared/seatActionControls.js";
 import { getSeatView, getTableView } from "./shared/syncViewModel.js";
 
 /* --------------------------------------------------------------------------------------------------
@@ -41,8 +35,6 @@ const ACTION_STEP = 10;
 let lastVersion = 0;
 let pollTimeoutId = null;
 let isPolling = false;
-let currentPendingAction = null;
-let isSubmittingAction = false;
 
 function parseOptionalInt(value) {
 	if (value === null || value === "") {
@@ -64,6 +56,17 @@ function getInitialViewState() {
 
 const initialViewState = getInitialViewState();
 const seatIndexParam = initialViewState.seatIndex;
+const actionControls = createSeatActionControls({
+	tableId,
+	seatIndex: seatIndexParam,
+	actionEndpoint: ACTION_ENDPOINT,
+	actionStep: ACTION_STEP,
+	visibleElements: [singleActionPanelEl],
+	foldButton: singleFoldButton,
+	actionButton: singleActionButton,
+	amountSlider: singleAmountSlider,
+	sliderOutput: singleSliderOutput,
+});
 
 /* --------------------------------------------------------------------------------------------------
 Functions
@@ -72,16 +75,13 @@ Functions
 function init() {
 	document.addEventListener("touchstart", function () {}, false);
 	document.addEventListener("visibilitychange", handleVisibilityChange);
-	singleAmountSlider.addEventListener("input", handleActionSliderInput);
-	singleAmountSlider.addEventListener("change", handleActionSliderChange);
-	singleFoldButton.addEventListener("click", handleFoldAction);
-	singleActionButton.addEventListener("click", handlePrimaryAction);
+	actionControls.init();
 	clearSyncedDisplays();
 	applyParams();
 	consumeLaunchParams();
 	if (!tableId || seatIndexParam === null) {
 		setOnlineElementsVisible(false);
-		hideActionControls();
+		actionControls.hide();
 		return;
 	}
 	pollState();
@@ -141,7 +141,7 @@ function setOnlineElementsVisible(isOnline) {
 	});
 	if (!isOnline) {
 		notificationsEl.classList.add("hidden");
-		hideActionControls();
+		actionControls.hide();
 		clearSyncedDisplays();
 	}
 }
@@ -178,138 +178,12 @@ function renderWinProbability(value, shouldShow) {
 	winProbabilityEl.classList.toggle("hidden", !showValue);
 }
 
-function setActionControlsEnabled(enabled) {
-	singleFoldButton.disabled = !enabled;
-	singleActionButton.disabled = !enabled;
-	singleAmountSlider.disabled = !enabled;
-}
-
-function hideActionControls() {
-	currentPendingAction = null;
-	isSubmittingAction = false;
-	singleActionPanelEl.classList.add("hidden");
-	singleSliderOutput.classList.remove("invalid");
-	setActionControlsEnabled(false);
-}
-
 function getSeatPendingAction(tableView) {
 	const tablePendingAction = tableView?.pendingAction ?? null;
 	if (tablePendingAction?.seatIndex === seatIndexParam) {
 		return tablePendingAction;
 	}
 	return null;
-}
-
-function renderActionControls(seatView, pendingAction) {
-	if (
-		!pendingAction ||
-		pendingAction.seatIndex !== seatIndexParam ||
-		seatView.folded ||
-		seatView.allIn
-	) {
-		hideActionControls();
-		return;
-	}
-
-	const isNewTurn = currentPendingAction?.turnToken !== pendingAction.turnToken;
-	currentPendingAction = pendingAction;
-	singleActionPanelEl.classList.remove("hidden");
-
-	singleAmountSlider.min = pendingAction.minAmount;
-	singleAmountSlider.max = pendingAction.maxAmount;
-	singleAmountSlider.step = ACTION_STEP;
-
-	if (isNewTurn) {
-		isSubmittingAction = false;
-		singleAmountSlider.value = pendingAction.minAmount;
-	} else {
-		const currentAmount = Number.parseInt(singleAmountSlider.value, 10);
-		singleAmountSlider.value = clampActionAmount(currentAmount, pendingAction);
-	}
-
-	updatePrimaryActionLabel();
-	setActionControlsEnabled(!isSubmittingAction);
-}
-
-function updatePrimaryActionLabel() {
-	if (!currentPendingAction) {
-		return;
-	}
-
-	const amount = clampActionAmount(
-		Number.parseInt(singleAmountSlider.value, 10),
-		currentPendingAction,
-	);
-	singleSliderOutput.value = amount;
-	singleSliderOutput.classList.toggle(
-		"invalid",
-		isInvalidRaiseAmount(amount, currentPendingAction),
-	);
-	singleActionButton.textContent = getActionButtonLabel(amount, currentPendingAction);
-}
-
-function handleActionSliderInput() {
-	updatePrimaryActionLabel();
-}
-
-function handleActionSliderChange() {
-	if (!currentPendingAction) {
-		return;
-	}
-	const amount = Number.parseInt(singleAmountSlider.value, 10);
-	const normalizedAmount = normalizeActionAmount(amount, currentPendingAction);
-	singleAmountSlider.value = normalizedAmount;
-	singleSliderOutput.value = normalizedAmount;
-	singleSliderOutput.classList.remove("invalid");
-	updatePrimaryActionLabel();
-}
-
-async function submitActionRequest(action, amount = null) {
-	if (!currentPendingAction || !tableId || seatIndexParam === null || isSubmittingAction) {
-		return;
-	}
-
-	isSubmittingAction = true;
-	setActionControlsEnabled(false);
-
-	try {
-		const res = await fetch(ACTION_ENDPOINT, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({
-				tableId,
-				seatIndex: seatIndexParam,
-				turnToken: currentPendingAction.turnToken,
-				action,
-				amount,
-			}),
-		});
-		if (!res.ok) {
-			throw new Error(`action request failed with status ${res.status}`);
-		}
-	} catch (error) {
-		console.warn("action request failed", error);
-		isSubmittingAction = false;
-		setActionControlsEnabled(true);
-	}
-}
-
-function handlePrimaryAction() {
-	if (!currentPendingAction) {
-		return;
-	}
-
-	const amount = Number.parseInt(singleAmountSlider.value, 10);
-	if (Number.isNaN(amount)) {
-		return;
-	}
-
-	const request = getActionRequestForAmount(amount, currentPendingAction);
-	submitActionRequest(request.action, request.amount);
-}
-
-function handleFoldAction() {
-	submitActionRequest("fold");
 }
 
 // Constant polling is intentional.
@@ -372,7 +246,7 @@ function applyRemoteState(payload) {
 	const tableView = getTableView(payload);
 	const seatView = getSeatView(payload);
 	if (!tableView || !seatView || seatView.seatIndex !== seatIndexParam) {
-		hideActionControls();
+		actionControls.hide();
 		clearSyncedDisplays();
 		return;
 	}
@@ -385,7 +259,7 @@ function applyRemoteState(payload) {
 	// The single view only applies them and does not compute odds or hand labels itself.
 	renderHandStrength(seatView.handStrengthLabel || "");
 	renderWinProbability(seatView.winProbability, seatView.showWinProbability === true);
-	renderActionControls(seatView, getSeatPendingAction(tableView));
+	actionControls.render(seatView, getSeatPendingAction(tableView));
 }
 
 /* --------------------------------------------------------------------------------------------------

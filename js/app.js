@@ -12,6 +12,7 @@ import {
 	isInvalidRaiseAmount,
 	normalizeActionAmount,
 } from "./shared/actionModel.js";
+import { renderChipStacks, renderNotificationBar } from "./shared/tableRenderer.js";
 import { initServiceWorker } from "./serviceWorkerRegistration.js";
 
 /* --------------------------------------------------------------------------------------------------
@@ -81,7 +82,6 @@ const WINNER_REACTION_DURATION = 2000;
 const HISTORY_LOG = false; // Set to true to enable history logging in the console
 let DEBUG_FLOW = false; // Set to true for verbose game-flow logging
 const CHIP_UNIT = 10;
-const MAX_VISUAL_STACK_CHIPS = 10;
 
 const speedModeParam = new URLSearchParams(globalThis.location.search).get("speedmode");
 const SPEED_MODE = speedModeParam !== null && speedModeParam !== "0" && speedModeParam !== "false";
@@ -164,6 +164,7 @@ const gameState = {
 	currentPhaseIndex: 0,
 	currentBet: 0,
 	pot: 0,
+	activeSeatIndex: null,
 	initialDealerName: null,
 	dealerOrbitCount: -1,
 	gameStarted: false,
@@ -245,6 +246,11 @@ function logFlow(msg, data) {
 	}
 }
 
+function createPageUrl(pageName) {
+	const base = globalThis.location.origin + globalThis.location.pathname.replace(/[^/]*$/, "");
+	return new URL(`${base}${pageName}`);
+}
+
 function formatPercent(numerator, denominator) {
 	if (denominator === 0) {
 		return "-";
@@ -293,17 +299,6 @@ function buildSplitPayouts(amount, winners) {
 	});
 
 	return payouts;
-}
-
-function getVisualChipCount(chips, chipLeader) {
-	if (chips <= 0 || chipLeader <= 0) {
-		return 0;
-	}
-
-	return Math.min(
-		MAX_VISUAL_STACK_CHIPS,
-		Math.ceil((chips / chipLeader) * MAX_VISUAL_STACK_CHIPS),
-	);
 }
 
 function combinationCount(n, k) {
@@ -372,18 +367,6 @@ function renderPlayerHoleCards(player) {
 		const cardCode = player.holeCards[index];
 		const isVisible = player.visibleHoleCards[index] && cardCode;
 		cardEl.src = isVisible ? `cards/${cardCode}.svg` : "cards/1B.svg";
-	});
-}
-
-function renderChipStacks(playerList) {
-	const chipLeader = playerList.reduce((maxChips, player) => Math.max(maxChips, player.chips), 0);
-
-	playerList.forEach((player) => {
-		const visibleChips = getVisualChipCount(player.chips, chipLeader);
-
-		player.stackChipEls.forEach((chipEl, index) => {
-			chipEl.classList.toggle("hidden", index >= visibleChips);
-		});
 	});
 }
 
@@ -544,18 +527,7 @@ function deliverNotification(msg) {
 	if (notifArr.length > MAX_ITEMS) notifArr.pop();
 	syncLogUi();
 	queueStateSync();
-	// create a new span for this message
-	if (notification.childElementCount === 0) {
-		notification.textContent = "";
-	}
-	const span = document.createElement("span");
-	span.textContent = msg;
-	// prepend to container
-	notification.prepend(span);
-	// remove excess spans from end if over limit
-	while (notification.childElementCount > MAX_ITEMS) {
-		notification.removeChild(notification.lastChild);
-	}
+	renderNotificationBar(notification, notifArr);
 	logHistory(msg);
 }
 
@@ -811,9 +783,10 @@ function clearPendingAction() {
 	queueStateSync(0);
 }
 
-function buildPublicPlayerView(player) {
+function buildPublicPlayerView(player, communityCards) {
 	return {
 		seatIndex: player.seatIndex,
+		seatSlot: player.seatSlot,
 		name: player.name,
 		chips: player.chips,
 		roundBet: player.roundBet,
@@ -822,6 +795,14 @@ function buildPublicPlayerView(player) {
 		dealer: player.dealer,
 		smallBlind: player.smallBlind,
 		bigBlind: player.bigBlind,
+		publicHoleCards: player.holeCards.map((cardCode, index) =>
+			player.visibleHoleCards[index] ? cardCode : null
+		),
+		handStrengthLabel: shouldShowTableHandStrength(player, communityCards)
+			? getPlayerHandStrengthLabel(player, communityCards)
+			: "",
+		winProbability: player.winProbability,
+		showWinProbability: shouldShowTableWinProbability(player),
 	};
 }
 
@@ -846,6 +827,7 @@ function shouldShowSeatWinProbability(player) {
 function buildSeatView(player, communityCards) {
 	return {
 		seatIndex: player.seatIndex,
+		seatSlot: player.seatSlot,
 		name: player.name,
 		chips: player.chips,
 		roundBet: player.roundBet,
@@ -868,9 +850,12 @@ function buildSyncView() {
 			// table contains public/shared state only.
 			phase: getCurrentPhase(),
 			pot: gameState.pot,
+			activeSeatIndex: gameState.activeSeatIndex,
 			communityCards,
 			notifications: notifArr.slice(0, MAX_ITEMS),
-			playersPublic: gameState.players.map((player) => buildPublicPlayerView(player)),
+			playersPublic: gameState.players.map((player) =>
+				buildPublicPlayerView(player, communityCards)
+			),
 			pendingAction: gameState.pendingAction ? { ...gameState.pendingAction } : null,
 		},
 		// seatViews carries one private projection per seat; the backend narrows this to one seat.
@@ -1476,6 +1461,7 @@ function createPlayers() {
 		}
 	}
 
+	const allSeats = Array.from(document.querySelectorAll(".seat"));
 	const activePlayers = document.querySelectorAll(".seat:not(.hidden)");
 	for (const player of activePlayers) {
 		const seatIndex = gameState.players.length;
@@ -1483,6 +1469,7 @@ function createPlayers() {
 			name: player.querySelector("h3").textContent,
 			isBot: player.classList.contains("bot"),
 			seat: player,
+			seatSlot: allSeats.indexOf(player),
 			totalEl: player.querySelector(".chips .total"),
 			betEl: player.querySelector(".chips .bet"),
 			stackChipEls: player.querySelectorAll(".stack-visual img"),
@@ -1498,10 +1485,10 @@ function createPlayers() {
 			qr: {
 				show: function (card1, card2) {
 					const qrContainer = player.querySelector(".qr");
+					const qrLink = qrContainer.querySelector(".qr-link");
+					const remoteLink = qrContainer.querySelector(".remote-table-link");
 					qrContainer.classList.remove("hidden");
-					const base = globalThis.location.origin +
-						globalThis.location.pathname.replace(/[^/]*$/, "");
-					const holeCardsUrl = new URL(`${base}hole-cards.html`);
+					const holeCardsUrl = createPageUrl("hole-cards.html");
 					holeCardsUrl.searchParams.set("card1", card1);
 					holeCardsUrl.searchParams.set("card2", card2);
 					holeCardsUrl.searchParams.set("name", playerObject.name);
@@ -1512,14 +1499,8 @@ function createPlayers() {
 					}
 					holeCardsUrl.searchParams.set("t", `${Date.now()}`);
 					const url = holeCardsUrl.toString();
-					qrContainer.innerHTML = "";
-					const qrLink = document.createElement("a");
-					qrLink.className = "qr-link";
+					qrLink.replaceChildren();
 					qrLink.href = url;
-					qrLink.target = "_blank";
-					qrLink.rel = "noopener noreferrer";
-					qrLink.title = "Open player view";
-					qrContainer.appendChild(qrLink);
 					QrCreator.render({
 						text: url,
 						size: 200,
@@ -1527,12 +1508,30 @@ function createPlayers() {
 						background: "#fff",
 						radius: 0,
 					}, qrLink);
+
+					if (tableId !== null) {
+						const remoteTableUrl = createPageUrl("remoteTable.html");
+						remoteTableUrl.searchParams.set("tableId", tableId);
+						remoteTableUrl.searchParams.set("seatIndex", `${playerObject.seatIndex}`);
+						remoteLink.href = remoteTableUrl.toString();
+						remoteLink.classList.remove("hidden");
+					} else {
+						remoteLink.removeAttribute("href");
+						remoteLink.classList.add("hidden");
+					}
+
 					qrContainer.dataset.url = url;
 				},
 				hide: function () {
 					const qrContainer = player.querySelector(".qr");
+					const qrLink = qrContainer.querySelector(".qr-link");
+					const remoteLink = qrContainer.querySelector(".remote-table-link");
 					qrContainer.classList.add("hidden");
-					qrContainer.innerHTML = "";
+					qrLink.replaceChildren();
+					qrLink.removeAttribute("href");
+					remoteLink.removeAttribute("href");
+					remoteLink.classList.add("hidden");
+					delete qrContainer.dataset.url;
 				},
 			},
 			cardEls: player.querySelectorAll(".card"),
@@ -1741,6 +1740,7 @@ function preFlop() {
 	closeAllOverlays();
 	setSummaryButtonsVisible(false);
 	clearActionLabels();
+	clearActiveTurnPlayer(false);
 
 	// Clear folded state and remove CSS-Klasse
 	gameState.players.forEach((p) => {
@@ -1809,6 +1809,7 @@ function preFlop() {
 	// GAME OVER: only one player left at the table
 	if (gameState.players.length === 1) {
 		const champion = gameState.players[0];
+		clearActiveTurnPlayer(false);
 		enqueueNotification(`${champion.name} wins the game! 🏆`);
 		// Reveal champion's stack
 		champion.showTotal();
@@ -2059,6 +2060,21 @@ function notifyPlayerAction(player, action = "", amount = 0) {
 function setActiveTurnPlayer(player) {
 	document.querySelectorAll(".seat").forEach((seat) => seat.classList.remove("active"));
 	player.seat.classList.add("active");
+	if (gameState.activeSeatIndex !== player.seatIndex) {
+		gameState.activeSeatIndex = player.seatIndex;
+		queueStateSync(0);
+	}
+}
+
+function clearActiveTurnPlayer(sync = true) {
+	document.querySelectorAll(".seat").forEach((seat) => seat.classList.remove("active"));
+	if (gameState.activeSeatIndex === null) {
+		return;
+	}
+	gameState.activeSeatIndex = null;
+	if (sync) {
+		queueStateSync(0);
+	}
 }
 
 function continueAfterResolvedTurn({
@@ -2076,6 +2092,7 @@ function continueAfterResolvedTurn({
 		logFlow(`${logPrefix} wait`, { name: player.name });
 		nextPlayer();
 	} else {
+		clearActiveTurnPlayer(false);
 		logFlow(`${logPrefix} advance`, { name: player.name });
 		queueRunoutPhaseAdvance(advanceReason);
 	}
@@ -2407,6 +2424,7 @@ function startBettingRound() {
 		order: gameState.players.map((p) => p.name),
 	});
 	// Clear action indicators from the previous betting round
+	clearActiveTurnPlayer(false);
 	gameState.players.forEach((p) => p.seat.classList.remove("checked", "called", "raised"));
 	clearPendingAction();
 
@@ -2419,6 +2437,7 @@ function startBettingRound() {
 			active: activePlayers.length,
 			actionable: actionable.length,
 		});
+		clearActiveTurnPlayer(false);
 		clearPendingAction();
 		return queueRunoutPhaseAdvance("startBettingRound");
 	}
@@ -2467,6 +2486,7 @@ function startBettingRound() {
 					roundBet: p.roundBet,
 				})),
 			});
+			clearActiveTurnPlayer(false);
 			clearPendingAction();
 			return queueRunoutPhaseAdvance("nextPlayer");
 		}
@@ -2511,6 +2531,7 @@ function startBettingRound() {
 					return setTimeout(nextPlayer, 0); // schedule asynchronously to break call chain
 				}
 				logFlow("advance phase", { name: player.name });
+				clearActiveTurnPlayer(false);
 				clearPendingAction();
 				return queueRunoutPhaseAdvance("matched");
 			}
@@ -2584,9 +2605,7 @@ function finishHandAfterShowdown() {
 	renderChipStacks(gameState.players);
 	setPot(0);
 
-	gameState.players.forEach((p) => {
-		p.seat.classList.remove("active");
-	});
+	clearActiveTurnPlayer(false);
 
 	gameState.handInProgress = false;
 	clearPendingAction();
@@ -2952,7 +2971,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-22-v10";
+const SERVICE_WORKER_VERSION = "2026-03-22-v20";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

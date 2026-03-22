@@ -82,19 +82,19 @@ The table works fully offline after the first complete load.
 
 ## 🌐 Optional Backend Sync
 
-- Backend sync is enabled only for QR multiplayer games that start with at least 2 human players.
+- Backend sync is enabled only for multi-human games that start with at least 2 human players.
 - In solo and spectator games, the table keeps a clean URL without `tableId` and stays fully local.
-- When sync is active, hole-cards views include the same `tableId` in the QR and poll the backend to keep cards/chips in sync, including pot and fold status. The backend also relays turn-based action requests from the phone back to the shared table. If the backend is unreachable, the QR data stays in place and play continues offline.
+- When sync is active, human seats expose a QR link for `hole-cards.html` and a direct link for `remoteTable.html`. Both views poll the same synced seat/table payload, and the backend relays turn-based action requests back to the shared table. If the backend is unreachable, the QR data stays in place and play continues offline.
 
 ---
 
 ## 🤖 How It Works
 
 - The shared device runs the table (e.g., tablet).
-- When a round starts, each player sees a QR code.
-- They scan it and view their private hole cards on their own phone.
+- When a synced round starts, each human seat exposes a QR code for the private hole-card view and a direct remote-table link.
+- Players can open the QR companion view or the full remote table on their own device.
 - In solo play, the human acts on the shared device.
-- In QR multiplayer, the active player can act on the shared device or directly on their own phone.
+- In synced multiplayer, the active player can act on the shared device or directly on their own device.
 - Game flow logic ensures proper handling of:
 
   - **Dealer rotation** and automatic blind posting
@@ -148,7 +148,7 @@ Set `DEBUG_FLOW` to `true` in `js/app.js` to print detailed, timestamped message
 - Live syncing is best-effort; if the backend is unreachable, devices fall back to local QR data.
 - Without active sync or without `tableId`, the hole-cards view is read-only and actions stay on the shared device.
 - No persistent chip stacks or session saving (yet).
-- Not designed for remote multiplayer.
+- Remote table links are lightweight and trust-based; there are no seat tokens or connection checks yet.
 - Fixed blind structure (doubles every 2 orbits) — not customizable.
 
 ---
