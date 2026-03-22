@@ -6,6 +6,7 @@ import { chooseBotAction, enqueueBotAction, setBotPlaybackFast } from "./bot.js"
 import { Hand } from "./pokersolver.js";
 import {
 	getActionButtonLabel,
+	getActionRequestForAmount,
 	getPlayerActionState,
 	isInvalidRaiseAmount,
 	normalizeActionAmount,
@@ -2036,9 +2037,182 @@ function notifyPlayerAction(player, action = "", amount = 0) {
 	enqueueNotification(msg);
 }
 
-function handleHumanTurn({ player, cycles, anyUncalled, nextPlayer }) {
-	document.querySelectorAll(".seat").forEach((s) => s.classList.remove("active"));
+function setActiveTurnPlayer(player) {
+	document.querySelectorAll(".seat").forEach((seat) => seat.classList.remove("active"));
 	player.seat.classList.add("active");
+}
+
+function continueAfterResolvedTurn({
+	player,
+	cycles,
+	anyUncalled,
+	nextPlayer,
+	logPrefix,
+	advanceReason,
+}) {
+	if (cycles < gameState.players.length) {
+		logFlow(`${logPrefix} next`, { name: player.name });
+		nextPlayer();
+	} else if (anyUncalled()) {
+		logFlow(`${logPrefix} wait`, { name: player.name });
+		nextPlayer();
+	} else {
+		logFlow(`${logPrefix} advance`, { name: player.name });
+		queueRunoutPhaseAdvance(advanceReason);
+	}
+}
+
+function applyTurnAction(player, actionRequest) {
+	if (!player || !actionRequest) {
+		return null;
+	}
+
+	const currentActionState = getPlayerActionState(gameState, player);
+
+	switch (actionRequest.action) {
+		case "fold":
+			player.folded = true;
+			notifyPlayerAction(player, "fold", 0);
+			player.qr.hide();
+			return { action: "fold", amount: 0 };
+		case "check":
+			notifyPlayerAction(player, "check", 0);
+			return { action: "check", amount: 0 };
+		case "call": {
+			const callAmount = Math.min(player.chips, currentActionState.needToCall);
+			if (
+				callAmount === player.chips &&
+				player.chips > 0 &&
+				currentActionState.needToCall > 0
+			) {
+				return applyTurnAction(player, { action: "allin", amount: player.chips });
+			}
+			const actual = player.placeBet(callAmount);
+			addToPot(actual);
+			notifyPlayerAction(player, "call", actual);
+			return { action: "call", amount: actual };
+		}
+		case "allin": {
+			const actual = player.placeBet(player.chips);
+			addToPot(actual);
+			if (actual >= currentActionState.minRaise) {
+				gameState.currentBet = player.roundBet;
+				gameState.lastRaise = actual - currentActionState.needToCall;
+				gameState.raisesThisRound++;
+			} else if (actual >= currentActionState.needToCall) {
+				gameState.currentBet = Math.max(gameState.currentBet, player.roundBet);
+			}
+			notifyPlayerAction(player, "allin", actual);
+			return { action: "allin", amount: actual };
+		}
+		case "raise": {
+			let bet = Number.parseInt(actionRequest.amount, 10);
+			if (Number.isNaN(bet)) {
+				return null;
+			}
+			if (bet < currentActionState.minRaise && bet < player.chips) {
+				bet = Math.min(player.chips, currentActionState.minRaise);
+			}
+			if (bet >= player.chips && player.chips > 0) {
+				return applyTurnAction(player, { action: "allin", amount: player.chips });
+			}
+			const actual = player.placeBet(bet);
+			if (actual > currentActionState.needToCall) {
+				gameState.currentBet = player.roundBet;
+				gameState.lastRaise = actual - currentActionState.needToCall;
+				gameState.raisesThisRound++;
+			}
+			addToPot(actual);
+			notifyPlayerAction(player, "raise", actual);
+			return { action: "raise", amount: actual };
+		}
+		default:
+			return null;
+	}
+}
+
+function normalizeBotActionRequest(player, decision) {
+	if (!player || !decision) {
+		return null;
+	}
+
+	const actionState = getPlayerActionState(gameState, player);
+
+	switch (decision.action) {
+		case "fold":
+		case "check":
+			return { action: decision.action };
+		case "call":
+			return { action: "call", amount: Math.min(player.chips, actionState.needToCall) };
+		case "raise": {
+			let amount = Number.parseInt(decision.amount, 10);
+			if (Number.isNaN(amount)) {
+				return null;
+			}
+			if (amount < actionState.minRaise && amount < player.chips) {
+				amount = Math.min(player.chips, actionState.minRaise);
+			}
+			return { action: "raise", amount };
+		}
+		default:
+			return null;
+	}
+}
+
+function getHumanAdvanceReason(action) {
+	if (action === "fold") {
+		return "fold";
+	}
+	if (action === "allin") {
+		return "human-allin";
+	}
+	return "human";
+}
+
+function getHumanLogPrefix(action) {
+	return action === "fold" ? "fold" : "human";
+}
+
+function runBotTurn({ player, cycles, anyUncalled, nextPlayer }) {
+	setActiveTurnPlayer(player);
+	hideActionControls();
+	const nameEl = player.seat.querySelector("h3");
+	if (player.actionLabelTimer) {
+		clearTimeout(player.actionLabelTimer);
+		player.actionLabelTimer = null;
+		player.seat.classList.remove("action-label");
+	}
+	player.seat.classList.remove("checked", "called", "raised", "allin");
+	nameEl.textContent = "thinking …";
+
+	enqueueBotAction(() => {
+		const decision = chooseBotAction(player, gameState);
+		const actionRequest = normalizeBotActionRequest(player, decision);
+		let resolvedAction = applyTurnAction(player, actionRequest);
+		if (!resolvedAction) {
+			logFlow("bot action fallback", {
+				name: player.name,
+				decision: decision?.action ?? null,
+			});
+			const fallbackActionState = getPlayerActionState(gameState, player);
+			resolvedAction = applyTurnAction(
+				player,
+				fallbackActionState.canCheck ? { action: "check" } : { action: "fold" },
+			);
+		}
+		continueAfterResolvedTurn({
+			player,
+			cycles,
+			anyUncalled,
+			nextPlayer,
+			logPrefix: "bot",
+			advanceReason: "bot",
+		});
+	});
+}
+
+function runHumanTurn({ player, cycles, anyUncalled, nextPlayer }) {
+	setActiveTurnPlayer(player);
 	actionButton.classList.remove("hidden");
 	foldButton.classList.remove("hidden");
 	amountSlider.classList.remove("hidden");
@@ -2084,56 +2258,6 @@ function handleHumanTurn({ player, cycles, anyUncalled, nextPlayer }) {
 		}
 	}
 
-	function continueHumanTurn(logPrefix, advanceReason) {
-		if (cycles < gameState.players.length) {
-			logFlow(`${logPrefix} next`, { name: player.name });
-			nextPlayer();
-		} else if (anyUncalled()) {
-			logFlow(`${logPrefix} wait`, { name: player.name });
-			nextPlayer();
-		} else {
-			logFlow(`${logPrefix} advance`, { name: player.name });
-			queueRunoutPhaseAdvance(advanceReason);
-		}
-	}
-
-	function applyHumanBetAction(rawAmount) {
-		const currentActionState = getPlayerActionState(gameState, player);
-		const bet = normalizeActionAmount(rawAmount, currentActionState);
-
-		if (bet === 0) {
-			notifyPlayerAction(player, "check", 0);
-			return "human";
-		}
-		if (bet === player.chips) {
-			const actual = player.placeBet(bet);
-			addToPot(actual);
-			if (actual >= currentActionState.minRaise) {
-				gameState.currentBet = player.roundBet;
-				gameState.lastRaise = actual - currentActionState.needToCall;
-				gameState.raisesThisRound++;
-			} else if (actual >= currentActionState.needToCall) {
-				gameState.currentBet = Math.max(gameState.currentBet, player.roundBet);
-			}
-			notifyPlayerAction(player, "allin", actual);
-			return "human-allin";
-		}
-		if (bet === currentActionState.needToCall) {
-			const actual = player.placeBet(bet);
-			addToPot(actual);
-			notifyPlayerAction(player, "call", actual);
-			return "human";
-		}
-
-		const actual = player.placeBet(bet);
-		gameState.currentBet = player.roundBet;
-		addToPot(actual);
-		notifyPlayerAction(player, "raise", actual);
-		gameState.lastRaise = actual - currentActionState.needToCall;
-		gameState.raisesThisRound++;
-		return "human";
-	}
-
 	function normalizeRemoteActionRequest(remoteAction) {
 		if (
 			!remoteAction ||
@@ -2145,46 +2269,51 @@ function handleHumanTurn({ player, cycles, anyUncalled, nextPlayer }) {
 
 		switch (remoteAction.action) {
 			case "fold":
-				return { type: "fold" };
+				return { action: "fold" };
 			case "check":
-				return actionState.canCheck ? { type: "bet", amount: 0 } : null;
+				return actionState.canCheck ? getActionRequestForAmount(0, actionState) : null;
 			case "call":
 				return actionState.needToCall > 0
-					? { type: "bet", amount: Math.min(actionState.needToCall, player.chips) }
+					? getActionRequestForAmount(
+						Math.min(actionState.needToCall, player.chips),
+						actionState,
+					)
 					: null;
 			case "allin":
-				return player.chips > 0 ? { type: "bet", amount: player.chips } : null;
+				return player.chips > 0 ? { action: "allin", amount: player.chips } : null;
 			case "raise": {
 				const amount = Number.parseInt(remoteAction.amount, 10);
 				if (Number.isNaN(amount) || amount <= actionState.needToCall) {
 					return null;
 				}
-				return { type: "bet", amount: Math.min(amount, player.chips) };
+				return getActionRequestForAmount(Math.min(amount, player.chips), actionState);
 			}
 			default:
 				return null;
 		}
 	}
 
-	function submitHumanTurn(request) {
-		if (turnResolved) {
+	function submitHumanTurn(actionRequest) {
+		if (turnResolved || !actionRequest) {
+			return false;
+		}
+
+		const resolvedAction = applyTurnAction(player, actionRequest);
+		if (!resolvedAction) {
 			return false;
 		}
 
 		turnResolved = true;
 		clearPendingAction();
 		cleanupHumanTurn();
-
-		if (request.type === "fold") {
-			player.folded = true;
-			notifyPlayerAction(player, "fold", 0);
-			player.qr.hide();
-			continueHumanTurn("fold", "fold");
-			return true;
-		}
-
-		const advanceReason = applyHumanBetAction(request.amount);
-		continueHumanTurn("human", advanceReason);
+		continueAfterResolvedTurn({
+			player,
+			cycles,
+			anyUncalled,
+			nextPlayer,
+			logPrefix: getHumanLogPrefix(resolvedAction.action),
+			advanceReason: getHumanAdvanceReason(resolvedAction.action),
+		});
 		return true;
 	}
 
@@ -2223,11 +2352,15 @@ function handleHumanTurn({ player, cycles, anyUncalled, nextPlayer }) {
 
 	function onAction() {
 		const amount = Number.parseInt(amountSlider.value, 10);
-		submitHumanTurn({ type: "bet", amount });
+		if (Number.isNaN(amount)) {
+			return;
+		}
+		const actionRequest = getActionRequestForAmount(amount, actionState);
+		submitHumanTurn(actionRequest);
 	}
 
 	function onFold() {
-		submitHumanTurn({ type: "fold" });
+		submitHumanTurn({ action: "fold" });
 	}
 
 	amountSlider.addEventListener("input", onSliderInput);
@@ -2367,65 +2500,11 @@ function startBettingRound() {
 		// --- Bot Branch --------------------------------------------------------------
 		// If this is a bot, choose an action based on hand strength
 		if (player.isBot) {
-			document.querySelectorAll(".seat").forEach((s) => s.classList.remove("active"));
-			player.seat.classList.add("active");
-			hideActionControls();
-			const nameEl = player.seat.querySelector("h3");
-			if (player.actionLabelTimer) {
-				clearTimeout(player.actionLabelTimer);
-				player.actionLabelTimer = null;
-				player.seat.classList.remove("action-label");
-			}
-			player.seat.classList.remove("checked", "called", "raised", "allin");
-			nameEl.textContent = "thinking …";
-
-			enqueueBotAction(() => {
-				const decision = chooseBotAction(player, gameState);
-				const needToCall = gameState.currentBet - player.roundBet;
-
-				if (decision.action === "fold") {
-					player.folded = true;
-					notifyPlayerAction(player, "fold", 0);
-					player.qr.hide();
-				} else if (decision.action === "check") {
-					notifyPlayerAction(player, "check", 0);
-				} else if (decision.action === "call") {
-					const actual = player.placeBet(decision.amount);
-					addToPot(actual);
-					notifyPlayerAction(player, "call", actual);
-				} else if (decision.action === "raise") {
-					let bet = decision.amount;
-					const minRaise = needToCall + gameState.lastRaise;
-					const autoMin = bet < minRaise && bet < player.chips;
-					if (autoMin) {
-						bet = Math.min(player.chips, minRaise);
-					}
-					const amt = player.placeBet(bet);
-					if (amt > needToCall) {
-						gameState.currentBet = player.roundBet;
-						gameState.lastRaise = amt - needToCall;
-						gameState.raisesThisRound++;
-					}
-					addToPot(amt);
-					notifyPlayerAction(player, "raise", amt);
-				}
-
-				if (cycles < gameState.players.length) {
-					logFlow("bot next", { name: player.name });
-					nextPlayer();
-				} else if (anyUncalled()) {
-					logFlow("bot wait", { name: player.name });
-					nextPlayer();
-				} else {
-					logFlow("bot advance", { name: player.name });
-					queueRunoutPhaseAdvance("bot");
-				}
-			});
-			return;
+			return runBotTurn({ player, cycles, anyUncalled, nextPlayer });
 		}
 
 		// --- Human Branch ------------------------------------------------------------
-		return handleHumanTurn({ player, cycles, anyUncalled, nextPlayer });
+		return runHumanTurn({ player, cycles, anyUncalled, nextPlayer });
 	}
 
 	nextPlayer();
@@ -2854,7 +2933,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-21-v7";
+const SERVICE_WORKER_VERSION = "2026-03-21-v8";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
