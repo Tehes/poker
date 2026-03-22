@@ -105,6 +105,17 @@ button:disabled {
     box-shadow: var(--shadow-light);
 }
 
+.action-link {
+    color: var(--yellow);
+    font-weight: bold;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.action-link:where(:hover, :focus) {
+    color: var(--yellow-active);
+}
+
 #start-button,
 #instructions-button,
 #fast-forward-button {
@@ -276,6 +287,10 @@ SINGLE VIEW
     text-align: center;
 }
 
+#single-switch-link {
+    margin-top: 1rem;
+}
+
 /*
 -------------------------------------------------------------------
 REMOTE TABLE
@@ -297,6 +312,28 @@ REMOTE TABLE
     border: none;
     box-shadow: inset var(--shadow-pressed);
     transform: none;
+}
+
+#remote-table .seat-switch-link {
+    position: absolute;
+    left: 50%;
+    bottom: 10px;
+    transform: translate(-50%, 0%);
+    z-index: 1200;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid hsla(40, 90%, 60%, 0.35);
+    background-color: hsla(221, 39%, 20%, 0.92);
+    color: var(--yellow);
+    font-size: 0.9rem;
+    box-shadow: var(--shadow-close);
+    width: max-content;
+    max-width: 100%;
+}
+
+#remote-table .seat-switch-link:where(:hover, :focus) {
+    color: var(--yellow-active);
+    background-color: hsla(221, 39%, 20%, 0.98);
 }
 
 /*

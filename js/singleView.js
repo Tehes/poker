@@ -2,7 +2,7 @@
 Imports
 ---------------------------------------------------------------------------------------------------*/
 
-import { createSeatActionControls } from "./shared/seatActionControls.js";
+import { createSeatActionControls, shouldShowSeatActionControls } from "./shared/seatActionControls.js";
 import { getSeatView, getTableView } from "./shared/syncViewModel.js";
 
 /* --------------------------------------------------------------------------------------------------
@@ -25,7 +25,8 @@ const singleFoldButton = document.getElementById("single-fold-button");
 const singleActionButton = document.getElementById("single-action-button");
 const singleAmountSlider = document.getElementById("single-amount-slider");
 const singleSliderOutput = document.getElementById("single-slider-output");
-const onlineOnlyElements = [betEl, potEl];
+const singleSwitchLink = document.getElementById("single-switch-link");
+const onlineOnlyElements = [betEl, potEl, singleActionPanelEl];
 const urlParams = new URLSearchParams(globalThis.location.search);
 const tableId = urlParams.get("tableId") || "";
 const STATE_ENDPOINT = "https://poker.tehes.deno.net/state";
@@ -35,6 +36,7 @@ const ACTION_STEP = 10;
 let lastVersion = 0;
 let pollTimeoutId = null;
 let isPolling = false;
+let hasSyncedState = false;
 
 function parseOptionalInt(value) {
 	if (value === null || value === "") {
@@ -61,7 +63,7 @@ const actionControls = createSeatActionControls({
 	seatIndex: seatIndexParam,
 	actionEndpoint: ACTION_ENDPOINT,
 	actionStep: ACTION_STEP,
-	visibleElements: [singleActionPanelEl],
+	visibleElements: [singleFoldButton, singleActionButton, singleAmountSlider, singleSliderOutput],
 	foldButton: singleFoldButton,
 	actionButton: singleActionButton,
 	amountSlider: singleAmountSlider,
@@ -76,6 +78,7 @@ function init() {
 	document.addEventListener("touchstart", function () {}, false);
 	document.addEventListener("visibilitychange", handleVisibilityChange);
 	actionControls.init();
+	configureSwitchLink();
 	clearSyncedDisplays();
 	applyParams();
 	consumeLaunchParams();
@@ -141,9 +144,25 @@ function setOnlineElementsVisible(isOnline) {
 	});
 	if (!isOnline) {
 		notificationsEl.classList.add("hidden");
+		setSwitchLinkVisible(false);
 		actionControls.hide();
 		clearSyncedDisplays();
 	}
+}
+
+function configureSwitchLink() {
+	if (!singleSwitchLink || !tableId || seatIndexParam === null) {
+		return;
+	}
+	singleSwitchLink.href =
+		`remoteTable.html?tableId=${encodeURIComponent(tableId)}&seatIndex=${seatIndexParam}`;
+}
+
+function setSwitchLinkVisible(isVisible) {
+	if (!singleSwitchLink) {
+		return;
+	}
+	singleSwitchLink.classList.toggle("hidden", !isVisible);
 }
 
 function clearSyncedDisplays() {
@@ -201,14 +220,13 @@ async function pollState() {
 		}&seatIndex=${seatIndexParam}&sinceVersion=${lastVersion}`;
 		const res = await fetch(url);
 		if (res.status === 204) {
-			setOnlineElementsVisible(true);
+			setOnlineElementsVisible(hasSyncedState);
 			return;
 		}
 		if (res.ok) {
 			const payload = await res.json();
 			lastVersion = payload.version;
-			applyRemoteState(payload);
-			setOnlineElementsVisible(true);
+			setOnlineElementsVisible(applyRemoteState(payload));
 		} else {
 			setOnlineElementsVisible(false);
 		}
@@ -246,11 +264,16 @@ function applyRemoteState(payload) {
 	const tableView = getTableView(payload);
 	const seatView = getSeatView(payload);
 	if (!tableView || !seatView || seatView.seatIndex !== seatIndexParam) {
+		hasSyncedState = false;
+		setSwitchLinkVisible(false);
 		actionControls.hide();
 		clearSyncedDisplays();
-		return;
+		return false;
 	}
 
+	hasSyncedState = true;
+	const pendingAction = getSeatPendingAction(tableView);
+	const showTurnControls = shouldShowSeatActionControls(seatView, pendingAction, seatIndexParam);
 	nameBadge.textContent = seatView.name;
 	setCards(seatView.holeCards?.[0], seatView.holeCards?.[1], seatView.folded);
 	setChips(seatView.chips, seatView.roundBet, tableView.pot);
@@ -259,7 +282,9 @@ function applyRemoteState(payload) {
 	// The single view only applies them and does not compute odds or hand labels itself.
 	renderHandStrength(seatView.handStrengthLabel || "");
 	renderWinProbability(seatView.winProbability, seatView.showWinProbability === true);
-	actionControls.render(seatView, getSeatPendingAction(tableView));
+	actionControls.render(seatView, pendingAction);
+	setSwitchLinkVisible(!showTurnControls);
+	return true;
 }
 
 /* --------------------------------------------------------------------------------------------------

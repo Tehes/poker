@@ -13,6 +13,7 @@ tablet or laptop) handles community cards, blinds, pot, and betting rounds.
 - **No Setup Required**: Just open the table in your browser and start playing. No app install, no sign-ups.
 - **Device Pairing via QR**: Each player scans a code to privately view their cards on their phone.
 - **Remote Player Actions**: In QR multiplayer games, the active player can fold, check, call, raise, or go all-in directly from their own phone.
+- **Companion / Full Table Switching**: In synced multiplayer games, players can switch between the compact hole-card view and the full remote table on their own device.
 - **Automatic Game Logic**: Handles blinds, bets, pots, side pots, and showdown evaluations.
 - **Progressive Blinds**: Blinds automatically double every 2 complete dealer orbits to keep the action going.
 - **Side Pot Support**: Accurately resolves complex all-in scenarios.
@@ -52,7 +53,7 @@ The same table supports different ways to play. The "mode" is simply the result 
 
 2. Add players by typing their names.
 
-3. Start the game — each player scans their QR code to get their cards.
+3. Start the game — each player scans their QR code or opens the direct remote-table link for their seat.
 
 4. The table handles dealing, blinds, betting, and showdown.
 
@@ -85,6 +86,7 @@ The table works fully offline after the first complete load.
 - Backend sync is enabled only for multi-human games that start with at least 2 human players.
 - In solo and spectator games, the table keeps a clean URL without `tableId` and stays fully local.
 - When sync is active, human seats expose a QR link for `hole-cards.html` and a direct link for `remoteTable.html`. Both views poll the same synced seat/table payload, and the backend relays turn-based action requests back to the shared table. If the backend is unreachable, the QR data stays in place and play continues offline.
+- The companion view includes a link to the full remote table, and the remote table shows a compact link above your own hole cards to switch back to the hole-card-only view.
 
 ---
 
@@ -92,7 +94,7 @@ The table works fully offline after the first complete load.
 
 - The shared device runs the table (e.g., tablet).
 - When a synced round starts, each human seat exposes a QR code for the private hole-card view and a direct remote-table link.
-- Players can open the QR companion view or the full remote table on their own device.
+- Players can open the QR companion view or the full remote table on their own device and switch between both views later without rejoining.
 - In solo play, the human acts on the shared device.
 - In synced multiplayer, the active player can act on the shared device or directly on their own device.
 - Game flow logic ensures proper handling of:

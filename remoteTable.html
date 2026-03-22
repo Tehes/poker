@@ -1,253 +1,249 @@
 <!DOCTYPE html>
 <html>
-	<head>
-		<meta charset="utf-8">
-		<meta
-			name="viewport"
-			content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
-		>
-		<meta name="apple-mobile-web-app-capable" content="yes">
-		<meta name="apple-mobile-web-app-title" content="Poker">
-		<meta name="apple-mobile-web-app-status-bar-style" content="black">
-		<meta name="theme-color" content="#2e426b" />
 
-		<title>Remote Table</title>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+	<meta name="apple-mobile-web-app-capable" content="yes">
+	<meta name="apple-mobile-web-app-title" content="Poker">
+	<meta name="apple-mobile-web-app-status-bar-style" content="black">
+	<meta name="theme-color" content="#2e426b" />
 
-		<link rel="apple-touch-icon" href="icons/180x180.png" />
-		<link rel="icon" href="icons/favicon.png" type="image/png" sizes="32x32">
-		<link rel="icon" href="icons/poker-chip.svg" type="image/svg+xml">
-		<link rel="manifest" href="manifest.json">
-		<link rel="stylesheet" href="css/style.css">
-		<link rel="preconnect" href="https://fonts.googleapis.com">
-		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-		<link
-			href="https://fonts.googleapis.com/css2?family=Secular+One&display=swap"
-			rel="stylesheet"
-		>
-	</head>
+	<title>Remote Table</title>
 
-	<body id="remote-table">
-		<main>
-			<div class="seat hidden" data-seat-slot="0">
-				<div class="hole-cards">
-					<img class="card" src="cards/1B.svg">
-					<img class="card" src="cards/1B.svg">
-					<img class="blind-icons hidden dealer" src="icons/dealer.svg">
-					<img class="blind-icons hidden small-blind" src="icons/small-blind.svg">
-					<img class="blind-icons hidden big-blind" src="icons/big-blind.svg">
-					<div class="pill win-probability hidden"></div>
-					<div class="pill hand-strength hidden"></div>
+	<link rel="apple-touch-icon" href="icons/180x180.png" />
+	<link rel="icon" href="icons/favicon.png" type="image/png" sizes="32x32">
+	<link rel="icon" href="icons/poker-chip.svg" type="image/svg+xml">
+	<link rel="manifest" href="manifest.json">
+	<link rel="stylesheet" href="css/style.css">
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Secular+One&display=swap" rel="stylesheet">
+</head>
+
+<body id="remote-table">
+	<main>
+		<div class="seat hidden" data-seat-slot="0">
+			<div class="hole-cards">
+				<img class="card" src="cards/1B.svg">
+				<img class="card" src="cards/1B.svg">
+				<img class="blind-icons hidden dealer" src="icons/dealer.svg">
+				<img class="blind-icons hidden small-blind" src="icons/small-blind.svg">
+				<img class="blind-icons hidden big-blind" src="icons/big-blind.svg">
+				<div class="pill win-probability hidden"></div>
+				<div class="pill hand-strength hidden"></div>
+				<a class="seat-switch-link hidden" href="hole-cards.html">switch view</a>
+			</div>
+			<h3></h3>
+			<div class="chips">
+				<div class="stack-visual">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 0;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 1;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 2;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 3;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 4;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 5;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 6;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 7;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 8;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 9;">
 				</div>
-				<h3></h3>
-				<div class="chips">
-					<div class="stack-visual">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 0;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 1;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 2;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 3;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 4;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 5;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 6;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 7;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 8;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 9;">
-					</div>
-					<div class="stack-values">
-						<div class="total">0</div>
-						<div class="bet">0</div>
-					</div>
+				<div class="stack-values">
+					<div class="total">0</div>
+					<div class="bet">0</div>
 				</div>
 			</div>
-			<div class="seat hidden" data-seat-slot="1">
-				<div class="hole-cards">
-					<img class="card" src="cards/1B.svg">
-					<img class="card" src="cards/1B.svg">
-					<img class="blind-icons hidden dealer" src="icons/dealer.svg">
-					<img class="blind-icons hidden small-blind" src="icons/small-blind.svg">
-					<img class="blind-icons hidden big-blind" src="icons/big-blind.svg">
-					<div class="pill win-probability hidden"></div>
-					<div class="pill hand-strength hidden"></div>
+		</div>
+		<div class="seat hidden" data-seat-slot="1">
+			<div class="hole-cards">
+				<img class="card" src="cards/1B.svg">
+				<img class="card" src="cards/1B.svg">
+				<img class="blind-icons hidden dealer" src="icons/dealer.svg">
+				<img class="blind-icons hidden small-blind" src="icons/small-blind.svg">
+				<img class="blind-icons hidden big-blind" src="icons/big-blind.svg">
+				<div class="pill win-probability hidden"></div>
+				<div class="pill hand-strength hidden"></div>
+				<a class="seat-switch-link hidden" href="hole-cards.html">switch view</a>
+			</div>
+			<h3></h3>
+			<div class="chips">
+				<div class="stack-visual">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 0;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 1;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 2;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 3;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 4;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 5;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 6;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 7;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 8;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 9;">
 				</div>
-				<h3></h3>
-				<div class="chips">
-					<div class="stack-visual">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 0;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 1;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 2;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 3;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 4;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 5;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 6;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 7;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 8;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 9;">
-					</div>
-					<div class="stack-values">
-						<div class="total">0</div>
-						<div class="bet">0</div>
-					</div>
+				<div class="stack-values">
+					<div class="total">0</div>
+					<div class="bet">0</div>
 				</div>
 			</div>
-			<div class="seat hidden" data-seat-slot="2">
-				<div class="hole-cards">
-					<img class="card" src="cards/1B.svg">
-					<img class="card" src="cards/1B.svg">
-					<img class="blind-icons hidden dealer" src="icons/dealer.svg">
-					<img class="blind-icons hidden small-blind" src="icons/small-blind.svg">
-					<img class="blind-icons hidden big-blind" src="icons/big-blind.svg">
-					<div class="pill win-probability hidden"></div>
-					<div class="pill hand-strength hidden"></div>
+		</div>
+		<div class="seat hidden" data-seat-slot="2">
+			<div class="hole-cards">
+				<img class="card" src="cards/1B.svg">
+				<img class="card" src="cards/1B.svg">
+				<img class="blind-icons hidden dealer" src="icons/dealer.svg">
+				<img class="blind-icons hidden small-blind" src="icons/small-blind.svg">
+				<img class="blind-icons hidden big-blind" src="icons/big-blind.svg">
+				<div class="pill win-probability hidden"></div>
+				<div class="pill hand-strength hidden"></div>
+				<a class="seat-switch-link hidden" href="hole-cards.html">switch view</a>
+			</div>
+			<h3></h3>
+			<div class="chips">
+				<div class="stack-visual">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 0;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 1;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 2;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 3;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 4;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 5;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 6;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 7;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 8;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 9;">
 				</div>
-				<h3></h3>
-				<div class="chips">
-					<div class="stack-visual">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 0;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 1;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 2;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 3;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 4;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 5;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 6;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 7;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 8;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 9;">
-					</div>
-					<div class="stack-values">
-						<div class="total">0</div>
-						<div class="bet">0</div>
-					</div>
+				<div class="stack-values">
+					<div class="total">0</div>
+					<div class="bet">0</div>
 				</div>
 			</div>
-			<div class="seat hidden" data-seat-slot="3">
-				<div class="hole-cards">
-					<img class="card" src="cards/1B.svg">
-					<img class="card" src="cards/1B.svg">
-					<img class="blind-icons hidden dealer" src="icons/dealer.svg">
-					<img class="blind-icons hidden small-blind" src="icons/small-blind.svg">
-					<img class="blind-icons hidden big-blind" src="icons/big-blind.svg">
-					<div class="pill win-probability hidden"></div>
-					<div class="pill hand-strength hidden"></div>
+		</div>
+		<div class="seat hidden" data-seat-slot="3">
+			<div class="hole-cards">
+				<img class="card" src="cards/1B.svg">
+				<img class="card" src="cards/1B.svg">
+				<img class="blind-icons hidden dealer" src="icons/dealer.svg">
+				<img class="blind-icons hidden small-blind" src="icons/small-blind.svg">
+				<img class="blind-icons hidden big-blind" src="icons/big-blind.svg">
+				<div class="pill win-probability hidden"></div>
+				<div class="pill hand-strength hidden"></div>
+				<a class="seat-switch-link hidden" href="hole-cards.html">switch view</a>
+			</div>
+			<h3></h3>
+			<div class="chips">
+				<div class="stack-visual">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 0;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 1;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 2;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 3;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 4;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 5;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 6;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 7;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 8;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 9;">
 				</div>
-				<h3></h3>
-				<div class="chips">
-					<div class="stack-visual">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 0;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 1;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 2;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 3;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 4;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 5;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 6;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 7;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 8;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 9;">
-					</div>
-					<div class="stack-values">
-						<div class="total">0</div>
-						<div class="bet">0</div>
-					</div>
+				<div class="stack-values">
+					<div class="total">0</div>
+					<div class="bet">0</div>
 				</div>
 			</div>
-			<div class="seat hidden" data-seat-slot="4">
-				<div class="hole-cards">
-					<img class="card" src="cards/1B.svg">
-					<img class="card" src="cards/1B.svg">
-					<img class="blind-icons hidden dealer" src="icons/dealer.svg">
-					<img class="blind-icons hidden small-blind" src="icons/small-blind.svg">
-					<img class="blind-icons hidden big-blind" src="icons/big-blind.svg">
-					<div class="pill win-probability hidden"></div>
-					<div class="pill hand-strength hidden"></div>
-				</div>
-				<h3></h3>
-				<div class="chips">
-					<div class="stack-visual">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 0;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 1;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 2;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 3;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 4;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 5;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 6;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 7;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 8;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 9;">
-					</div>
-					<div class="stack-values">
-						<div class="total">0</div>
-						<div class="bet">0</div>
-					</div>
-				</div>
+		</div>
+		<div class="seat hidden" data-seat-slot="4">
+			<div class="hole-cards">
+				<img class="card" src="cards/1B.svg">
+				<img class="card" src="cards/1B.svg">
+				<img class="blind-icons hidden dealer" src="icons/dealer.svg">
+				<img class="blind-icons hidden small-blind" src="icons/small-blind.svg">
+				<img class="blind-icons hidden big-blind" src="icons/big-blind.svg">
+				<div class="pill win-probability hidden"></div>
+				<div class="pill hand-strength hidden"></div>
+				<a class="seat-switch-link hidden" href="hole-cards.html">switch view</a>
 			</div>
-			<div class="seat hidden" data-seat-slot="5">
-				<div class="hole-cards">
-					<img class="card" src="cards/1B.svg">
-					<img class="card" src="cards/1B.svg">
-					<img class="blind-icons hidden dealer" src="icons/dealer.svg">
-					<img class="blind-icons hidden small-blind" src="icons/small-blind.svg">
-					<img class="blind-icons hidden big-blind" src="icons/big-blind.svg">
-					<div class="pill win-probability hidden"></div>
-					<div class="pill hand-strength hidden"></div>
+			<h3></h3>
+			<div class="chips">
+				<div class="stack-visual">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 0;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 1;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 2;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 3;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 4;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 5;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 6;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 7;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 8;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 9;">
 				</div>
-				<h3></h3>
-				<div class="chips">
-					<div class="stack-visual">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 0;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 1;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 2;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 3;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 4;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 5;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 6;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 7;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 8;">
-						<img src="icons/chip.svg" alt="" style="--stack-index: 9;">
-					</div>
-					<div class="stack-values">
-						<div class="total">0</div>
-						<div class="bet">0</div>
-					</div>
+				<div class="stack-values">
+					<div class="total">0</div>
+					<div class="bet">0</div>
 				</div>
 			</div>
-			<div id="table-middle">
-				<section class="infos">
-					<div id="pot">0</div>
-					<div id="notification">Loading table...</div>
-				</section>
-				<section id="community-cards">
-					<div class="cardslot"></div>
-					<div class="cardslot"></div>
-					<div class="cardslot"></div>
-					<div class="cardslot"></div>
-					<div class="cardslot"></div>
-				</section>
-				<section class="actions">
-					<button type="button" id="fold-button" class="hidden" name="button">
-						Fold
-					</button>
-					<button type="button" id="action-button" class="hidden" name="button">
-						Check
-					</button>
-					<input
-						type="range"
-						id="amount-slider"
-						class="hidden"
-						name="amount"
-						value="0"
-						min="0"
-						max="2000"
-						step="10"
-					>
-					<output class="hidden">0</output>
-				</section>
+		</div>
+		<div class="seat hidden" data-seat-slot="5">
+			<div class="hole-cards">
+				<img class="card" src="cards/1B.svg">
+				<img class="card" src="cards/1B.svg">
+				<img class="blind-icons hidden dealer" src="icons/dealer.svg">
+				<img class="blind-icons hidden small-blind" src="icons/small-blind.svg">
+				<img class="blind-icons hidden big-blind" src="icons/big-blind.svg">
+				<div class="pill win-probability hidden"></div>
+				<div class="pill hand-strength hidden"></div>
+				<a class="seat-switch-link hidden" href="hole-cards.html">switch view</a>
 			</div>
-		</main>
-		<footer>
-			<div id="credit"><a href="https://github.com/Tehes">made by Tehes</a></div>
-			<div id="social">
-				<a href="https://github.com/Tehes/poker"><img alt="Github-Logo" src="social/github.svg" width="25" height="25"></a>
-				<a href="https://www.threads.net/@tehes83"><img alt="Threads-Logo" src="social/threads.svg" width="25" height="25"></a>
+			<h3></h3>
+			<div class="chips">
+				<div class="stack-visual">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 0;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 1;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 2;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 3;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 4;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 5;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 6;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 7;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 8;">
+					<img src="icons/chip.svg" alt="" style="--stack-index: 9;">
+				</div>
+				<div class="stack-values">
+					<div class="total">0</div>
+					<div class="bet">0</div>
+				</div>
 			</div>
-		</footer>
-		<script type="module" src="./js/remoteTable.js"></script>
-	</body>
+		</div>
+		<div id="table-middle">
+			<section class="infos">
+				<div id="pot">0</div>
+				<div id="notification">Loading table...</div>
+			</section>
+			<section id="community-cards">
+				<div class="cardslot"></div>
+				<div class="cardslot"></div>
+				<div class="cardslot"></div>
+				<div class="cardslot"></div>
+				<div class="cardslot"></div>
+			</section>
+			<section class="actions">
+				<button type="button" id="fold-button" class="hidden" name="button">
+					Fold
+				</button>
+				<button type="button" id="action-button" class="hidden" name="button">
+					Check
+				</button>
+				<input type="range" id="amount-slider" class="hidden" name="amount" value="0" min="0" max="2000"
+					step="10">
+				<output class="hidden">0</output>
+			</section>
+		</div>
+	</main>
+	<footer>
+		<div id="credit"><a href="https://github.com/Tehes">made by Tehes</a></div>
+		<div id="social">
+			<a href="https://github.com/Tehes/poker"><img alt="Github-Logo" src="social/github.svg" width="25"
+					height="25"></a>
+			<a href="https://www.threads.net/@tehes83"><img alt="Threads-Logo" src="social/threads.svg" width="25"
+					height="25"></a>
+		</div>
+	</footer>
+	<script type="module" src="./js/remoteTable.js"></script>
+</body>
+
 </html>

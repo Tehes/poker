@@ -27,6 +27,7 @@ const seatRefs = Array.from(document.querySelectorAll(".seat")).map((seatEl, sea
 	seatSlot,
 	seatEl,
 	cardEls: seatEl.querySelectorAll(".card"),
+	switchLinkEl: seatEl.querySelector(".seat-switch-link"),
 	nameEl: seatEl.querySelector("h3"),
 	totalEl: seatEl.querySelector(".chips .total"),
 	betEl: seatEl.querySelector(".chips .bet"),
@@ -82,6 +83,25 @@ function renderNotifications(messages = []) {
 	renderNotificationBar(notificationEl, messages, DEFAULT_NOTIFICATION);
 }
 
+function clearSeatSwitchLinks() {
+	seatRefs.forEach((seatRef) => {
+		if (!seatRef.switchLinkEl) {
+			return;
+		}
+		seatRef.switchLinkEl.classList.add("hidden");
+		seatRef.switchLinkEl.removeAttribute("href");
+	});
+}
+
+function showSeatSwitchLink(seatRef) {
+	if (!seatRef?.switchLinkEl || !tableId || seatIndexParam === null) {
+		return;
+	}
+	seatRef.switchLinkEl.href =
+		`hole-cards.html?tableId=${encodeURIComponent(tableId)}&seatIndex=${seatIndexParam}`;
+	seatRef.switchLinkEl.classList.remove("hidden");
+}
+
 function findSeatRef(publicSeat) {
 	if (typeof publicSeat?.seatSlot === "number" && seatRefs[publicSeat.seatSlot]) {
 		return seatRefs[publicSeat.seatSlot];
@@ -93,6 +113,7 @@ function applyRemoteState(payload) {
 	const tableView = getTableView(payload);
 	const seatView = getSeatView(payload);
 	if (!tableView || !seatView || seatView.seatIndex !== seatIndexParam) {
+		clearSeatSwitchLinks();
 		actionControls.hide();
 		setNotification("Seat unavailable.");
 		seatRefs.forEach(clearRenderedSeat);
@@ -103,6 +124,7 @@ function applyRemoteState(payload) {
 
 	const playersPublic = Array.isArray(tableView.playersPublic) ? tableView.playersPublic : [];
 	seatRefs.forEach(clearRenderedSeat);
+	clearSeatSwitchLinks();
 	playersPublic.forEach((publicSeat) => {
 		const seatRef = findSeatRef(publicSeat);
 		if (!seatRef) {
@@ -114,6 +136,9 @@ function applyRemoteState(payload) {
 			ownSeatIndex: seatIndexParam,
 			ownSeatView: seatView,
 		});
+		if (publicSeat.seatIndex === seatIndexParam) {
+			showSeatSwitchLink(seatRef);
+		}
 	});
 	renderChipStacks(
 		playersPublic
@@ -157,10 +182,12 @@ async function pollState() {
 			applyRemoteState(payload);
 			return;
 		}
+		clearSeatSwitchLinks();
 		actionControls.hide();
 		setNotification("Table unavailable.");
 	} catch (error) {
 		console.warn("state fetch failed", error);
+		clearSeatSwitchLinks();
 		actionControls.hide();
 		setNotification("Connection lost.");
 	} finally {
@@ -198,6 +225,7 @@ function init() {
 	document.addEventListener("visibilitychange", handleVisibilityChange);
 	actionControls.init();
 	seatRefs.forEach(clearRenderedSeat);
+	clearSeatSwitchLinks();
 	renderCommunityCards(communityCardSlots, []);
 	actionControls.hide();
 

@@ -10,6 +10,13 @@ import {
 	normalizeActionAmount,
 } from "./actionModel.js";
 
+export function shouldShowSeatActionControls(seatView, pendingAction, seatIndex) {
+	return !!pendingAction &&
+		pendingAction.seatIndex === seatIndex &&
+		!seatView.folded &&
+		!seatView.allIn;
+}
+
 export function createSeatActionControls({
 	tableId,
 	seatIndex,
@@ -138,12 +145,7 @@ export function createSeatActionControls({
 	}
 
 	function render(seatView, pendingAction) {
-		if (
-			!pendingAction ||
-			pendingAction.seatIndex !== seatIndex ||
-			seatView.folded ||
-			seatView.allIn
-		) {
+		if (!shouldShowSeatActionControls(seatView, pendingAction, seatIndex)) {
 			hide();
 			return;
 		}
