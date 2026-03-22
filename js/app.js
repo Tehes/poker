@@ -97,6 +97,7 @@ let tableId = null;
 const STATE_SYNC_DELAY = 750;
 const ACTION_POLL_INTERVAL = 1000;
 let stateSyncTimer = null;
+let stateSyncTimerDelay = null;
 let runoutPhaseTimer = null;
 let summaryButtonsVisible = false;
 let handFastForwardActive = false;
@@ -780,7 +781,7 @@ function setPendingAction(player) {
 	if (!hasStateSyncEnabled() || !player || player.isBot || player.folded || player.allIn) {
 		if (gameState.pendingAction !== null) {
 			gameState.pendingAction = null;
-			queueStateSync();
+			queueStateSync(0);
 		}
 		return null;
 	}
@@ -797,7 +798,7 @@ function setPendingAction(player) {
 		buttonLabel: getActionButtonLabel(actionState.minAmount, actionState),
 	};
 	gameState.pendingAction = pendingAction;
-	queueStateSync();
+	queueStateSync(0);
 	return pendingAction;
 }
 
@@ -806,7 +807,7 @@ function clearPendingAction() {
 		return;
 	}
 	gameState.pendingAction = null;
-	queueStateSync();
+	queueStateSync(0);
 }
 
 function buildPublicPlayerView(player) {
@@ -909,22 +910,39 @@ async function sendTableState() {
 	};
 
 	try {
-		await fetch(STATE_SYNC_ENDPOINT, {
+		const res = await fetch(STATE_SYNC_ENDPOINT, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(payload),
 		});
+		if (!res.ok) {
+			throw new Error(`state sync failed with status ${res.status}`);
+		}
 	} catch (error) {
 		logFlow("state sync failed", error);
+		queueStateSync();
 	}
 }
 
-function queueStateSync() {
-	if (stateSyncTimer || !hasStateSyncEnabled()) return;
+function queueStateSync(delay = STATE_SYNC_DELAY) {
+	if (!hasStateSyncEnabled()) {
+		return;
+	}
+
+	const nextDelay = Math.max(0, delay);
+	if (stateSyncTimer !== null) {
+		if (stateSyncTimerDelay !== null && stateSyncTimerDelay <= nextDelay) {
+			return;
+		}
+		clearTimeout(stateSyncTimer);
+	}
+
+	stateSyncTimerDelay = nextDelay;
 	stateSyncTimer = setTimeout(() => {
 		stateSyncTimer = null;
+		stateSyncTimerDelay = null;
 		sendTableState();
-	}, STATE_SYNC_DELAY);
+	}, nextDelay);
 }
 
 /* --------------------------------------------------------------------------------------------------
@@ -2933,7 +2951,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-21-v8";
+const SERVICE_WORKER_VERSION = "2026-03-22-v9";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
