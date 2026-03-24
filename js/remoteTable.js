@@ -2,7 +2,13 @@
 Imports
 ---------------------------------------------------------------------------------------------------*/
 
-import { createSeatActionControls } from "./shared/seatActionControls.js";
+import {
+	configureViewSwitchLink,
+	createSeatActionControls,
+	getSeatPendingAction,
+	setViewSwitchLinkVisible,
+	shouldShowSeatActionControls,
+} from "./shared/seatActionControls.js";
 import { getSeatView, getTableView } from "./shared/syncViewModel.js";
 import {
 	clearRenderedSeat,
@@ -23,11 +29,11 @@ const foldButton = document.getElementById("fold-button");
 const actionButton = document.getElementById("action-button");
 const amountSlider = document.getElementById("amount-slider");
 const sliderOutput = document.querySelector("output");
+const remoteSwitchLink = document.getElementById("remote-switch-link");
 const seatRefs = Array.from(document.querySelectorAll(".seat")).map((seatEl, seatSlot) => ({
 	seatSlot,
 	seatEl,
 	cardEls: seatEl.querySelectorAll(".card"),
-	switchLinkEl: seatEl.querySelector(".seat-switch-link"),
 	nameEl: seatEl.querySelector("h3"),
 	totalEl: seatEl.querySelector(".chips .total"),
 	betEl: seatEl.querySelector(".chips .bet"),
@@ -83,25 +89,6 @@ function renderNotifications(messages = []) {
 	renderNotificationBar(notificationEl, messages, DEFAULT_NOTIFICATION);
 }
 
-function clearSeatSwitchLinks() {
-	seatRefs.forEach((seatRef) => {
-		if (!seatRef.switchLinkEl) {
-			return;
-		}
-		seatRef.switchLinkEl.classList.add("hidden");
-		seatRef.switchLinkEl.removeAttribute("href");
-	});
-}
-
-function showSeatSwitchLink(seatRef) {
-	if (!seatRef?.switchLinkEl || !tableId || seatIndexParam === null) {
-		return;
-	}
-	seatRef.switchLinkEl.href =
-		`hole-cards.html?tableId=${encodeURIComponent(tableId)}&seatIndex=${seatIndexParam}`;
-	seatRef.switchLinkEl.classList.remove("hidden");
-}
-
 function findSeatRef(publicSeat) {
 	if (typeof publicSeat?.seatSlot === "number" && seatRefs[publicSeat.seatSlot]) {
 		return seatRefs[publicSeat.seatSlot];
@@ -113,7 +100,7 @@ function applyRemoteState(payload) {
 	const tableView = getTableView(payload);
 	const seatView = getSeatView(payload);
 	if (!tableView || !seatView || seatView.seatIndex !== seatIndexParam) {
-		clearSeatSwitchLinks();
+		setViewSwitchLinkVisible(remoteSwitchLink, false);
 		actionControls.hide();
 		setNotification("Seat unavailable.");
 		seatRefs.forEach(clearRenderedSeat);
@@ -122,9 +109,10 @@ function applyRemoteState(payload) {
 		return;
 	}
 
+	const pendingAction = getSeatPendingAction(tableView, seatIndexParam);
+	const showTurnControls = shouldShowSeatActionControls(seatView, pendingAction, seatIndexParam);
 	const playersPublic = Array.isArray(tableView.playersPublic) ? tableView.playersPublic : [];
 	seatRefs.forEach(clearRenderedSeat);
-	clearSeatSwitchLinks();
 	playersPublic.forEach((publicSeat) => {
 		const seatRef = findSeatRef(publicSeat);
 		if (!seatRef) {
@@ -136,9 +124,6 @@ function applyRemoteState(payload) {
 			ownSeatIndex: seatIndexParam,
 			ownSeatView: seatView,
 		});
-		if (publicSeat.seatIndex === seatIndexParam) {
-			showSeatSwitchLink(seatRef);
-		}
 	});
 	renderChipStacks(
 		playersPublic
@@ -156,7 +141,8 @@ function applyRemoteState(payload) {
 	);
 	potEl.textContent = `${tableView.pot ?? 0}`;
 	renderCommunityCards(communityCardSlots, tableView.communityCards);
-	actionControls.render(seatView, tableView.pendingAction);
+	actionControls.render(seatView, pendingAction);
+	setViewSwitchLinkVisible(remoteSwitchLink, !showTurnControls);
 	renderNotifications(tableView.notifications);
 }
 
@@ -182,12 +168,12 @@ async function pollState() {
 			applyRemoteState(payload);
 			return;
 		}
-		clearSeatSwitchLinks();
+		setViewSwitchLinkVisible(remoteSwitchLink, false);
 		actionControls.hide();
 		setNotification("Table unavailable.");
 	} catch (error) {
 		console.warn("state fetch failed", error);
-		clearSeatSwitchLinks();
+		setViewSwitchLinkVisible(remoteSwitchLink, false);
 		actionControls.hide();
 		setNotification("Connection lost.");
 	} finally {
@@ -224,8 +210,9 @@ Bootstrap
 function init() {
 	document.addEventListener("visibilitychange", handleVisibilityChange);
 	actionControls.init();
+	configureViewSwitchLink(remoteSwitchLink, "hole-cards.html", tableId, seatIndexParam);
 	seatRefs.forEach(clearRenderedSeat);
-	clearSeatSwitchLinks();
+	setViewSwitchLinkVisible(remoteSwitchLink, false);
 	renderCommunityCards(communityCardSlots, []);
 	actionControls.hide();
 

@@ -2,7 +2,13 @@
 Imports
 ---------------------------------------------------------------------------------------------------*/
 
-import { createSeatActionControls, shouldShowSeatActionControls } from "./shared/seatActionControls.js";
+import {
+	configureViewSwitchLink,
+	createSeatActionControls,
+	getSeatPendingAction,
+	setViewSwitchLinkVisible,
+	shouldShowSeatActionControls,
+} from "./shared/seatActionControls.js";
 import { getSeatView, getTableView } from "./shared/syncViewModel.js";
 
 /* --------------------------------------------------------------------------------------------------
@@ -78,7 +84,7 @@ function init() {
 	document.addEventListener("touchstart", function () {}, false);
 	document.addEventListener("visibilitychange", handleVisibilityChange);
 	actionControls.init();
-	configureSwitchLink();
+	configureViewSwitchLink(singleSwitchLink, "remoteTable.html", tableId, seatIndexParam);
 	clearSyncedDisplays();
 	applyParams();
 	consumeLaunchParams();
@@ -144,25 +150,10 @@ function setOnlineElementsVisible(isOnline) {
 	});
 	if (!isOnline) {
 		notificationsEl.classList.add("hidden");
-		setSwitchLinkVisible(false);
+		setViewSwitchLinkVisible(singleSwitchLink, false);
 		actionControls.hide();
 		clearSyncedDisplays();
 	}
-}
-
-function configureSwitchLink() {
-	if (!singleSwitchLink || !tableId || seatIndexParam === null) {
-		return;
-	}
-	singleSwitchLink.href =
-		`remoteTable.html?tableId=${encodeURIComponent(tableId)}&seatIndex=${seatIndexParam}`;
-}
-
-function setSwitchLinkVisible(isVisible) {
-	if (!singleSwitchLink) {
-		return;
-	}
-	singleSwitchLink.classList.toggle("hidden", !isVisible);
 }
 
 function clearSyncedDisplays() {
@@ -195,14 +186,6 @@ function renderWinProbability(value, shouldShow) {
 	const showValue = shouldShow && typeof value === "number";
 	winProbabilityEl.textContent = showValue ? `${Math.round(value)}%` : "";
 	winProbabilityEl.classList.toggle("hidden", !showValue);
-}
-
-function getSeatPendingAction(tableView) {
-	const tablePendingAction = tableView?.pendingAction ?? null;
-	if (tablePendingAction?.seatIndex === seatIndexParam) {
-		return tablePendingAction;
-	}
-	return null;
 }
 
 // Constant polling is intentional.
@@ -265,14 +248,14 @@ function applyRemoteState(payload) {
 	const seatView = getSeatView(payload);
 	if (!tableView || !seatView || seatView.seatIndex !== seatIndexParam) {
 		hasSyncedState = false;
-		setSwitchLinkVisible(false);
+		setViewSwitchLinkVisible(singleSwitchLink, false);
 		actionControls.hide();
 		clearSyncedDisplays();
 		return false;
 	}
 
 	hasSyncedState = true;
-	const pendingAction = getSeatPendingAction(tableView);
+	const pendingAction = getSeatPendingAction(tableView, seatIndexParam);
 	const showTurnControls = shouldShowSeatActionControls(seatView, pendingAction, seatIndexParam);
 	nameBadge.textContent = seatView.name;
 	setCards(seatView.holeCards?.[0], seatView.holeCards?.[1], seatView.folded);
@@ -283,7 +266,7 @@ function applyRemoteState(payload) {
 	renderHandStrength(seatView.handStrengthLabel || "");
 	renderWinProbability(seatView.winProbability, seatView.showWinProbability === true);
 	actionControls.render(seatView, pendingAction);
-	setSwitchLinkVisible(!showTurnControls);
+	setViewSwitchLinkVisible(singleSwitchLink, !showTurnControls);
 	return true;
 }
 

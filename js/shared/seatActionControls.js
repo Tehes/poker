@@ -17,6 +17,28 @@ export function shouldShowSeatActionControls(seatView, pendingAction, seatIndex)
 		!seatView.allIn;
 }
 
+export function getSeatPendingAction(tableView, seatIndex) {
+	const tablePendingAction = tableView?.pendingAction ?? null;
+	if (tablePendingAction?.seatIndex === seatIndex) {
+		return tablePendingAction;
+	}
+	return null;
+}
+
+export function configureViewSwitchLink(linkEl, targetPath, tableId, seatIndex) {
+	if (!linkEl || !tableId || seatIndex === null) {
+		return;
+	}
+	linkEl.href = `${targetPath}?tableId=${encodeURIComponent(tableId)}&seatIndex=${seatIndex}`;
+}
+
+export function setViewSwitchLinkVisible(linkEl, isVisible) {
+	if (!linkEl) {
+		return;
+	}
+	linkEl.classList.toggle("hidden", !isVisible);
+}
+
 export function createSeatActionControls({
 	tableId,
 	seatIndex,
