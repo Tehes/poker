@@ -108,9 +108,9 @@ button:disabled {
 .action-link {
     padding: 1vmin 2vmin;
     border-radius: 1vmin;
-    border: 1px solid var(--blue-lightest);
+    border: 1px solid var(--font-color);
     background-color: var(--blue);
-    color: var(--blue-lightest);
+    color: var(--font-color);
     font-size: 0.9rem;
     box-shadow: var(--shadow);
     width: max-content;
@@ -268,7 +268,7 @@ SINGLE VIEW
     justify-content: flex-start;
     min-height: 100dvh;
     width: 100vw;
-    margin: 0 3vw;
+    margin: 3vmin 3vmin 0 3vmin;
     max-width: 830px;
 }
 
@@ -297,6 +297,22 @@ SINGLE VIEW
 
 #single .chips :where(.total, .bet) {
     text-align: center;
+}
+
+#single .chips .bet::before {
+    content: "Bet $ ";
+}
+
+#single .chips .total::before {
+    content: "Stack $ ";
+}
+
+#single .chips #pot::before {
+    content: "Pot $ ";
+}
+
+#single #pot {
+    color: var(--yellow-active);
 }
 
 #single-switch-link {
