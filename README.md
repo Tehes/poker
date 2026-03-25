@@ -8,7 +8,7 @@ A browser-based poker table for Texas Hold'em. Play solo against bots or with fr
 
 ## 🎯 Key Features
 
-- **No Setup Required**: No app install, no sign-ups, no lobby, no configuration: just enter names and start playing.
+- **No Setup Required**: No app install, no sign-ups, no lobby and no configuration. Just enter names and start playing.
 - **Private Player Views**: Human players can join on their own devices without exposing private information on the shared screen.
 - **QR + Link Joining**: Each human seat provides both a QR code and a direct link for easy access.
 - **Companion / Remote Table Switching**: Joined players can switch between a compact companion view and the full remote table.
@@ -37,7 +37,7 @@ The same table supports different ways to play. The mode depends only on how man
 
 - **Solo vs Bots (Open Cards)**: One human plays directly on the shared device while bots fill the empty seats. This is the fastest way to play and learn.
 - **Spectator / TV Poker**: No humans join. All seats are bots, hole cards are visible, and the table becomes a self-running poker show.
-- **Multiplayer**: Two or more humans join; in the same room or anywhere in the world. Players can join on their own devices via QR code or link while the shared table remains the central board.
+- **Multiplayer**: Two or more humans join. They can play in the same room or anywhere in the world. Players can join on their own devices via QR code or link while the shared table remains the central board.
 - **Hybrid Tables**: Humans and bots can mix freely. This makes it easy to run short-handed games, fill gaps, or teach new players without slowing the table down.
 
 ---
