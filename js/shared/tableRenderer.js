@@ -16,12 +16,24 @@ function getNameEl(target) {
 	return seatEl?.querySelector("h3") ?? null;
 }
 
+function getWinnerReactionEl(target) {
+	return target?.winnerReactionEl ?? null;
+}
+
 function cancelSeatActionLabelTimer(target) {
 	if (!target?.actionLabelTimer) {
 		return;
 	}
 	clearTimeout(target.actionLabelTimer);
 	target.actionLabelTimer = null;
+}
+
+function cancelWinnerReactionTimer(target) {
+	if (!target?.winnerReactionTimer) {
+		return;
+	}
+	clearTimeout(target.winnerReactionTimer);
+	target.winnerReactionTimer = null;
 }
 
 export function getActionLabelBadgeText(actionName = "") {
@@ -83,6 +95,46 @@ export function renderSeatActionLabel(
 
 	target.actionLabelTimer = setTimeout(() => {
 		clearSeatActionLabel(target, playerName);
+	}, remainingDuration);
+}
+
+export function clearWinnerReaction(target) {
+	const winnerReactionEl = getWinnerReactionEl(target);
+	cancelWinnerReactionTimer(target);
+	if (!winnerReactionEl) {
+		return;
+	}
+	winnerReactionEl.textContent = "";
+	winnerReactionEl.classList.remove("visible");
+	winnerReactionEl.classList.add("hidden");
+	if (typeof target.clearWinnerReactionState === "function") {
+		target.clearWinnerReactionState();
+	}
+}
+
+export function showWinnerReaction(target, emoji = "", visibleUntil = 0) {
+	const winnerReactionEl = getWinnerReactionEl(target);
+	cancelWinnerReactionTimer(target);
+	if (!winnerReactionEl || !emoji) {
+		clearWinnerReaction(target);
+		return;
+	}
+
+	const remainingDuration = Number.isFinite(visibleUntil)
+		? Math.max(0, visibleUntil - Date.now())
+		: 0;
+	if (remainingDuration === 0) {
+		clearWinnerReaction(target);
+		return;
+	}
+
+	winnerReactionEl.textContent = emoji;
+	winnerReactionEl.classList.remove("visible");
+	winnerReactionEl.classList.remove("hidden");
+	void winnerReactionEl.offsetWidth;
+	winnerReactionEl.classList.add("visible");
+	target.winnerReactionTimer = setTimeout(() => {
+		clearWinnerReaction(target);
 	}, remainingDuration);
 }
 
@@ -165,6 +217,7 @@ export function renderSeatPill(el, label, shouldShow = true) {
 
 export function clearRenderedSeat(seatRef) {
 	clearSeatActionLabel(seatRef, "");
+	clearWinnerReaction(seatRef);
 	seatRef.seatEl.classList.add("hidden");
 	seatRef.seatEl.classList.remove(
 		"active",

@@ -14,12 +14,14 @@ import {
 } from "./shared/actionModel.js";
 import {
 	clearSeatActionLabel,
+	clearWinnerReaction,
 	renderChipStacks,
 	renderCommunityCards as renderTableCommunityCards,
 	renderNotificationBar,
 	renderSeatActionLabel,
 	renderSeatCards,
 	renderSeatPill,
+	showWinnerReaction,
 } from "./shared/tableRenderer.js";
 import { initServiceWorker } from "./serviceWorkerRegistration.js";
 
@@ -505,6 +507,19 @@ function buildPublicPlayerActionState(player) {
 	};
 }
 
+function buildPublicPlayerWinnerReactionState(player) {
+	if (!player?.winnerReactionEmoji || !Number.isFinite(player.winnerReactionUntil)) {
+		return null;
+	}
+	if (player.winnerReactionUntil <= Date.now()) {
+		return null;
+	}
+	return {
+		emoji: player.winnerReactionEmoji,
+		visibleUntil: player.winnerReactionUntil,
+	};
+}
+
 function getRunoutPhaseDelay() {
 	if (SPEED_MODE) {
 		return 0;
@@ -804,6 +819,7 @@ function buildPublicPlayerView(player, communityCards) {
 		winProbability: player.winProbability,
 		showWinProbability: shouldShowTableWinProbability(player),
 		actionState: buildPublicPlayerActionState(player),
+		winnerReaction: buildPublicPlayerWinnerReactionState(player),
 	};
 }
 
@@ -1097,33 +1113,6 @@ function applyBotReveal(player, revealDecision) {
 	updateHandStrengthDisplays();
 }
 
-function clearWinnerReaction(player) {
-	if (!player?.winnerReactionEl) {
-		return;
-	}
-	if (player.winnerReactionTimer) {
-		clearTimeout(player.winnerReactionTimer);
-		player.winnerReactionTimer = null;
-	}
-	player.winnerReactionEl.textContent = "";
-	player.winnerReactionEl.classList.remove("visible");
-	player.winnerReactionEl.classList.add("hidden");
-}
-
-function showWinnerReaction(player, emoji) {
-	if (isFastPlaybackActive() || !emoji || !player?.winnerReactionEl) {
-		return;
-	}
-	clearWinnerReaction(player);
-	player.winnerReactionEl.textContent = emoji;
-	player.winnerReactionEl.classList.remove("hidden");
-	void player.winnerReactionEl.offsetWidth;
-	player.winnerReactionEl.classList.add("visible");
-	player.winnerReactionTimer = setTimeout(() => {
-		clearWinnerReaction(player);
-	}, WINNER_REACTION_DURATION);
-}
-
 function getVisibleSolvedHand(player, communityCards) {
 	if (!areHoleCardsFaceUp(player) || communityCards.length !== 5) {
 		return null;
@@ -1178,7 +1167,7 @@ function getWinnerReactionEmoji(player, context) {
 }
 
 function triggerMainPotWinnerReactions(context) {
-	if (SPEED_MODE || context.mainPotWinners.length === 0) {
+	if (isFastPlaybackActive() || context.mainPotWinners.length === 0) {
 		return;
 	}
 
@@ -1192,7 +1181,11 @@ function triggerMainPotWinnerReactions(context) {
 			totalPayout,
 			stackBeforePayout: player.chips,
 		});
-		showWinnerReaction(player, emoji);
+		const visibleUntil = Date.now() + WINNER_REACTION_DURATION;
+		player.winnerReactionEmoji = emoji;
+		player.winnerReactionUntil = visibleUntil;
+		showWinnerReaction(player, emoji, visibleUntil);
+		queueStateSync(0);
 	});
 }
 
@@ -1459,6 +1452,8 @@ function createPlayers() {
 			stackChipEls: player.querySelectorAll(".stack-visual img"),
 			winnerReactionEl: player.querySelector(".winner-reaction"),
 			winnerReactionTimer: null,
+			winnerReactionEmoji: "",
+			winnerReactionUntil: 0,
 			winProbabilityEl: player.querySelector(".win-probability"),
 			handStrengthEl: player.querySelector(".hand-strength"),
 			actionLabelTimer: null,
@@ -1586,6 +1581,10 @@ function createPlayers() {
 			clearActionLabelState: function () {
 				playerObject.lastActionName = "";
 				playerObject.actionLabelUntil = 0;
+			},
+			clearWinnerReactionState: function () {
+				playerObject.winnerReactionEmoji = "";
+				playerObject.winnerReactionUntil = 0;
 			},
 			toJSON: function () {
 				return {
@@ -2948,7 +2947,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-25-v4";
+const SERVICE_WORKER_VERSION = "2026-03-25-v5";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

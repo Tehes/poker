@@ -11,12 +11,14 @@ import {
 } from "./shared/seatActionControls.js";
 import { getSeatView, getTableView } from "./shared/syncViewModel.js";
 import {
+	clearWinnerReaction,
 	clearRenderedSeat,
 	renderChipStacks,
 	renderCommunityCards,
 	renderNotificationBar,
 	renderProjectedSeat,
 	renderSeatActionLabel,
+	showWinnerReaction,
 } from "./shared/tableRenderer.js";
 
 /* --------------------------------------------------------------------------------------------------
@@ -45,6 +47,8 @@ const seatRefs = Array.from(document.querySelectorAll(".seat")).map((seatEl, sea
 	winProbabilityEl: seatEl.querySelector(".win-probability"),
 	handStrengthEl: seatEl.querySelector(".hand-strength"),
 	actionLabelTimer: null,
+	winnerReactionEl: seatEl.querySelector(".winner-reaction"),
+	winnerReactionTimer: null,
 }));
 const urlParams = new URLSearchParams(globalThis.location.search);
 const tableId = urlParams.get("tableId") || "";
@@ -131,6 +135,15 @@ function applyRemoteState(payload) {
 			actionName: publicSeat.actionState?.name,
 			labelUntil: publicSeat.actionState?.labelUntil,
 		});
+		if (publicSeat.winnerReaction?.emoji) {
+			showWinnerReaction(
+				seatRef,
+				publicSeat.winnerReaction.emoji,
+				publicSeat.winnerReaction.visibleUntil,
+			);
+		} else {
+			clearWinnerReaction(seatRef);
+		}
 	});
 	renderChipStacks(
 		playersPublic
