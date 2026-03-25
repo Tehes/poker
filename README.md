@@ -2,33 +2,29 @@
 
 ![Demo screenshot](img/demo.png)
 
-A browser-based, zero-setup poker table to play Texas Hold'em with friends using only your devices.
-Scan a QR code to see your hole cards privately on your phone, while the shared table (e.g., on a
-tablet or laptop) handles community cards, blinds, pot, and betting rounds.
+A browser-based poker table for Texas Hold'em. Play solo against bots or with friends. Each player joins via QR code or link to use their own device, while the shared table handles the rest.
 
 ---
 
 ## 🎯 Key Features
 
-- **No Setup Required**: Just open the table in your browser and start playing. No app install, no sign-ups.
-- **Device Pairing via QR**: Each player scans a code to privately view their cards on their phone.
-- **Remote Player Actions**: In QR multiplayer games, the active player can fold, check, call, raise, or go all-in directly from their own phone.
-- **Companion / Full Table Switching**: In synced multiplayer games, players can switch between the compact hole-card view and the full remote table on their own device.
+- **No Setup Required**: No app install, no sign-ups, no lobby, no configuration: just enter names and start playing.
+- **Private Player Views**: Human players can join on their own devices without exposing private information on the shared screen.
+- **QR + Link Joining**: Each human seat provides both a QR code and a direct link for easy access.
+- **Companion / Remote Table Switching**: Joined players can switch between a compact companion view and the full remote table.
+- **Remote Player Actions**: In synced multiplayer games, the active player can act directly from their own device.
 - **Automatic Game Logic**: Handles blinds, bets, pots, side pots, and showdown evaluations.
 - **Progressive Blinds**: Blinds automatically double every 2 complete dealer orbits to keep the action going.
 - **Side Pot Support**: Accurately resolves complex all-in scenarios.
 - **Dynamic Positioning**: Turn order and bot strategy adapt as players fold.
 - **Supports All Table Sizes**: From heads-up to full-ring games.
 - **Responsive Design**: Optimized for tablets, phones, and desktops.
-- **Smart Bet Slider**: The bet slider highlights invalid amounts in red while dragging and snaps to
-  the minimum legal raise when released.
-- **Fast & Offline-Ready**: Loads fast, works without internet once cached.
+- **Smart Bet Slider**: The bet slider highlights invalid amounts in red while dragging and snaps to the minimum legal raise when released.
+- **Fast & Offline-Ready**: Loads fast and works offline once cached.
 - **Built‑in Bots**: Empty player slots are automatically filled with bots.
 - **Fast Forward for Bot-Only Hands**: When no human can act in the current hand, a Fast Forward button lets you speed through the remaining bot action. If no humans have chips left after that, the game keeps fast-forwarding until a winner remains.
-- **Bot Intelligence**: Bots evaluate hand strength, pot odds, stack size, and position to make informed decisions.
-- **Adaptive Behavior**: Bots track how often opponents fold, detect frequent all-ins, and adjust their bluffing frequency accordingly.
-- **Context Awareness**: Bots recognize top pair, overpairs, and draw potential to decide between check, call, raise, or fold.
-- **Postflop Hand Labels**: When hole cards are visible on the table, the shared screen shows short postflop hand categories like Pair, 2 Pair, 3 of a kind, Straight, or Flush.
+- **Smart Bot Play**: Bots play tournament-style poker with context-aware decisions and adaptive behavior.
+- **Postflop Hand Labels**: When hole cards are visible on the table, the shared screen shows short postflop hand categories.
 - **Bot Reveals**: After some uncontested postflop wins, bots may occasionally reveal one or both hole cards to create small TV-poker moments.
 - **Session Stats Overlay**: After each completed hand, open a compact stats view with stack, hands won, showdown results, folds, and all-ins for all active players.
 - **Winner Reactions**: After a pot win, the shared table may briefly show a face emoji above each main-pot winner. Reactions are based only on public information such as pot size, split pots, all-ins, visible hand strength, reveals, and stack swings.
@@ -37,11 +33,11 @@ tablet or laptop) handles community cards, blinds, pot, and betting rounds.
 
 ## 🎮 Main Play Modes
 
-The same table supports different ways to play. The "mode" is simply the result of how many humans join and whether you scan the QR codes.
+The same table supports different ways to play. The mode depends only on how many humans join.
 
-- **Solo vs Bots (Open Cards)**: One human plays directly on the main device while bots fill the empty seats. This is the fastest way to play and learn.
+- **Solo vs Bots (Open Cards)**: One human plays directly on the shared device while bots fill the empty seats. This is the fastest way to play and learn.
 - **Spectator / TV Poker**: No humans join. All seats are bots, hole cards are visible, and the table becomes a self-running poker show.
-- **Group Play with QR Hole Cards**: Two or more humans join. Each player scans their QR code to see private hole cards on their own phone, while the shared screen stays clean and neutral. When it is their turn, they can also act directly from their own device.
+- **Multiplayer**: Two or more humans join; in the same room or anywhere in the world. Players can join on their own devices via QR code or link while the shared table remains the central board.
 - **Hybrid Tables**: Humans and bots can mix freely. This makes it easy to run short-handed games, fill gaps, or teach new players without slowing the table down.
 
 ---
@@ -53,11 +49,11 @@ The same table supports different ways to play. The "mode" is simply the result 
 
 2. Add players by typing their names.
 
-3. Start the game — each player scans their QR code or opens the direct remote-table link for their seat.
+3. Start the game.
 
-4. The table handles dealing, blinds, betting, and showdown.
+4. Human players can then join on their own devices via QR code or direct link.
 
-   In QR multiplayer, the active player can also act directly from their own phone. Solo and spectator modes stay on the shared device and do not require QR scans.
+The table handles dealing, blinds, betting, and showdown automatically.
 
 ---
 
@@ -69,49 +65,49 @@ The table works fully offline after the first complete load.
 - **Service Worker** – Handles cache-first requests and serves offline content when the network is unavailable.
 - **Core Assets Pre‑cached** – Core assets are precached during install; any additional resources are loaded and cached on demand.
 - **Updates** – A new version is fetched and activated in the background; refreshing the page loads the updated assets.
+- **Graceful QR Fallback** – If sync is unavailable, the QR code can still carry embedded hole-card data so the companion view remains usable in read-only mode.
 
 ---
 
 ## 🛠️ Tech Stack
 
-- **HTML/CSS/JavaScript** only – no frameworks
-- **Vanilla JS Game Engine**
-- **qr-creator** – QR code generation for offline play
-- **pokersolver** (ES module) – for hand evaluation at showdown
+- **Vanilla HTML, CSS, and JavaScript** – no frameworks
+- **Client-side game engine** – handles table state, betting flow, bots, and showdown logic in the browser
+- **Service Worker caching** – supports offline play after the first load
+- **Optional Deno backend sync** – keeps multiplayer companion views and remote actions in sync
+- **qr-creator** – QR code generation for device joining
+- **pokersolver** – hand evaluation at showdown
 
 ---
 
 ## 🌐 Optional Backend Sync
 
-- Backend sync is enabled only for multi-human games that start with at least 2 human players.
-- In solo and spectator games, the table keeps a clean URL without `tableId` and stays fully local.
-- When sync is active, human seats expose a QR link for `hole-cards.html` and a direct link for `remoteTable.html`. Both views poll the same synced seat/table payload, and the backend relays turn-based action requests back to the shared table. If the backend is unreachable, the QR data stays in place and play continues offline.
-- The companion view includes a link to the full remote table, and the remote table shows a compact link above your own hole cards to switch back to the hole-card-only view.
+Backend sync is used only in multiplayer games that start with at least 2 human players.
+
+- **Solo and spectator games stay local** and keep a clean URL without `tableId`.
+- **Human seats expose two entry points**: a QR code for the companion view (`hole-cards.html`) and a direct link for the full remote table (`remoteTable.html`).
+- **Both views stay connected to the same seat** and can be switched at any time.
+- **Player actions from joined devices** are relayed back to the shared table.
+- **If the backend is unreachable**, the QR flow degrades gracefully to embedded hole-card data and read-only companion access.
 
 ---
 
 ## 🤖 How It Works
 
-- The shared device runs the table (e.g., tablet).
-- When a synced round starts, each human seat exposes a QR code for the private hole-card view and a direct remote-table link.
-- Players can open the QR companion view or the full remote table on their own device and switch between both views later without rejoining.
-- In solo play, the human acts on the shared device.
-- In synced multiplayer, the active player can act on the shared device or directly on their own device.
-- Game flow logic ensures proper handling of:
-
+- The shared device runs the main table.
+- Human players can join their seats on their own devices.
+- Empty seats are filled with bots automatically.
+- The table manages:
   - **Dealer rotation** and automatic blind posting
-  - **Progressive blinds** that double every 2 complete orbits (e.g., 10/20 → 20/40 → 40/80)
+  - **Progressive blinds** that double every 2 complete dealer orbits (e.g., 10/20 → 20/40 → 40/80)
   - Side pots and all-ins
   - Automatic showdown resolution
-  - **Bot Support**: Empty seats without a player name are assigned bots that play automatically
-    using simple hand-strength logic.
 
 ---
 
 ## Bot Behavior (Tournament Logic)
 
-Bots play tournament-style poker and follow consistent rules (no hidden information or "reads"). In
-plain terms, they consider:
+Bots play tournament-style poker and follow consistent rules without hidden information or "reads". Their decisions consider:
 
 - **Hand evaluation**: preflop strength uses a simplified Chen score; postflop uses pokersolver rank plus kicker tiebreakers and checks whether hole cards actually improve the hand.
 - **Board context**: recognizes top pair/overpair, straight/flush draws (outs to equity), and board texture (dry vs wet) to adjust strength.
@@ -133,7 +129,7 @@ plain terms, they consider:
 
 - **Local-first**: Works without network once loaded.
 - **Optional back-end sync**: Core state is client-side, with best-effort syncing when available.
-- **Zero footprint**: No accounts, no cloud sync.
+- **Zero footprint**: No accounts, no sign-ups, no persistent cloud state.
 - **Focus on flow**: The app enforces rules and turn order so you can focus on the game.
 - **Tournament-style**: Progressive blinds keep games from stalling.
 
@@ -147,11 +143,10 @@ Set `DEBUG_FLOW` to `true` in `js/app.js` to print detailed, timestamped message
 
 ## 📋 Known Limitations
 
-- Live syncing is best-effort; if the backend is unreachable, devices fall back to local QR data.
-- Without active sync or without `tableId`, the hole-cards view is read-only and actions stay on the shared device.
+- Live syncing is best-effort; if the backend is unreachable, joined devices fall back to read-only companion access, and actions stay on the shared table.
 - No persistent chip stacks or session saving (yet).
 - Remote table links are lightweight and trust-based; there are no seat tokens or connection checks yet.
-- Fixed blind structure (doubles every 2 orbits) — not customizable.
+- The blind progression (doubling every 2 dealer orbits) is not customizable.
 
 ---
 
