@@ -16,6 +16,7 @@ import {
 	renderCommunityCards,
 	renderNotificationBar,
 	renderProjectedSeat,
+	renderSeatActionLabel,
 } from "./shared/tableRenderer.js";
 
 /* --------------------------------------------------------------------------------------------------
@@ -43,13 +44,14 @@ const seatRefs = Array.from(document.querySelectorAll(".seat")).map((seatEl, sea
 	bigBlindEl: seatEl.querySelector(".big-blind"),
 	winProbabilityEl: seatEl.querySelector(".win-probability"),
 	handStrengthEl: seatEl.querySelector(".hand-strength"),
+	actionLabelTimer: null,
 }));
 const urlParams = new URLSearchParams(globalThis.location.search);
 const tableId = urlParams.get("tableId") || "";
 const seatIndexParam = parseOptionalInt(urlParams.get("seatIndex"));
 const STATE_ENDPOINT = "https://poker.tehes.deno.net/state";
 const ACTION_ENDPOINT = "https://poker.tehes.deno.net/action";
-const REFRESH_INTERVAL = 2500;
+const REFRESH_INTERVAL = 750;
 const ACTION_STEP = 10;
 const DEFAULT_NOTIFICATION = "Waiting for updates...";
 let lastVersion = 0;
@@ -123,6 +125,11 @@ function applyRemoteState(payload) {
 			activeSeatIndex: tableView.activeSeatIndex,
 			ownSeatIndex: seatIndexParam,
 			ownSeatView: seatView,
+		});
+		renderSeatActionLabel(seatRef, {
+			playerName: publicSeat.name,
+			actionName: publicSeat.actionState?.name,
+			labelUntil: publicSeat.actionState?.labelUntil,
 		});
 	});
 	renderChipStacks(

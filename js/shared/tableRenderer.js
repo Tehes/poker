@@ -4,6 +4,88 @@ Table Renderer Helpers
 
 const MAX_VISUAL_STACK_CHIPS = 10;
 
+function getSeatEl(target) {
+	return target?.seatEl ?? target?.seat ?? null;
+}
+
+function getNameEl(target) {
+	if (target?.nameEl) {
+		return target.nameEl;
+	}
+	const seatEl = getSeatEl(target);
+	return seatEl?.querySelector("h3") ?? null;
+}
+
+function cancelSeatActionLabelTimer(target) {
+	if (!target?.actionLabelTimer) {
+		return;
+	}
+	clearTimeout(target.actionLabelTimer);
+	target.actionLabelTimer = null;
+}
+
+export function getActionLabelBadgeText(actionName = "") {
+	switch (actionName) {
+		case "fold":
+			return "Fold";
+		case "check":
+			return "Check";
+		case "call":
+			return "Call";
+		case "raise":
+			return "Raise";
+		case "allin":
+			return "All-In";
+		default:
+			return "";
+	}
+}
+
+export function clearSeatActionLabel(target, playerName = "") {
+	const seatEl = getSeatEl(target);
+	const nameEl = getNameEl(target);
+	cancelSeatActionLabelTimer(target);
+	if (!seatEl || !nameEl) {
+		return;
+	}
+	seatEl.classList.remove("action-label");
+	nameEl.textContent = playerName;
+	if (typeof target.clearActionLabelState === "function") {
+		target.clearActionLabelState();
+	}
+}
+
+export function renderSeatActionLabel(
+	target,
+	{ playerName = "", actionName = "", labelUntil = 0 } = {},
+) {
+	const seatEl = getSeatEl(target);
+	const nameEl = getNameEl(target);
+	cancelSeatActionLabelTimer(target);
+	if (!seatEl || !nameEl) {
+		return;
+	}
+
+	const actionLabel = getActionLabelBadgeText(actionName);
+	if (!actionLabel) {
+		clearSeatActionLabel(target, playerName);
+		return;
+	}
+
+	seatEl.classList.add("action-label");
+	nameEl.textContent = actionLabel;
+
+	const remainingDuration = Number.isFinite(labelUntil) ? Math.max(0, labelUntil - Date.now()) : 0;
+	if (remainingDuration === 0) {
+		clearSeatActionLabel(target, playerName);
+		return;
+	}
+
+	target.actionLabelTimer = setTimeout(() => {
+		clearSeatActionLabel(target, playerName);
+	}, remainingDuration);
+}
+
 export function renderNotificationBar(container, messages = [], fallbackText = "") {
 	if (!container) {
 		return;
@@ -82,6 +164,7 @@ export function renderSeatPill(el, label, shouldShow = true) {
 }
 
 export function clearRenderedSeat(seatRef) {
+	clearSeatActionLabel(seatRef, "");
 	seatRef.seatEl.classList.add("hidden");
 	seatRef.seatEl.classList.remove(
 		"active",

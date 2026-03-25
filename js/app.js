@@ -13,9 +13,11 @@ import {
 	normalizeActionAmount,
 } from "./shared/actionModel.js";
 import {
+	clearSeatActionLabel,
 	renderChipStacks,
 	renderCommunityCards as renderTableCommunityCards,
 	renderNotificationBar,
+	renderSeatActionLabel,
 	renderSeatCards,
 	renderSeatPill,
 } from "./shared/tableRenderer.js";
@@ -490,6 +492,19 @@ function getActionLabelDuration() {
 	return ACTION_LABEL_DURATION;
 }
 
+function buildPublicPlayerActionState(player) {
+	if (!player?.lastActionName || !Number.isFinite(player.actionLabelUntil)) {
+		return null;
+	}
+	if (player.actionLabelUntil <= Date.now()) {
+		return null;
+	}
+	return {
+		name: player.lastActionName,
+		labelUntil: player.actionLabelUntil,
+	};
+}
+
 function getRunoutPhaseDelay() {
 	if (SPEED_MODE) {
 		return 0;
@@ -581,16 +596,7 @@ function showNextNotif() {
 
 function clearActionLabels() {
 	gameState.players.forEach((player) => {
-		if (!player?.actionLabelTimer) {
-			return;
-		}
-		clearTimeout(player.actionLabelTimer);
-		player.actionLabelTimer = null;
-		player.seat.classList.remove("action-label");
-		const nameEl = player.seat.querySelector("h3");
-		if (nameEl) {
-			nameEl.textContent = player.name;
-		}
+		clearSeatActionLabel(player, player.name);
 	});
 }
 
@@ -797,6 +803,7 @@ function buildPublicPlayerView(player, communityCards) {
 			: "",
 		winProbability: player.winProbability,
 		showWinProbability: shouldShowTableWinProbability(player),
+		actionState: buildPublicPlayerActionState(player),
 	};
 }
 
@@ -1455,6 +1462,8 @@ function createPlayers() {
 			winProbabilityEl: player.querySelector(".win-probability"),
 			handStrengthEl: player.querySelector(".hand-strength"),
 			actionLabelTimer: null,
+			lastActionName: "",
+			actionLabelUntil: 0,
 			winProbability: null,
 			seatIndex,
 			holeCards: [null, null],
@@ -1573,6 +1582,10 @@ function createPlayers() {
 			resetRoundBet: function () {
 				playerObject.roundBet = 0;
 				playerObject.betEl.textContent = 0;
+			},
+			clearActionLabelState: function () {
+				playerObject.lastActionName = "";
+				playerObject.actionLabelUntil = 0;
 			},
 			toJSON: function () {
 				return {
@@ -1988,24 +2001,14 @@ function notifyPlayerAction(player, action = "", amount = 0) {
 			msg = `${player.name} did something…`;
 	}
 	if (actionLabel) {
-		const nameEl = player.seat.querySelector("h3");
-		if (player.actionLabelTimer) {
-			clearTimeout(player.actionLabelTimer);
-		}
-		player.seat.classList.add("action-label");
-		nameEl.textContent = actionLabel.split(" ")[0];
 		const actionLabelDuration = getActionLabelDuration();
-		if (actionLabelDuration === 0) {
-			nameEl.textContent = player.name;
-			player.seat.classList.remove("action-label");
-			player.actionLabelTimer = null;
-		} else {
-			player.actionLabelTimer = setTimeout(() => {
-				nameEl.textContent = player.name;
-				player.seat.classList.remove("action-label");
-				player.actionLabelTimer = null;
-			}, actionLabelDuration);
-		}
+		player.lastActionName = action;
+		player.actionLabelUntil = Date.now() + actionLabelDuration;
+		renderSeatActionLabel(player, {
+			playerName: player.name,
+			actionName: action,
+			labelUntil: player.actionLabelUntil,
+		});
 	}
 
 	if (action === "fold") {
@@ -2030,6 +2033,7 @@ function notifyPlayerAction(player, action = "", amount = 0) {
 			logFlow("winProbability: preflop fold skipped", { name: player.name });
 		}
 	}
+	queueStateSync(0);
 	updateFastForwardButton();
 	enqueueNotification(msg);
 }
@@ -2190,11 +2194,7 @@ function runBotTurn({ player, cycles, anyUncalled, nextPlayer }) {
 	setActiveTurnPlayer(player);
 	hideActionControls();
 	const nameEl = player.seat.querySelector("h3");
-	if (player.actionLabelTimer) {
-		clearTimeout(player.actionLabelTimer);
-		player.actionLabelTimer = null;
-		player.seat.classList.remove("action-label");
-	}
+	clearSeatActionLabel(player, player.name);
 	player.seat.classList.remove("checked", "called", "raised", "allin");
 	nameEl.textContent = "thinking …";
 
@@ -2948,7 +2948,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-25-v1";
+const SERVICE_WORKER_VERSION = "2026-03-25-v4";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
