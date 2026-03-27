@@ -1,6 +1,11 @@
 // Main table runtime.
+// Current state: this file is still a transition layer and therefore contains legacy code that mixes
+// orchestration with some engine-adjacent logic and hybrid player objects.
+// Target state: app.js should coordinate modules, while pure poker logic lives in gameEngine.js and
+// player data is split into playerState and seatRef shapes.
 // Put code here when it coordinates engine state, bots, sync, timers, analytics, or DOM side effects.
 // Do not add pure poker rules, reusable action math, sync schema helpers, or generic render-only helpers here.
+// Prefer moving new code toward the existing modules instead of introducing additional modules.
 
 
 /* --------------------------------------------------------------------------------------------------

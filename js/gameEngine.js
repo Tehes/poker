@@ -3,8 +3,13 @@ Engine Foundations
 ---------------------------------------------------------------------------------------------------*/
 
 // Pure poker engine helpers and constants used by the table runtime.
+// Current state: this module is intentionally partial; some legacy engine logic still lives in app.js
+// and should move here gradually when it can be separated from DOM and runtime concerns.
+// Target state: gameEngine.js should own pure poker rules and state transforms, while app.js only
+// orchestrates browser-facing flow.
 // Put code here when logic depends only on explicit inputs and can run without DOM, fetch, timers, or view objects.
 // Do not add element refs, sync payload shaping, notification handling, or browser side effects here.
+// Prefer extending this module or the existing shared modules instead of creating new ones.
 
 export const PHASES = ["preflop", "flop", "turn", "river", "showdown"];
 
