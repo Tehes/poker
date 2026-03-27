@@ -363,6 +363,7 @@ export function clearChipTransferAnimation(target) {
 	cancelChipTransferTimer(target);
 	if (target) {
 		target.activeChipTransferId = null;
+		target.activeChipTransferState = null;
 	}
 }
 
@@ -370,8 +371,6 @@ export function renderChipTransferAnimation(
 	target,
 	{ finalPot = 0, players = [], chipTransfer = null } = {},
 ) {
-	cancelChipTransferTimer(target);
-
 	const normalizedPlayers = Array.isArray(players)
 		? players.filter((player) =>
 			Number.isFinite(player?.seatIndex) &&
@@ -400,15 +399,46 @@ export function renderChipTransferAnimation(
 		return;
 	}
 
-	target.activeChipTransferId = chipTransfer.id ?? null;
+	const normalizedChipTransfer = { ...chipTransfer, transfers };
+	const transferId = chipTransfer.id ?? null;
+	const isSameActiveTransfer = transferId !== null && target.activeChipTransferId === transferId;
 
-	function renderStep() {
-		const now = Date.now();
+	target.activeChipTransferId = transferId;
+	target.activeChipTransferState = {
+		finalPot,
+		players: normalizedPlayers,
+		chipTransfer: normalizedChipTransfer,
+	};
+
+	if (!isSameActiveTransfer) {
+		cancelChipTransferTimer(target);
+	} else if (target.chipTransferTimer) {
 		const { isComplete } = renderDisplayedChipTransferState(
 			target,
 			finalPot,
 			normalizedPlayers,
-			{ ...chipTransfer, transfers },
+			normalizedChipTransfer,
+			Date.now(),
+		);
+		if (isComplete) {
+			cancelChipTransferTimer(target);
+		}
+		return;
+	}
+
+	function renderStep() {
+		const activeState = target?.activeChipTransferState;
+		if (!activeState) {
+			clearChipTransferAnimation(target);
+			return;
+		}
+
+		const now = Date.now();
+		const { isComplete } = renderDisplayedChipTransferState(
+			target,
+			activeState.finalPot,
+			activeState.players,
+			activeState.chipTransfer,
 			now,
 		);
 		if (isComplete) {
@@ -416,7 +446,7 @@ export function renderChipTransferAnimation(
 			return;
 		}
 
-		const nextUpdateAt = getNextChipTransferUpdateAt({ ...chipTransfer, transfers }, now);
+		const nextUpdateAt = getNextChipTransferUpdateAt(activeState.chipTransfer, now);
 		if (nextUpdateAt === null) {
 			cancelChipTransferTimer(target);
 			return;

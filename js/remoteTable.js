@@ -39,6 +39,7 @@ const tableRenderTarget = {
 	potEl,
 	chipTransferTimer: null,
 	activeChipTransferId: null,
+	activeChipTransferState: null,
 };
 const foldButton = document.getElementById("fold-button");
 const actionButton = document.getElementById("action-button");
