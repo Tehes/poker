@@ -1,8 +1,7 @@
 // Main table runtime.
 // Current state: this file is still a transition layer and therefore contains legacy code that mixes
-// orchestration with some engine-adjacent logic and hybrid player objects.
+// orchestration with some engine-adjacent logic.
 // Target state: app.js should coordinate modules, while pure poker logic lives in gameEngine.js and
-// player data is split into playerState and seatRef shapes.
 // Put code here when it coordinates engine state, bots, sync, timers, analytics, or DOM side effects.
 // Do not add pure poker rules, reusable action math, sync schema helpers, or generic render-only helpers here.
 // Prefer moving new code toward the existing modules instead of introducing additional modules.
@@ -14,12 +13,20 @@ Imports
 
 import { chooseBotAction, enqueueBotAction, setBotPlaybackFast } from "./bot.js";
 import {
+	areHoleCardsFaceUp,
 	buildSplitPayouts,
-	combinationCount,
+	calculateWinProbabilities,
+	getBettingRoundStartIndex,
+	getBlindSeatIndexes,
+	getBotRevealDecision,
 	getCurrentPhase,
+	getNextDealerIndex,
+	getPlayerHandStrengthLabel,
+	getVisibleSolvedHand,
 	INITIAL_BIG_BLIND,
 	INITIAL_DECK,
 	INITIAL_SMALL_BLIND,
+	isAllInRunout,
 	shuffleArray,
 	takeDeckCard,
 	trackUsedCard,
@@ -167,8 +174,6 @@ let exitEventSent = false;
 Game Constants And Game State
 ---------------------------------------------------------------------------------------------------*/
 
-const BOT_REVEAL_CHANCE = 0.3; // Chance that a bot will choose to reveal part of its hand post-flop.
-const BOT_DOUBLE_REVEAL_HANDS = new Set(["Straight Flush", "Four of a Kind", "Full House"]);
 const WINNER_REACTION_EMOJIS = {
 	reveal: ["😉", "😜", "🤭"],
 	uncontested: ["😎", "😏", "😌"],
@@ -181,7 +186,6 @@ const WINNER_REACTION_EMOJIS = {
 };
 const WINNER_REACTION_MONSTER_HANDS = new Set(["Full House", "Four of a Kind", "Straight Flush"]);
 const WINNER_REACTION_STRONG_HANDS = new Set(["Straight", "Flush"]);
-const CARD_RANK_ORDER = "23456789TJQKA";
 const CARD_SUIT_SYMBOLS = {
 	C: "♣",
 	D: "♦",
@@ -1024,7 +1028,7 @@ function shouldShowSeatHandStrength(player, communityCards) {
 }
 
 function shouldShowSeatWinProbability(player) {
-	return (gameState.spectatorMode || isAllInRunout()) &&
+	return (gameState.spectatorMode || isAllInRunout(gameState.players, gameState.currentBet)) &&
 		gameState.currentPhaseIndex > 0 &&
 		!player.folded &&
 		player.holeCards.every(Boolean) &&
@@ -1154,59 +1158,12 @@ function getCommunityCardCodes() {
 	return gameState.communityCards.slice();
 }
 
-function isAllInRunout() {
-	const activePlayers = gameState.players.filter((p) => !p.folded);
-	const actionablePlayers = activePlayers.filter((p) => !p.allIn);
-	if (activePlayers.length <= 1 || actionablePlayers.length > 1) {
-		return false;
-	}
-	if (actionablePlayers.length === 0) {
-		return true;
-	}
-	// Do not start the runout until the last player with chips has matched the bet.
-	return actionablePlayers[0].roundBet === gameState.currentBet;
-}
-
 function revealActiveHoleCards() {
 	gameState.players.filter((p) => !p.folded).forEach((p) => {
 		revealPlayerHoleCards(p);
 		hidePlayerQr(p);
 	});
 	updateHandStrengthDisplays();
-}
-
-function areHoleCardsFaceUp(player) {
-	return player.visibleHoleCards.every(Boolean);
-}
-
-function getShortHandStrengthLabel(solvedHand) {
-	if (!solvedHand) {
-		return "";
-	}
-	if (solvedHand.descr === "Royal Flush") {
-		return "Royal flush";
-	}
-	switch (solvedHand.name) {
-		case "Straight Flush":
-			return "Straight flush";
-		case "Four of a Kind":
-			return "4 of a kind";
-		case "Full House":
-			return "Full house";
-		case "Flush":
-			return "Flush";
-		case "Straight":
-			return "Straight";
-		case "Three of a Kind":
-			return "3 of a kind";
-		case "Two Pair":
-			return "2 Pair";
-		case "Pair":
-			return "Pair";
-		case "High Card":
-		default:
-			return "High card";
-	}
 }
 
 function formatCardLabel(cardCode) {
@@ -1216,74 +1173,6 @@ function formatCardLabel(cardCode) {
 	const rank = cardCode[0] === "T" ? "10" : cardCode[0];
 	const suit = CARD_SUIT_SYMBOLS[cardCode[1]] || cardCode[1];
 	return `${rank}${suit}`;
-}
-
-function getSolvedHandCardCodes(solvedHand) {
-	if (!solvedHand) {
-		return [];
-	}
-	return solvedHand.cards.map((card) => `${card.value}${card.suit.toUpperCase()}`);
-}
-
-function getHighestBoardRank(boardCards) {
-	return boardCards.reduce((highestRank, cardCode) => {
-		if (
-			!highestRank ||
-			CARD_RANK_ORDER.indexOf(cardCode[0]) > CARD_RANK_ORDER.indexOf(highestRank)
-		) {
-			return cardCode[0];
-		}
-		return highestRank;
-	}, "");
-}
-
-function getBotRevealDecision(player, communityCards) {
-	if (!player.isBot || communityCards.length === 0) {
-		return null;
-	}
-	if (Math.random() >= BOT_REVEAL_CHANCE) {
-		return null;
-	}
-
-	const holeCards = player.holeCards.slice();
-	const solvedHand = Hand.solve([...holeCards, ...communityCards]);
-	if (!solvedHand) {
-		return null;
-	}
-
-	const bestHandCardCodes = new Set(getSolvedHandCardCodes(solvedHand));
-	const revealedHoleCards = holeCards.filter((cardCode) => bestHandCardCodes.has(cardCode));
-
-	if (BOT_DOUBLE_REVEAL_HANDS.has(solvedHand.name) && revealedHoleCards.length === 2) {
-		return { type: "double", handName: solvedHand.name, codes: holeCards.slice() };
-	}
-
-	if (solvedHand.name !== "Pair" && solvedHand.name !== "Three of a Kind") {
-		return null;
-	}
-
-	const repeatedCount = solvedHand.name === "Pair" ? 2 : 3;
-	const rankCounts = new Map();
-	getSolvedHandCardCodes(solvedHand).forEach((cardCode) => {
-		const rank = cardCode[0];
-		rankCounts.set(rank, (rankCounts.get(rank) || 0) + 1);
-	});
-	const madeRankEntry = Array.from(rankCounts.entries()).find(([, count]) =>
-		count === repeatedCount
-	);
-	if (!madeRankEntry) {
-		return null;
-	}
-	if (solvedHand.name === "Pair" && madeRankEntry[0] !== getHighestBoardRank(communityCards)) {
-		return null;
-	}
-
-	const matchingHoleCards = holeCards.filter((cardCode) => cardCode[0] === madeRankEntry[0]);
-	if (matchingHoleCards.length !== 1) {
-		return null;
-	}
-
-	return { type: "single", handName: solvedHand.name, codes: matchingHoleCards };
 }
 
 function applyBotReveal(player, revealDecision) {
@@ -1301,13 +1190,6 @@ function applyBotReveal(player, revealDecision) {
 	);
 	hidePlayerQr(player);
 	updateHandStrengthDisplays();
-}
-
-function getVisibleSolvedHand(player, communityCards) {
-	if (!areHoleCardsFaceUp(player) || communityCards.length !== 5) {
-		return null;
-	}
-	return Hand.solve([...player.holeCards, ...communityCards]);
 }
 
 function getWinnerReactionEmoji(player, context) {
@@ -1379,21 +1261,6 @@ function triggerMainPotWinnerReactions(context) {
 	});
 }
 
-function getPlayerSolvedHand(player, communityCards) {
-	if (!player.holeCards.every(Boolean) || communityCards.length < 3) {
-		return null;
-	}
-	return Hand.solve([...player.holeCards, ...communityCards]);
-}
-
-function getPlayerHandStrengthLabel(player, communityCards) {
-	const solvedHand = getPlayerSolvedHand(player, communityCards);
-	if (!solvedHand) {
-		return "";
-	}
-	return getShortHandStrengthLabel(solvedHand);
-}
-
 function shouldShowTableHandStrength(player, communityCards) {
 	return gameState.currentPhaseIndex > 0 &&
 		communityCards.length >= 3 &&
@@ -1401,7 +1268,7 @@ function shouldShowTableHandStrength(player, communityCards) {
 }
 
 function shouldShowTableWinProbability(player) {
-	return (gameState.spectatorMode || isAllInRunout()) &&
+	return (gameState.spectatorMode || isAllInRunout(gameState.players, gameState.currentBet)) &&
 		gameState.currentPhaseIndex > 0 &&
 		areHoleCardsFaceUp(player) &&
 		typeof player.winProbability === "number";
@@ -1435,7 +1302,7 @@ function updateWinProbabilityDisplays() {
 }
 
 function computeSpectatorWinProbabilities(reason = "") {
-	if (!gameState.spectatorMode && !isAllInRunout()) {
+	if (!gameState.spectatorMode && !isAllInRunout(gameState.players, gameState.currentBet)) {
 		return;
 	}
 	if (gameState.currentPhaseIndex === 0) {
@@ -1463,94 +1330,44 @@ function computeSpectatorWinProbabilities(reason = "") {
 	gameState.players.forEach((p) => {
 		p.winProbability = p.folded ? 0 : null;
 	});
+	const result = calculateWinProbabilities(gameState.players, communityCards, gameState.deck);
 
-	if (activePlayers.length === 1) {
-		activePlayers[0].winProbability = 100;
-		updateWinProbabilityDisplays();
-		logFlow("winProbability", {
-			phase: getCurrentPhase(gameState.currentPhaseIndex),
-			reason,
-			boards: 1,
-			players: [{ name: activePlayers[0].name, winProbability: 100 }],
+	if (result.status === "invalid_board") {
+		logFlow("winProbability: invalid board state", {
+			communityCards,
+			missingCount,
 		});
 		return;
 	}
 
-	const totalBoards = combinationCount(gameState.deck.length, missingCount);
-	const MAX_ENUM_BOARDS = 50000;
-	if (totalBoards > MAX_ENUM_BOARDS) {
+	if (result.status === "no_players") {
+		updateWinProbabilityDisplays();
+		return;
+	}
+
+	if (result.status === "too_many_boards") {
 		logFlow("winProbability: skipped heavy enumeration", {
 			phase: getCurrentPhase(gameState.currentPhaseIndex),
 			reason,
 			missingCount,
-			totalBoards,
+			totalBoards: result.totalBoards,
 			deckSize: gameState.deck.length,
 		});
 		updateWinProbabilityDisplays();
 		return;
 	}
 
-	const deck = gameState.deck.slice();
-	if (totalBoards === 0) {
+	if (result.status === "no_boards") {
 		logFlow("winProbability: no boards to evaluate", {
-			deckSize: deck.length,
+			deckSize: gameState.deck.length,
 			missingCount,
 		});
 		updateWinProbabilityDisplays();
 		return;
 	}
 
-	const scores = new Map();
-	const playerHoles = activePlayers.map((p) => ({
-		player: p,
-		hole: p.holeCards.slice(),
-	}));
-	playerHoles.forEach((entry) => {
-		scores.set(entry.player, 0);
-	});
-
-	let boardsSeen = 0;
-
-	const scoreBoard = (boardCards) => {
-		const entries = playerHoles.map((entry) => {
-			const seven = [entry.hole[0], entry.hole[1], ...boardCards];
-			return { player: entry.player, handObj: Hand.solve(seven) };
-		});
-		const winners = Hand.winners(entries.map((e) => e.handObj));
-		const share = 1 / winners.length;
-		winners.forEach((winnerHand) => {
-			const winnerEntry = entries.find((e) => e.handObj === winnerHand);
-			const prev = scores.get(winnerEntry.player);
-			scores.set(winnerEntry.player, prev + share);
-		});
-		boardsSeen++;
-	};
-
-	if (missingCount === 0) {
-		scoreBoard(communityCards);
-	} else {
-		const buffer = new Array(missingCount);
-		const recurse = (depth, startIndex) => {
-			if (depth === missingCount) {
-				scoreBoard(communityCards.concat(buffer));
-				return;
-			}
-			const maxIndex = deck.length - (missingCount - depth);
-			for (let i = startIndex; i <= maxIndex; i++) {
-				buffer[depth] = deck[i];
-				recurse(depth + 1, i + 1);
-			}
-		};
-		recurse(0, 0);
-	}
-
-	if (boardsSeen === 0) {
-		return;
-	}
-
-	activePlayers.forEach((p) => {
-		const pct = (scores.get(p) / boardsSeen) * 100;
-		p.winProbability = pct;
+	result.activePlayers.forEach((player) => {
+		player.winProbability = result.probabilities.get(player) ?? null;
 	});
 
 	updateWinProbabilityDisplays();
@@ -1559,11 +1376,11 @@ function computeSpectatorWinProbabilities(reason = "") {
 		phase: getCurrentPhase(gameState.currentPhaseIndex),
 		reason,
 		missingCount,
-		totalBoards,
-		boards: boardsSeen,
-		players: activePlayers.map((p) => ({
-			name: p.name,
-			winProbability: Number(p.winProbability.toFixed(2)),
+		totalBoards: result.totalBoards,
+		boards: result.boardsSeen,
+		players: result.activePlayers.map((player) => ({
+			name: player.name,
+			winProbability: Number(player.winProbability.toFixed(2)),
 		})),
 	});
 }
@@ -1691,22 +1508,19 @@ function createPlayers() {
 }
 
 function setDealer() {
-	const isNotDealer = (currentValue) => currentValue.dealer === false;
-	if (gameState.players.every(isNotDealer)) {
-		const randomPlayerIndex = Math.floor(Math.random() * gameState.players.length);
-		gameState.players[randomPlayerIndex].dealer = true;
-		assignPlayerRole(gameState.players[randomPlayerIndex], "dealer");
-		gameState.initialDealerName = gameState.players[randomPlayerIndex].name;
-	} else {
-		const dealerIndex = gameState.players.findIndex((p) => p.dealer);
-		// clear current dealer flag
+	const nextDealerIndex = getNextDealerIndex(gameState.players);
+	if (nextDealerIndex === -1) {
+		return;
+	}
+	const dealerIndex = gameState.players.findIndex((player) => player.dealer);
+	if (dealerIndex !== -1) {
 		gameState.players[dealerIndex].dealer = false;
 		clearPlayerRole(gameState.players[dealerIndex], "dealer");
-
-		// assign new dealer – wrap with modulo to avoid “undefined”
-		const nextIndex = (dealerIndex + 1) % gameState.players.length;
-		gameState.players[nextIndex].dealer = true;
-		assignPlayerRole(gameState.players[nextIndex], "dealer");
+	}
+	gameState.players[nextDealerIndex].dealer = true;
+	assignPlayerRole(gameState.players[nextDealerIndex], "dealer");
+	if (dealerIndex === -1) {
+		gameState.initialDealerName = gameState.players[nextDealerIndex].name;
 	}
 
 	while (gameState.players[0].dealer === false) {
@@ -1734,8 +1548,9 @@ function setBlinds() {
 		clearPlayerRole(p, "big-blind");
 	});
 	// Post blinds for Pre-Flop and set currentBet
-	const sbIdx = (gameState.players.length > 2) ? 1 : 0;
-	const bbIdx = (gameState.players.length > 2) ? 2 : 1;
+	const { smallBlindIndex: sbIdx, bigBlindIndex: bbIdx } = getBlindSeatIndexes(
+		gameState.players.length,
+	);
 
 	const sbBet = placePlayerBet(gameState.players[sbIdx], gameState.smallBlind);
 	const bbBet = placePlayerBet(gameState.players[bbIdx], gameState.bigBlind);
@@ -1932,7 +1747,7 @@ function dealCommunityCards(amount) {
 	}
 	appendCommunityCards(dealtCards);
 	updateHandStrengthDisplays();
-	if (gameState.spectatorMode || isAllInRunout()) {
+	if (gameState.spectatorMode || isAllInRunout(gameState.players, gameState.currentBet)) {
 		computeSpectatorWinProbabilities("dealCommunityCards");
 	}
 }
@@ -1972,7 +1787,7 @@ function setPhase() {
 function queueRunoutPhaseAdvance(reason = "") {
 	hideActionControls();
 	const runoutPhaseDelay = getRunoutPhaseDelay();
-	if (!isAllInRunout() || runoutPhaseDelay === 0) {
+	if (!isAllInRunout(gameState.players, gameState.currentBet) || runoutPhaseDelay === 0) {
 		return setPhase();
 	}
 	if (runoutPhaseTimer) {
@@ -2080,7 +1895,7 @@ function notifyPlayerAction(player, action = "", amount = 0) {
 		updateHandStrengthDisplays();
 	}
 
-	if (action !== "check" && isAllInRunout()) {
+	if (action !== "check" && isAllInRunout(gameState.players, gameState.currentBet)) {
 		revealActiveHoleCards();
 		if (gameState.currentPhaseIndex > 0) {
 			computeSpectatorWinProbabilities("allin-runout");
@@ -2484,16 +2299,7 @@ function startBettingRound() {
 
 	// --- Start Index -------------------------------------------------------------
 	// 2) Determine start index
-	let startIdx;
-	if (gameState.currentPhaseIndex === 0) {
-		// UTG: first player left of big blind
-		const bbIdx = gameState.players.findIndex((p) => p.bigBlind);
-		startIdx = (bbIdx + 1) % gameState.players.length;
-	} else {
-		// first player left of dealer
-		const dealerIdx = gameState.players.findIndex((p) => p.dealer);
-		startIdx = (dealerIdx + 1) % gameState.players.length;
-	}
+	const startIdx = getBettingRoundStartIndex(gameState.players, gameState.currentPhaseIndex);
 
 	logFlow("betting start index", { index: startIdx, player: gameState.players[startIdx].name });
 
@@ -3020,7 +2826,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-27-v3";
+const SERVICE_WORKER_VERSION = "2026-03-27-v4";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
