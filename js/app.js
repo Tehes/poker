@@ -21,6 +21,7 @@ import {
 	renderSeatActionLabel,
 	renderSeatCards,
 	renderSeatPill,
+	renderSeatWinnerState,
 	showWinnerReaction,
 } from "./shared/tableRenderer.js";
 import { initServiceWorker } from "./serviceWorkerRegistration.js";
@@ -818,6 +819,7 @@ function buildPublicPlayerView(player, communityCards) {
 			: "",
 		winProbability: player.winProbability,
 		showWinProbability: shouldShowTableWinProbability(player),
+		winner: player.isWinner === true,
 		actionState: buildPublicPlayerActionState(player),
 		winnerReaction: buildPublicPlayerWinnerReactionState(player),
 	};
@@ -1454,6 +1456,7 @@ function createPlayers() {
 			winnerReactionTimer: null,
 			winnerReactionEmoji: "",
 			winnerReactionUntil: 0,
+			isWinner: false,
 			winProbabilityEl: player.querySelector(".win-probability"),
 			handStrengthEl: player.querySelector(".hand-strength"),
 			actionLabelTimer: null,
@@ -1737,15 +1740,14 @@ function preFlop() {
 		p.allIn = false;
 		p.totalBet = 0;
 		p.winProbability = null;
+		p.isWinner = false;
 		clearWinnerReaction(p);
+		renderSeatWinnerState(p, false);
 		p.seat.classList.remove("folded", "called", "raised", "checked", "allin");
 		setPlayerHoleCards(p, [null, null]);
 		hidePlayerHoleCards(p);
 		p.qr.hide();
 	});
-
-	// Remove any previous winner highlighting
-	gameState.players.forEach((p) => p.seat.classList.remove("winner"));
 
 	// Clear community cards from last hand
 	setCommunityCards([]);
@@ -1802,7 +1804,8 @@ function preFlop() {
 		enqueueNotification(`${champion.name} wins the game! 🏆`);
 		// Reveal champion's stack
 		champion.showTotal();
-		champion.seat.classList.add("winner");
+		champion.isWinner = true;
+		renderSeatWinnerState(champion, true);
 		logFlow("tournament_end", { champion: champion.name });
 		gameState.gameFinished = true;
 		clearPendingAction();
@@ -1818,6 +1821,7 @@ function preFlop() {
 			renderStatsOverlay();
 			setSummaryButtonsVisible(true);
 		}
+		queueStateSync(0);
 		return; // skip the rest of preFlop()
 	}
 	// ----------------------------------------------------------
@@ -2643,7 +2647,8 @@ function doShowdown() {
 		const revealedPlayers = new Set();
 		const revealDecision = getBotRevealDecision(winner, communityCards);
 		winner.stats.handsWon++;
-		winner.seat.classList.add("winner");
+		winner.isWinner = true;
+		renderSeatWinnerState(winner, true);
 		winner.seat.classList.remove("active");
 		if (revealDecision) {
 			revealedPlayers.add(winner);
@@ -2666,6 +2671,7 @@ function doShowdown() {
 			revealedPlayers,
 			totalPayoutByPlayer,
 		});
+		queueStateSync(0);
 		enqueueNotification(`${winner.name} wins ${gameState.pot}!`);
 		animateChipTransfer(gameState.pot, winner, () => {
 			finishHandAfterShowdown();
@@ -2772,7 +2778,8 @@ function doShowdown() {
 			}
 			// Highlight winners only for the main pot
 			if (potIdx === 0) {
-				entry.player.seat.classList.add("winner");
+				entry.player.isWinner = true;
+				renderSeatWinnerState(entry.player, true);
 				entry.player.seat.classList.remove("active");
 			}
 		});
@@ -2849,6 +2856,7 @@ function doShowdown() {
 		revealedPlayers: new Set(),
 		totalPayoutByPlayer,
 	});
+	queueStateSync(0);
 
 	// --- Payout Animation --------------------------------------------------------
 	// run all chip transfers in parallel
@@ -2947,7 +2955,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-25-v5";
+const SERVICE_WORKER_VERSION = "2026-03-27-v2";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

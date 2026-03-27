@@ -215,9 +215,19 @@ export function renderSeatPill(el, label, shouldShow = true) {
 	el.classList.toggle("hidden", !show);
 }
 
+export function renderSeatWinnerState(target, isWinner = false) {
+	const seatEl = getSeatEl(target);
+	if (!seatEl) {
+		return;
+	}
+
+	seatEl.classList.toggle("winner", isWinner === true);
+}
+
 export function clearRenderedSeat(seatRef) {
 	clearSeatActionLabel(seatRef, "");
 	clearWinnerReaction(seatRef);
+	renderSeatWinnerState(seatRef, false);
 	seatRef.seatEl.classList.add("hidden");
 	seatRef.seatEl.classList.remove(
 		"active",
@@ -226,7 +236,6 @@ export function clearRenderedSeat(seatRef) {
 		"called",
 		"raised",
 		"allin",
-		"winner",
 		"action-label",
 	);
 	renderSeatCards(seatRef.cardEls, []);
@@ -260,6 +269,7 @@ export function renderProjectedSeat(
 	seatRef.seatEl.classList.toggle("active", activeSeatIndex === publicSeat.seatIndex);
 	seatRef.seatEl.classList.toggle("folded", publicSeat.folded === true);
 	seatRef.seatEl.classList.toggle("allin", publicSeat.allIn === true);
+	renderSeatWinnerState(seatRef, publicSeat.winner === true);
 	seatRef.nameEl.textContent = publicSeat.name;
 	seatRef.totalEl.textContent = `${publicSeat.chips}`;
 	seatRef.betEl.textContent = `${publicSeat.roundBet}`;
