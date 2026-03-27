@@ -2,6 +2,10 @@
 Table Renderer Helpers
 ---------------------------------------------------------------------------------------------------*/
 
+// Shared DOM renderer for table-style seat views.
+// Put code here when a caller already decided the display state and only the DOM update is missing.
+// Do not decide poker rules, sync payload shape, polling behavior, or visibility policy here.
+
 const MAX_VISUAL_STACK_CHIPS = 10;
 
 function getSeatEl(target) {

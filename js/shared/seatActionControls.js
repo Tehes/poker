@@ -2,6 +2,10 @@
 Seat Action Controls
 ---------------------------------------------------------------------------------------------------*/
 
+// Shared remote action-control wiring for seat-based views.
+// Put code here for slider/button state, request submission, and pending-action driven visibility.
+// Do not embed poker rules already covered by actionModel, nor polling, rendering, or full game flow here.
+
 import {
 	clampActionAmount,
 	getActionButtonLabel,

@@ -1,8 +1,24 @@
+// Main table runtime.
+// Put code here when it coordinates engine state, bots, sync, timers, analytics, or DOM side effects.
+// Do not add pure poker rules, reusable action math, sync schema helpers, or generic render-only helpers here.
+
+
 /* --------------------------------------------------------------------------------------------------
 Imports
 ---------------------------------------------------------------------------------------------------*/
 
 import { chooseBotAction, enqueueBotAction, setBotPlaybackFast } from "./bot.js";
+import {
+	buildSplitPayouts,
+	combinationCount,
+	getCurrentPhase,
+	INITIAL_BIG_BLIND,
+	INITIAL_DECK,
+	INITIAL_SMALL_BLIND,
+	shuffleArray,
+	takeDeckCard,
+	trackUsedCard,
+} from "./gameEngine.js";
 import { Hand } from "./pokersolver.js";
 import QrCreator from "./qr-creator.js";
 import {
@@ -124,8 +140,6 @@ let exitEventSent = false;
 Game Constants And Game State
 ---------------------------------------------------------------------------------------------------*/
 
-const Phases = ["preflop", "flop", "turn", "river", "showdown"];
-
 const BOT_REVEAL_CHANCE = 0.3; // Chance that a bot will choose to reveal part of its hand post-flop.
 const BOT_DOUBLE_REVEAL_HANDS = new Set(["Straight Flush", "Four of a Kind", "Full House"]);
 const WINNER_REACTION_EMOJIS = {
@@ -147,29 +161,6 @@ const CARD_SUIT_SYMBOLS = {
 	H: "♥",
 	S: "♠",
 };
-
-// Clubs, Diamonds, Hearts, Spades
-// 2,3,4,5,6,7,8,9,T,J,Q,K,A
-// deno-fmt-ignore-start
-const INITIAL_DECK = [
-	"2C", "2D", "2H", "2S",
-	"3C", "3D", "3H", "3S",
-	"4C", "4D", "4H", "4S",
-	"5C", "5D", "5H", "5S",
-	"6C", "6D", "6H", "6S",
-	"7C", "7D", "7H", "7S",
-	"8C", "8D", "8H", "8S",
-	"9C", "9D", "9H", "9S",
-	"TC", "TD", "TH", "TS",
-	"JC", "JD", "JH", "JS",
-	"QC", "QD", "QH", "QS",
-	"KC", "KD", "KH", "KS",
-	"AC", "AD", "AH", "AS",
-];
-// deno-fmt-ignore-end
-
-const INITIAL_SMALL_BLIND = 10;
-const INITIAL_BIG_BLIND = 20;
 
 const gameState = {
 	currentPhaseIndex: 0,
@@ -216,32 +207,6 @@ gameState.toJSON = function () {
 Low-Level Utilities And Formatting Helpers
 ---------------------------------------------------------------------------------------------------*/
 
-function shuffleArray(array) {
-	let i = array.length;
-	while (i) {
-		const j = Math.floor(Math.random() * i);
-		const t = array[--i];
-		array[i] = array[j];
-		array[j] = t;
-	}
-	return array;
-}
-
-function getCurrentPhase() {
-	return Phases[gameState.currentPhaseIndex] ?? null;
-}
-
-function takeDeckCard() {
-	return gameState.deck.shift() ?? null;
-}
-
-function trackUsedCard(cardCode) {
-	if (cardCode) {
-		gameState.cardGraveyard.push(cardCode);
-	}
-	return cardCode;
-}
-
 function logHistory(msg) {
 	if (HISTORY_LOG) console.log(msg);
 }
@@ -271,57 +236,6 @@ function formatPercent(numerator, denominator) {
 
 function getRandomItem(items) {
 	return items[Math.floor(Math.random() * items.length)];
-}
-
-function getOddChipOrder(winners) {
-	const winnerSet = new Set(winners);
-	const dealerIdx = gameState.players.findIndex((p) => p.dealer);
-	const orderedWinners = [];
-
-	if (dealerIdx === -1) {
-		return winners.slice().sort((a, b) => a.seatIndex - b.seatIndex);
-	}
-
-	// Odd chips go clockwise from the seat left of the dealer.
-	for (let offset = 1; offset <= gameState.players.length; offset++) {
-		const player = gameState.players[(dealerIdx + offset) % gameState.players.length];
-		if (winnerSet.has(player)) {
-			orderedWinners.push(player);
-		}
-	}
-
-	return orderedWinners;
-}
-
-function buildSplitPayouts(amount, winners) {
-	// Keep split payouts on the 10-chip denomination used throughout the game.
-	const share = Math.floor(amount / winners.length / CHIP_UNIT) * CHIP_UNIT;
-	let remainder = amount - share * winners.length;
-	const payouts = new Map(winners.map((player) => [player, share]));
-	const oddChipOrder = getOddChipOrder(winners);
-
-	// Award each remaining full chip unit as an odd chip in table order.
-	oddChipOrder.forEach((player) => {
-		if (remainder < CHIP_UNIT) {
-			return;
-		}
-		payouts.set(player, payouts.get(player) + CHIP_UNIT);
-		remainder -= CHIP_UNIT;
-	});
-
-	return payouts;
-}
-
-function combinationCount(n, k) {
-	if (k < 0 || k > n) {
-		return 0;
-	}
-	const kk = Math.min(k, n - k);
-	let result = 1;
-	for (let i = 1; i <= kk; i++) {
-		result = (result * (n - kk + i)) / i;
-	}
-	return Math.round(result);
 }
 
 /* --------------------------------------------------------------------------------------------------
@@ -867,7 +781,7 @@ function buildSyncView() {
 	return {
 		table: {
 			// table contains public/shared state only.
-			phase: getCurrentPhase(),
+			phase: getCurrentPhase(gameState.currentPhaseIndex),
 			pot: gameState.pot,
 			activeSeatIndex: gameState.activeSeatIndex,
 			communityCards,
@@ -1280,7 +1194,7 @@ function computeSpectatorWinProbabilities(reason = "") {
 		activePlayers[0].winProbability = 100;
 		updateWinProbabilityDisplays();
 		logFlow("winProbability", {
-			phase: getCurrentPhase(),
+			phase: getCurrentPhase(gameState.currentPhaseIndex),
 			reason,
 			boards: 1,
 			players: [{ name: activePlayers[0].name, winProbability: 100 }],
@@ -1292,7 +1206,7 @@ function computeSpectatorWinProbabilities(reason = "") {
 	const MAX_ENUM_BOARDS = 50000;
 	if (totalBoards > MAX_ENUM_BOARDS) {
 		logFlow("winProbability: skipped heavy enumeration", {
-			phase: getCurrentPhase(),
+			phase: getCurrentPhase(gameState.currentPhaseIndex),
 			reason,
 			missingCount,
 			totalBoards,
@@ -1368,7 +1282,7 @@ function computeSpectatorWinProbabilities(reason = "") {
 	updateWinProbabilityDisplays();
 
 	logFlow("winProbability", {
-		phase: getCurrentPhase(),
+		phase: getCurrentPhase(gameState.currentPhaseIndex),
 		reason,
 		missingCount,
 		totalBoards,
@@ -1444,6 +1358,8 @@ function createPlayers() {
 	const activePlayers = document.querySelectorAll(".seat:not(.hidden)");
 	for (const player of activePlayers) {
 		const seatIndex = gameState.players.length;
+		// Transitional shape: this object still mixes player state with seat DOM references.
+		// A later refactor should split it into playerState and seatRef without changing behavior.
 		const playerObject = {
 			name: player.querySelector("h3").textContent,
 			isBot: player.classList.contains("bot"),
@@ -1693,8 +1609,8 @@ function dealCards() {
 	shuffleArray(gameState.deck);
 
 	for (const player of gameState.players) {
-		const card1 = trackUsedCard(takeDeckCard());
-		const card2 = trackUsedCard(takeDeckCard());
+		const card1 = trackUsedCard(gameState.cardGraveyard, takeDeckCard(gameState.deck));
+		const card2 = trackUsedCard(gameState.cardGraveyard, takeDeckCard(gameState.deck));
 		setPlayerHoleCards(player, [card1, card2]);
 
 		const showCards = gameState.spectatorMode || (!player.isBot && gameState.openCardsMode);
@@ -1857,10 +1773,10 @@ function dealCommunityCards(amount) {
 		logFlow("dealCommunityCards: not enough slots");
 		return;
 	}
-	trackUsedCard(takeDeckCard()); // burn
+	trackUsedCard(gameState.cardGraveyard, takeDeckCard(gameState.deck)); // burn
 	const dealtCards = [];
 	for (let i = 0; i < amount; i++) {
-		const card = trackUsedCard(takeDeckCard());
+		const card = trackUsedCard(gameState.cardGraveyard, takeDeckCard(gameState.deck));
 		if (card) {
 			dealtCards.push(card);
 		}
@@ -1873,7 +1789,7 @@ function dealCommunityCards(amount) {
 }
 
 function setPhase() {
-	logFlow("setPhase", { phase: getCurrentPhase() });
+	logFlow("setPhase", { phase: getCurrentPhase(gameState.currentPhaseIndex) });
 	// EARLY EXIT: If only one player remains, skip straight to showdown
 	const activePlayers = gameState.players.filter((p) => !p.folded);
 	if (activePlayers.length <= 1) {
@@ -1881,7 +1797,7 @@ function setPhase() {
 	}
 
 	gameState.currentPhaseIndex++;
-	switch (getCurrentPhase()) {
+	switch (getCurrentPhase(gameState.currentPhaseIndex)) {
 		case "flop":
 			dealCommunityCards(3);
 			enqueueNotification("Flop (3 cards) dealt.");
@@ -1915,7 +1831,7 @@ function queueRunoutPhaseAdvance(reason = "") {
 	}
 	logFlow("delay runout phase", {
 		reason,
-		phase: getCurrentPhase(),
+		phase: getCurrentPhase(gameState.currentPhaseIndex),
 		delay: runoutPhaseDelay,
 	});
 	runoutPhaseTimer = setTimeout(() => {
@@ -2398,7 +2314,7 @@ function startBettingRound() {
 		gameState.players.forEach((p) => p.resetRoundBet());
 	}
 	logFlow("startBettingRound", {
-		phase: getCurrentPhase(),
+		phase: getCurrentPhase(gameState.currentPhaseIndex),
 		currentBet: gameState.currentBet,
 		lastRaise: gameState.lastRaise,
 		order: gameState.players.map((p) => p.name),
@@ -2762,7 +2678,12 @@ function doShowdown() {
 			return winnerEntry.player;
 		});
 		// Use odd-chip payouts here so split pots stay on 10-chip stacks.
-		const splitPayouts = buildSplitPayouts(sp.amount, potWinners);
+		const splitPayouts = buildSplitPayouts(
+			sp.amount,
+			potWinners,
+			gameState.players,
+			CHIP_UNIT,
+		);
 		if (potIdx === 0) {
 			mainPotWinners = potWinners.slice();
 		}
@@ -2955,7 +2876,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-27-v2";
+const SERVICE_WORKER_VERSION = "2026-03-27-v3";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

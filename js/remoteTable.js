@@ -2,6 +2,10 @@
 Imports
 ---------------------------------------------------------------------------------------------------*/
 
+// Synced remote-table runtime.
+// Put code here for polling one table projection and mapping synced state into renderer and action-control helpers.
+// Do not reimplement poker rules, sync schema helpers, or generic render-only primitives here.
+
 import {
 	configureViewSwitchLink,
 	createSeatActionControls,

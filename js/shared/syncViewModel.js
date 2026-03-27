@@ -2,9 +2,9 @@
 Sync View Model Helpers
 ---------------------------------------------------------------------------------------------------*/
 
-// This module only describes the sync contract and payload access helpers.
-// It must stay independent from fetch, DOM, timers, and game-flow code so the same schema
-// can be consumed by the table, the single view, and the backend projection layer.
+// Shared sync schema and payload access helpers.
+// Put code here for payload versioning, projection lookup, and shape helpers shared by table, seat, and backend code.
+// Do not fetch, render, poll, or compute poker flow here.
 export const SYNC_VIEW_SCHEMA_VERSION = 6;
 
 export function getTableView(payload) {

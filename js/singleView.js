@@ -2,6 +2,10 @@
 Imports
 ---------------------------------------------------------------------------------------------------*/
 
+// Synced single-seat runtime.
+// Put code here for polling one seat projection and mapping synced state into the private seat view.
+// Do not recompute poker rules or visibility decisions, and do not move shared action math or renderer primitives here.
+
 import {
 	configureViewSwitchLink,
 	createSeatActionControls,
@@ -15,8 +19,6 @@ import { getSeatView, getTableView } from "./shared/syncViewModel.js";
 Variables
 ---------------------------------------------------------------------------------------------------*/
 
-// The single view is a projection consumer.
-// It renders the synced seat/table payload and must not reimplement poker logic or visibility rules.
 const singleViewEl = document.getElementById("single");
 const cardSlots = document.querySelectorAll(".hole-cards img");
 const nameBadge = document.querySelector("h3");

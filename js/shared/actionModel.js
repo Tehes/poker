@@ -2,9 +2,9 @@
 Action Model Helpers
 ---------------------------------------------------------------------------------------------------*/
 
-// Keep this module DOM-free.
-// It is the shared source of truth for action math that both table view and single view consume.
-// If action rules change, update them here instead of re-deriving them in each UI.
+// Shared action math for table and seat controls.
+// Put code here when check/call/raise/all-in math can be derived from explicit game state only.
+// Do not submit actions, read DOM controls, or own turn flow here.
 export function getPlayerActionState(gameState, player) {
 	const needToCall = Math.max(0, gameState.currentBet - player.roundBet);
 	const minAmount = gameState.currentPhaseIndex > 0 && gameState.currentBet === 0
