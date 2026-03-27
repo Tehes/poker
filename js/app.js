@@ -75,6 +75,28 @@ const instructionsCloseButton = document.querySelector("#instructions-close-butt
 const logList = document.querySelector("#log-list");
 const amountSlider = document.querySelector("#amount-slider");
 const sliderOutput = document.querySelector("output");
+const seatRefs = Array.from(document.querySelectorAll(".seat")).map((seatEl, seatSlot) => ({
+	seatSlot,
+	seatEl,
+	nameEl: seatEl.querySelector("h3"),
+	totalEl: seatEl.querySelector(".chips .total"),
+	betEl: seatEl.querySelector(".chips .bet"),
+	stackChipEls: seatEl.querySelectorAll(".stack-visual img"),
+	dealerEl: seatEl.querySelector(".dealer"),
+	smallBlindEl: seatEl.querySelector(".small-blind"),
+	bigBlindEl: seatEl.querySelector(".big-blind"),
+	winProbabilityEl: seatEl.querySelector(".win-probability"),
+	handStrengthEl: seatEl.querySelector(".hand-strength"),
+	cardEls: seatEl.querySelectorAll(".card"),
+	qrContainer: seatEl.querySelector(".qr"),
+	qrLink: seatEl.querySelector(".qr-link"),
+	remoteLink: seatEl.querySelector(".remote-table-link"),
+	winnerReactionEl: seatEl.querySelector(".winner-reaction"),
+	winnerReactionTimer: null,
+	actionLabelTimer: null,
+	clearActionLabelState: null,
+	clearWinnerReactionState: null,
+}));
 const overlays = {
 	stats: {
 		el: statsOverlay,
@@ -244,6 +266,249 @@ function getRandomItem(items) {
 }
 
 /* --------------------------------------------------------------------------------------------------
+Seat And Player Binding Helpers
+---------------------------------------------------------------------------------------------------*/
+
+function getSeatRef(target) {
+	if (typeof target === "number") {
+		return seatRefs[target] ?? null;
+	}
+	if (!target) {
+		return null;
+	}
+	if (target.seatEl) {
+		return target;
+	}
+	if (typeof target.seatSlot === "number") {
+		return seatRefs[target.seatSlot] ?? null;
+	}
+	return null;
+}
+
+function getPlayerSeatEl(player) {
+	return getSeatRef(player)?.seatEl ?? null;
+}
+
+function getPlayerNameEl(player) {
+	return getSeatRef(player)?.nameEl ?? null;
+}
+
+function clearPlayerActionLabelState(player) {
+	player.lastActionName = "";
+	player.actionLabelUntil = 0;
+}
+
+function clearPlayerWinnerReactionState(player) {
+	player.winnerReactionEmoji = "";
+	player.winnerReactionUntil = 0;
+}
+
+function bindSeatRefPlayer(player) {
+	const seatRef = getSeatRef(player);
+	if (!seatRef) {
+		return;
+	}
+	seatRef.clearActionLabelState = () => clearPlayerActionLabelState(player);
+	seatRef.clearWinnerReactionState = () => clearPlayerWinnerReactionState(player);
+}
+
+function getPlayerSeatRenderData(playerList = gameState.players) {
+	return playerList
+		.map((player) => {
+			const seatRef = getSeatRef(player);
+			if (!seatRef) {
+				return null;
+			}
+			return {
+				chips: player.chips,
+				stackChipEls: seatRef.stackChipEls,
+			};
+		})
+		.filter((playerView) => playerView !== null);
+}
+
+function renderPlayerChipStacks(playerList = gameState.players) {
+	renderChipStacks(getPlayerSeatRenderData(playerList));
+}
+
+function renderPlayerTotal(player) {
+	const seatRef = getSeatRef(player);
+	if (!seatRef?.totalEl) {
+		return;
+	}
+	seatRef.totalEl.textContent = `${player.chips}`;
+}
+
+function renderPlayerRoundBet(player) {
+	const seatRef = getSeatRef(player);
+	if (!seatRef?.betEl) {
+		return;
+	}
+	seatRef.betEl.textContent = `${player.roundBet}`;
+}
+
+function getRoleFlagName(role) {
+	return role.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+}
+
+function setPlayerRoleVisibility(player, role, isVisible) {
+	const seatRef = getSeatRef(player);
+	const flagName = getRoleFlagName(role);
+	player[flagName] = isVisible;
+	seatRef?.[`${flagName}El`]?.classList.toggle("hidden", !isVisible);
+}
+
+function assignPlayerRole(player, role) {
+	setPlayerRoleVisibility(player, role, true);
+}
+
+function clearPlayerRole(player, role) {
+	setPlayerRoleVisibility(player, role, false);
+}
+
+function addPlayerSeatClasses(player, ...classNames) {
+	const seatEl = getPlayerSeatEl(player);
+	if (!seatEl) {
+		return;
+	}
+	seatEl.classList.add(...classNames);
+}
+
+function removePlayerSeatClasses(player, ...classNames) {
+	const seatEl = getPlayerSeatEl(player);
+	if (!seatEl) {
+		return;
+	}
+	seatEl.classList.remove(...classNames);
+}
+
+function setPlayerSeatName(player, text) {
+	const nameEl = getPlayerNameEl(player);
+	if (!nameEl) {
+		return;
+	}
+	nameEl.textContent = text;
+}
+
+function showPlayerQr(player, card1, card2) {
+	const seatRef = getSeatRef(player);
+	if (!seatRef?.qrContainer || !seatRef.qrLink || !seatRef.remoteLink) {
+		return;
+	}
+
+	seatRef.qrContainer.classList.remove("hidden");
+	const holeCardsUrl = createPageUrl("hole-cards.html");
+	holeCardsUrl.searchParams.set("card1", card1);
+	holeCardsUrl.searchParams.set("card2", card2);
+	holeCardsUrl.searchParams.set("name", player.name);
+	holeCardsUrl.searchParams.set("chips", `${player.chips}`);
+	holeCardsUrl.searchParams.set("seatIndex", `${player.seatIndex}`);
+	if (tableId !== null) {
+		holeCardsUrl.searchParams.set("tableId", tableId);
+	}
+	holeCardsUrl.searchParams.set("t", `${Date.now()}`);
+	const url = holeCardsUrl.toString();
+	seatRef.qrLink.replaceChildren();
+	seatRef.qrLink.href = url;
+	QrCreator.render({
+		text: url,
+		size: 200,
+		fill: "#333",
+		background: "#fff",
+		radius: 0,
+	}, seatRef.qrLink);
+
+	if (tableId !== null) {
+		const remoteTableUrl = createPageUrl("remoteTable.html");
+		remoteTableUrl.searchParams.set("tableId", tableId);
+		remoteTableUrl.searchParams.set("seatIndex", `${player.seatIndex}`);
+		seatRef.remoteLink.href = remoteTableUrl.toString();
+		seatRef.remoteLink.classList.remove("hidden");
+	} else {
+		seatRef.remoteLink.removeAttribute("href");
+		seatRef.remoteLink.classList.add("hidden");
+	}
+
+	seatRef.qrContainer.dataset.url = url;
+}
+
+function hidePlayerQr(player) {
+	const seatRef = getSeatRef(player);
+	if (!seatRef?.qrContainer || !seatRef.qrLink || !seatRef.remoteLink) {
+		return;
+	}
+
+	seatRef.qrContainer.classList.add("hidden");
+	seatRef.qrLink.replaceChildren();
+	seatRef.qrLink.removeAttribute("href");
+	seatRef.remoteLink.removeAttribute("href");
+	seatRef.remoteLink.classList.add("hidden");
+	delete seatRef.qrContainer.dataset.url;
+}
+
+function placePlayerBet(player, amount) {
+	const bet = Math.min(amount, player.chips);
+	player.roundBet += bet;
+	player.totalBet += bet;
+	renderPlayerRoundBet(player);
+	player.chips -= bet;
+	if (player.chips === 0) {
+		player.allIn = true;
+	}
+	renderPlayerTotal(player);
+	return bet;
+}
+
+function resetPlayerRoundBet(player) {
+	player.roundBet = 0;
+	renderPlayerRoundBet(player);
+}
+
+function clearPlayerActionLabel(player) {
+	const seatRef = getSeatRef(player);
+	if (!seatRef) {
+		return;
+	}
+	clearSeatActionLabel(seatRef, player.name);
+}
+
+function renderPlayerActionLabel(player, actionName, labelUntil) {
+	const seatRef = getSeatRef(player);
+	if (!seatRef) {
+		return;
+	}
+	renderSeatActionLabel(seatRef, {
+		playerName: player.name,
+		actionName,
+		labelUntil,
+	});
+}
+
+function clearPlayerWinnerReaction(player) {
+	const seatRef = getSeatRef(player);
+	if (!seatRef) {
+		return;
+	}
+	clearWinnerReaction(seatRef);
+}
+
+function showPlayerWinnerReaction(player, emoji, visibleUntil) {
+	const seatRef = getSeatRef(player);
+	if (!seatRef) {
+		return;
+	}
+	showWinnerReaction(seatRef, emoji, visibleUntil);
+}
+
+function renderPlayerWinnerState(player, isWinner = false) {
+	const seatRef = getSeatRef(player);
+	if (!seatRef) {
+		return;
+	}
+	renderSeatWinnerState(seatRef, isWinner);
+}
+
+/* --------------------------------------------------------------------------------------------------
 Render And Overlay Helpers
 ---------------------------------------------------------------------------------------------------*/
 
@@ -282,10 +547,14 @@ function setPlayerVisibleHoleCards(player, visibleHoleCards) {
 }
 
 function renderPlayerHoleCards(player) {
+	const seatRef = getSeatRef(player);
+	if (!seatRef) {
+		return;
+	}
 	const visibleCards = player.holeCards.map((cardCode, index) =>
 		player.visibleHoleCards[index] ? cardCode : null
 	);
-	renderSeatCards(player.cardEls, visibleCards);
+	renderSeatCards(seatRef.cardEls, visibleCards);
 }
 
 function getStatsPlayers() {
@@ -531,7 +800,7 @@ function showNextNotif() {
 
 function clearActionLabels() {
 	gameState.players.forEach((player) => {
-		clearSeatActionLabel(player, player.name);
+		clearPlayerActionLabel(player);
 	});
 }
 
@@ -901,7 +1170,7 @@ function isAllInRunout() {
 function revealActiveHoleCards() {
 	gameState.players.filter((p) => !p.folded).forEach((p) => {
 		revealPlayerHoleCards(p);
-		p.qr.hide();
+		hidePlayerQr(p);
 	});
 	updateHandStrengthDisplays();
 }
@@ -1030,7 +1299,7 @@ function applyBotReveal(player, revealDecision) {
 		player,
 		player.holeCards.map((cardCode) => revealedCards.has(cardCode)),
 	);
-	player.qr.hide();
+	hidePlayerQr(player);
 	updateHandStrengthDisplays();
 }
 
@@ -1105,7 +1374,7 @@ function triggerMainPotWinnerReactions(context) {
 		const visibleUntil = Date.now() + WINNER_REACTION_DURATION;
 		player.winnerReactionEmoji = emoji;
 		player.winnerReactionUntil = visibleUntil;
-		showWinnerReaction(player, emoji, visibleUntil);
+		showPlayerWinnerReaction(player, emoji, visibleUntil);
 		queueStateSync(0);
 	});
 }
@@ -1142,7 +1411,7 @@ function updateHandStrengthDisplays() {
 	const communityCards = getCommunityCardCodes();
 
 	gameState.players.forEach((p) => {
-		const handEl = p.handStrengthEl || p.seat.querySelector(".hand-strength");
+		const handEl = getSeatRef(p)?.handStrengthEl ?? null;
 		if (!handEl) {
 			return;
 		}
@@ -1155,7 +1424,7 @@ function updateHandStrengthDisplays() {
 
 function updateWinProbabilityDisplays() {
 	gameState.players.forEach((p) => {
-		const winEl = p.winProbabilityEl || p.seat.querySelector(".win-probability");
+		const winEl = getSeatRef(p)?.winProbabilityEl ?? null;
 		if (!winEl) {
 			return;
 		}
@@ -1348,112 +1617,38 @@ function startGame(event) {
 function createPlayers() {
 	gameState.players = [];
 	gameState.allPlayers = [];
-	// Auto-fill empty seats with Bots
 	let botIndex = 1;
-	for (const seat of document.querySelectorAll(".seat")) {
-		const nameEl = seat.querySelector("h3");
-		if (seat.classList.contains("hidden")) continue;
-		if (nameEl.textContent.trim() === "") {
-			nameEl.textContent = `Bot ${botIndex++}`;
-			seat.classList.add("bot");
+	for (const seatRef of seatRefs) {
+		seatRef.clearActionLabelState = null;
+		seatRef.clearWinnerReactionState = null;
+		if (seatRef.seatEl.classList.contains("hidden")) {
+			continue;
+		}
+		if (seatRef.nameEl.textContent.trim() === "") {
+			seatRef.nameEl.textContent = `Bot ${botIndex++}`;
+			seatRef.seatEl.classList.add("bot");
 		}
 	}
 
-	const allSeats = Array.from(document.querySelectorAll(".seat"));
-	const activePlayers = document.querySelectorAll(".seat:not(.hidden)");
-	for (const player of activePlayers) {
+	const activeSeatRefs = seatRefs.filter((seatRef) => !seatRef.seatEl.classList.contains("hidden"));
+	for (const seatRef of activeSeatRefs) {
 		const seatIndex = gameState.players.length;
-		// Transitional shape: this object still mixes player state with seat DOM references.
-		// A later refactor should split it into playerState and seatRef without changing behavior.
-		const playerObject = {
-			name: player.querySelector("h3").textContent,
-			isBot: player.classList.contains("bot"),
-			seat: player,
-			seatSlot: allSeats.indexOf(player),
-			totalEl: player.querySelector(".chips .total"),
-			betEl: player.querySelector(".chips .bet"),
-			stackChipEls: player.querySelectorAll(".stack-visual img"),
-			winnerReactionEl: player.querySelector(".winner-reaction"),
-			winnerReactionTimer: null,
+		const playerState = {
+			name: seatRef.nameEl.textContent,
+			isBot: seatRef.seatEl.classList.contains("bot"),
+			seatSlot: seatRef.seatSlot,
 			winnerReactionEmoji: "",
 			winnerReactionUntil: 0,
 			isWinner: false,
-			winProbabilityEl: player.querySelector(".win-probability"),
-			handStrengthEl: player.querySelector(".hand-strength"),
-			actionLabelTimer: null,
 			lastActionName: "",
 			actionLabelUntil: 0,
 			winProbability: null,
 			seatIndex,
 			holeCards: [null, null],
 			visibleHoleCards: [false, false],
-			qr: {
-				show: function (card1, card2) {
-					const qrContainer = player.querySelector(".qr");
-					const qrLink = qrContainer.querySelector(".qr-link");
-					const remoteLink = qrContainer.querySelector(".remote-table-link");
-					qrContainer.classList.remove("hidden");
-					const holeCardsUrl = createPageUrl("hole-cards.html");
-					holeCardsUrl.searchParams.set("card1", card1);
-					holeCardsUrl.searchParams.set("card2", card2);
-					holeCardsUrl.searchParams.set("name", playerObject.name);
-					holeCardsUrl.searchParams.set("chips", `${playerObject.chips}`);
-					holeCardsUrl.searchParams.set("seatIndex", `${playerObject.seatIndex}`);
-					if (tableId !== null) {
-						holeCardsUrl.searchParams.set("tableId", tableId);
-					}
-					holeCardsUrl.searchParams.set("t", `${Date.now()}`);
-					const url = holeCardsUrl.toString();
-					qrLink.replaceChildren();
-					qrLink.href = url;
-					QrCreator.render({
-						text: url,
-						size: 200,
-						fill: "#333",
-						background: "#fff",
-						radius: 0,
-					}, qrLink);
-
-					if (tableId !== null) {
-						const remoteTableUrl = createPageUrl("remoteTable.html");
-						remoteTableUrl.searchParams.set("tableId", tableId);
-						remoteTableUrl.searchParams.set("seatIndex", `${playerObject.seatIndex}`);
-						remoteLink.href = remoteTableUrl.toString();
-						remoteLink.classList.remove("hidden");
-					} else {
-						remoteLink.removeAttribute("href");
-						remoteLink.classList.add("hidden");
-					}
-
-					qrContainer.dataset.url = url;
-				},
-				hide: function () {
-					const qrContainer = player.querySelector(".qr");
-					const qrLink = qrContainer.querySelector(".qr-link");
-					const remoteLink = qrContainer.querySelector(".remote-table-link");
-					qrContainer.classList.add("hidden");
-					qrLink.replaceChildren();
-					qrLink.removeAttribute("href");
-					remoteLink.removeAttribute("href");
-					remoteLink.classList.add("hidden");
-					delete qrContainer.dataset.url;
-				},
-			},
-			cardEls: player.querySelectorAll(".card"),
 			dealer: false,
 			smallBlind: false,
 			bigBlind: false,
-			assignRole: function (role) {
-				// Convert kebab-case role to camelCase flag name
-				const flag = role.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-				this[flag] = true;
-				this.seat.querySelector(`.${role}`).classList.remove("hidden");
-			},
-			clearRole: function (role) {
-				const flag = role.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-				this[flag] = false;
-				this.seat.querySelector(`.${role}`).classList.add("hidden");
-			},
 			folded: false,
 			chips: 2000,
 			allIn: false,
@@ -1482,65 +1677,14 @@ function createPlayers() {
 				barrelMade: false,
 				nonValueAggressionMade: false,
 			},
-			showTotal: function () {
-				playerObject.totalEl.textContent = playerObject.chips;
-			},
-			placeBet: function (x) {
-				// Clamp bet to available chips → prevents negative stacks
-				const bet = Math.min(x, playerObject.chips);
-				playerObject.roundBet += bet;
-				playerObject.totalBet += bet;
-				playerObject.betEl.textContent = playerObject.roundBet;
-				playerObject.chips -= bet;
-				if (playerObject.chips === 0) {
-					playerObject.allIn = true;
-				}
-				playerObject.showTotal();
-				return bet; // return the real amount pushed to the pot
-			},
-			resetRoundBet: function () {
-				playerObject.roundBet = 0;
-				playerObject.betEl.textContent = 0;
-			},
-			clearActionLabelState: function () {
-				playerObject.lastActionName = "";
-				playerObject.actionLabelUntil = 0;
-			},
-			clearWinnerReactionState: function () {
-				playerObject.winnerReactionEmoji = "";
-				playerObject.winnerReactionUntil = 0;
-			},
-			toJSON: function () {
-				return {
-					name: playerObject.name,
-					chips: playerObject.chips,
-					roundBet: playerObject.roundBet,
-					totalBet: playerObject.totalBet,
-					folded: playerObject.folded,
-					allIn: playerObject.allIn,
-					isBot: playerObject.isBot,
-					dealer: playerObject.dealer,
-					smallBlind: playerObject.smallBlind,
-					bigBlind: playerObject.bigBlind,
-					holeCards: playerObject.holeCards.slice(),
-					visibleHoleCards: playerObject.visibleHoleCards.slice(),
-					seatIndex: playerObject.seatIndex,
-					stats: {
-						hands: playerObject.stats.hands,
-						handsWon: playerObject.stats.handsWon,
-						reveals: playerObject.stats.reveals,
-						showdowns: playerObject.stats.showdowns,
-						showdownsWon: playerObject.stats.showdownsWon,
-					},
-				};
-			},
 		};
-		gameState.players.push(playerObject);
+		bindSeatRefPlayer(playerState);
+		gameState.players.push(playerState);
 	}
-	renderChipStacks(gameState.players);
+	renderPlayerChipStacks();
 	gameState.players.forEach((player) => {
-		player.showTotal();
-		player.resetRoundBet();
+		renderPlayerTotal(player);
+		resetPlayerRoundBet(player);
 		renderPlayerHoleCards(player);
 	});
 	gameState.allPlayers = gameState.players.slice();
@@ -1551,18 +1695,18 @@ function setDealer() {
 	if (gameState.players.every(isNotDealer)) {
 		const randomPlayerIndex = Math.floor(Math.random() * gameState.players.length);
 		gameState.players[randomPlayerIndex].dealer = true;
-		gameState.players[randomPlayerIndex].assignRole("dealer");
+		assignPlayerRole(gameState.players[randomPlayerIndex], "dealer");
 		gameState.initialDealerName = gameState.players[randomPlayerIndex].name;
 	} else {
 		const dealerIndex = gameState.players.findIndex((p) => p.dealer);
 		// clear current dealer flag
 		gameState.players[dealerIndex].dealer = false;
-		gameState.players[dealerIndex].clearRole("dealer");
+		clearPlayerRole(gameState.players[dealerIndex], "dealer");
 
 		// assign new dealer – wrap with modulo to avoid “undefined”
 		const nextIndex = (dealerIndex + 1) % gameState.players.length;
 		gameState.players[nextIndex].dealer = true;
-		gameState.players[nextIndex].assignRole("dealer");
+		assignPlayerRole(gameState.players[nextIndex], "dealer");
 	}
 
 	while (gameState.players[0].dealer === false) {
@@ -1586,15 +1730,15 @@ function setBlinds() {
 
 	// Clear previous roles and icons
 	gameState.players.forEach((p) => {
-		p.clearRole("small-blind");
-		p.clearRole("big-blind");
+		clearPlayerRole(p, "small-blind");
+		clearPlayerRole(p, "big-blind");
 	});
 	// Post blinds for Pre-Flop and set currentBet
 	const sbIdx = (gameState.players.length > 2) ? 1 : 0;
 	const bbIdx = (gameState.players.length > 2) ? 2 : 1;
 
-	const sbBet = gameState.players[sbIdx].placeBet(gameState.smallBlind);
-	const bbBet = gameState.players[bbIdx].placeBet(gameState.bigBlind);
+	const sbBet = placePlayerBet(gameState.players[sbIdx], gameState.smallBlind);
+	const bbBet = placePlayerBet(gameState.players[bbIdx], gameState.bigBlind);
 
 	enqueueNotification(`${gameState.players[sbIdx].name} posted small blind of ${sbBet}.`);
 	enqueueNotification(`${gameState.players[bbIdx].name} posted big blind of ${bbBet}.`);
@@ -1602,8 +1746,8 @@ function setBlinds() {
 	// Add blinds to the pot
 	addToPot(sbBet + bbBet);
 	// Assign new blinds
-	gameState.players[sbIdx].assignRole("small-blind");
-	gameState.players[bbIdx].assignRole("big-blind");
+	assignPlayerRole(gameState.players[sbIdx], "small-blind");
+	assignPlayerRole(gameState.players[bbIdx], "big-blind");
 	gameState.currentBet = gameState.bigBlind;
 	gameState.lastRaise = gameState.bigBlind; // minimum raise equals the big blind at hand start
 }
@@ -1623,12 +1767,12 @@ function dealCards() {
 
 		if (!player.isBot) {
 			if (gameState.openCardsMode) {
-				player.qr.hide();
+				hidePlayerQr(player);
 			} else {
-				player.qr.show(card1, card2);
+				showPlayerQr(player, card1, card2);
 			}
 		} else {
-			player.qr.hide();
+			hidePlayerQr(player);
 		}
 	}
 }
@@ -1662,12 +1806,12 @@ function preFlop() {
 		p.totalBet = 0;
 		p.winProbability = null;
 		p.isWinner = false;
-		clearWinnerReaction(p);
-		renderSeatWinnerState(p, false);
-		p.seat.classList.remove("folded", "called", "raised", "checked", "allin");
+		clearPlayerWinnerReaction(p);
+		renderPlayerWinnerState(p, false);
+		removePlayerSeatClasses(p, "folded", "called", "raised", "checked", "allin");
 		setPlayerHoleCards(p, [null, null]);
 		hidePlayerHoleCards(p);
-		p.qr.hide();
+		hidePlayerQr(p);
 	});
 
 	// Clear community cards from last hand
@@ -1679,7 +1823,7 @@ function preFlop() {
 	gameState.players.forEach((p) => {
 		if (p.chips <= 0) {
 			p.chips = 0;
-			p.seat.classList.add("hidden");
+			getPlayerSeatEl(p)?.classList.add("hidden");
 			enqueueNotification(`${p.name} is out of the game!`);
 			logFlow("player_bust", { name: p.name });
 		} else {
@@ -1724,9 +1868,9 @@ function preFlop() {
 		clearActiveTurnPlayer(false);
 		enqueueNotification(`${champion.name} wins the game! 🏆`);
 		// Reveal champion's stack
-		champion.showTotal();
+		renderPlayerTotal(champion);
 		champion.isWinner = true;
-		renderSeatWinnerState(champion, true);
+		renderPlayerWinnerState(champion, true);
 		logFlow("tournament_end", { champion: champion.name });
 		gameState.gameFinished = true;
 		clearPendingAction();
@@ -1851,7 +1995,7 @@ Turn Handling And Betting Round Flow
 
 function notifyPlayerAction(player, action = "", amount = 0) {
 	// Remove any previous action indicator before adding a new one
-	player.seat.classList.remove("checked", "called", "raised", "allin");
+	removePlayerSeatClasses(player, "checked", "called", "raised", "allin");
 	// Update statistics based on action and phase
 	if (gameState.currentPhaseIndex === 0) {
 		if (action === "call" || action === "raise" || action === "allin") {
@@ -1897,27 +2041,27 @@ function notifyPlayerAction(player, action = "", amount = 0) {
 	let actionLabel = "";
 	switch (action) {
 		case "fold":
-			player.seat.classList.add("folded");
+			addPlayerSeatClasses(player, "folded");
 			actionLabel = "Fold";
 			msg = `${player.name} folded.`;
 			break;
 		case "check":
-			player.seat.classList.add("checked");
+			addPlayerSeatClasses(player, "checked");
 			actionLabel = "Check";
 			msg = `${player.name} checked.`;
 			break;
 		case "call":
-			player.seat.classList.add("called");
+			addPlayerSeatClasses(player, "called");
 			actionLabel = `Call ${amount}`;
 			msg = `${player.name} called ${amount}.`;
 			break;
 		case "raise":
-			player.seat.classList.add("raised");
+			addPlayerSeatClasses(player, "raised");
 			actionLabel = `Raise ${amount}`;
 			msg = `${player.name} raised to ${amount}.`;
 			break;
 		case "allin":
-			player.seat.classList.add("allin");
+			addPlayerSeatClasses(player, "allin");
 			actionLabel = `All-In ${amount}`;
 			msg = `${player.name} is all-in.`;
 			break;
@@ -1928,11 +2072,7 @@ function notifyPlayerAction(player, action = "", amount = 0) {
 		const actionLabelDuration = getActionLabelDuration();
 		player.lastActionName = action;
 		player.actionLabelUntil = Date.now() + actionLabelDuration;
-		renderSeatActionLabel(player, {
-			playerName: player.name,
-			actionName: action,
-			labelUntil: player.actionLabelUntil,
-		});
+		renderPlayerActionLabel(player, action, player.actionLabelUntil);
 	}
 
 	if (action === "fold") {
@@ -1964,7 +2104,7 @@ function notifyPlayerAction(player, action = "", amount = 0) {
 
 function setActiveTurnPlayer(player) {
 	document.querySelectorAll(".seat").forEach((seat) => seat.classList.remove("active"));
-	player.seat.classList.add("active");
+	addPlayerSeatClasses(player, "active");
 	if (gameState.activeSeatIndex !== player.seatIndex) {
 		gameState.activeSeatIndex = player.seatIndex;
 		queueStateSync(0);
@@ -2014,7 +2154,7 @@ function applyTurnAction(player, actionRequest) {
 		case "fold":
 			player.folded = true;
 			notifyPlayerAction(player, "fold", 0);
-			player.qr.hide();
+			hidePlayerQr(player);
 			return { action: "fold", amount: 0 };
 		case "check":
 			notifyPlayerAction(player, "check", 0);
@@ -2028,13 +2168,13 @@ function applyTurnAction(player, actionRequest) {
 			) {
 				return applyTurnAction(player, { action: "allin", amount: player.chips });
 			}
-			const actual = player.placeBet(callAmount);
+			const actual = placePlayerBet(player, callAmount);
 			addToPot(actual);
 			notifyPlayerAction(player, "call", actual);
 			return { action: "call", amount: actual };
 		}
 		case "allin": {
-			const actual = player.placeBet(player.chips);
+			const actual = placePlayerBet(player, player.chips);
 			addToPot(actual);
 			if (actual >= currentActionState.minRaise) {
 				gameState.currentBet = player.roundBet;
@@ -2057,7 +2197,7 @@ function applyTurnAction(player, actionRequest) {
 			if (bet >= player.chips && player.chips > 0) {
 				return applyTurnAction(player, { action: "allin", amount: player.chips });
 			}
-			const actual = player.placeBet(bet);
+			const actual = placePlayerBet(player, bet);
 			if (actual > currentActionState.needToCall) {
 				gameState.currentBet = player.roundBet;
 				gameState.lastRaise = actual - currentActionState.needToCall;
@@ -2117,10 +2257,9 @@ function getHumanLogPrefix(action) {
 function runBotTurn({ player, cycles, anyUncalled, nextPlayer }) {
 	setActiveTurnPlayer(player);
 	hideActionControls();
-	const nameEl = player.seat.querySelector("h3");
-	clearSeatActionLabel(player, player.name);
-	player.seat.classList.remove("checked", "called", "raised", "allin");
-	nameEl.textContent = "thinking …";
+	clearPlayerActionLabel(player);
+	removePlayerSeatClasses(player, "checked", "called", "raised", "allin");
+	setPlayerSeatName(player, "thinking …");
 
 	enqueueBotAction(() => {
 		const decision = chooseBotAction(player, gameState);
@@ -2183,7 +2322,7 @@ function runHumanTurn({ player, cycles, anyUncalled, nextPlayer }) {
 	}
 
 	function cleanupHumanTurn() {
-		player.seat.classList.remove("active");
+		removePlayerSeatClasses(player, "active");
 		amountSlider.removeEventListener("input", onSliderInput);
 		amountSlider.removeEventListener("change", onSliderChange);
 		foldButton.removeEventListener("click", onFold);
@@ -2316,7 +2455,7 @@ function startBettingRound() {
 		// Reset state for post-flop rounds before any checks/logging
 		gameState.currentBet = 0;
 		gameState.lastRaise = gameState.bigBlind;
-		gameState.players.forEach((p) => p.resetRoundBet());
+		gameState.players.forEach((p) => resetPlayerRoundBet(p));
 	}
 	logFlow("startBettingRound", {
 		phase: getCurrentPhase(gameState.currentPhaseIndex),
@@ -2326,7 +2465,7 @@ function startBettingRound() {
 	});
 	// Clear action indicators from the previous betting round
 	clearActiveTurnPlayer(false);
-	gameState.players.forEach((p) => p.seat.classList.remove("checked", "called", "raised"));
+	gameState.players.forEach((p) => removePlayerSeatClasses(p, "checked", "called", "raised"));
 	clearPendingAction();
 
 	// --- Early Exit Checks -------------------------------------------------------
@@ -2466,7 +2605,7 @@ function animateChipTransfer(amount, playerObj, onDone) {
 		gameState.pot -= amount;
 		renderPot();
 		playerObj.chips += amount;
-		playerObj.showTotal();
+		renderPlayerTotal(playerObj);
 
 		if (onDone) onDone();
 		return;
@@ -2486,7 +2625,7 @@ function animateChipTransfer(amount, playerObj, onDone) {
 			gameState.pot -= increment;
 			renderPot();
 			playerObj.chips += increment;
-			playerObj.showTotal();
+			renderPlayerTotal(playerObj);
 
 			currentStep++;
 			setTimeout(step, delay);
@@ -2494,7 +2633,7 @@ function animateChipTransfer(amount, playerObj, onDone) {
 			gameState.pot -= remainder;
 			renderPot();
 			playerObj.chips += remainder;
-			playerObj.showTotal();
+			renderPlayerTotal(playerObj);
 
 			if (onDone) onDone();
 		}
@@ -2503,7 +2642,7 @@ function animateChipTransfer(amount, playerObj, onDone) {
 }
 
 function finishHandAfterShowdown() {
-	renderChipStacks(gameState.players);
+	renderPlayerChipStacks();
 	setPot(0);
 
 	clearActiveTurnPlayer(false);
@@ -2543,7 +2682,7 @@ function finishHandAfterShowdown() {
 function doShowdown() {
 	// --- Active Players And Showdown State ---------------------------------------
 	// Reset round bets now that they are in the pot
-	gameState.players.forEach((p) => p.resetRoundBet());
+	gameState.players.forEach((p) => resetPlayerRoundBet(p));
 
 	// Filter active players
 	const activePlayers = gameState.players.filter((p) => !p.folded);
@@ -2569,8 +2708,8 @@ function doShowdown() {
 		const revealDecision = getBotRevealDecision(winner, communityCards);
 		winner.stats.handsWon++;
 		winner.isWinner = true;
-		renderSeatWinnerState(winner, true);
-		winner.seat.classList.remove("active");
+		renderPlayerWinnerState(winner, true);
+		removePlayerSeatClasses(winner, "active");
 		if (revealDecision) {
 			revealedPlayers.add(winner);
 			applyBotReveal(winner, revealDecision);
@@ -2579,7 +2718,7 @@ function doShowdown() {
 				`${winner.name} reveals ${revealDecision.codes.map(formatCardLabel).join(" ")}`,
 			);
 		} else {
-			winner.qr.hide();
+			hidePlayerQr(winner);
 		}
 		triggerMainPotWinnerReactions({
 			activePlayerCount: activePlayers.length,
@@ -2705,8 +2844,8 @@ function doShowdown() {
 			// Highlight winners only for the main pot
 			if (potIdx === 0) {
 				entry.player.isWinner = true;
-				renderSeatWinnerState(entry.player, true);
-				entry.player.seat.classList.remove("active");
+				renderPlayerWinnerState(entry.player, true);
+				removePlayerSeatClasses(entry.player, "active");
 			}
 		});
 
