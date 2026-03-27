@@ -5,7 +5,7 @@ Sync View Model Helpers
 // Shared sync schema and payload access helpers.
 // Put code here for payload versioning, projection lookup, and shape helpers shared by table, seat, and backend code.
 // Do not fetch, render, poll, or compute poker flow here.
-export const SYNC_VIEW_SCHEMA_VERSION = 6;
+export const SYNC_VIEW_SCHEMA_VERSION = 7;
 
 export function getTableView(payload) {
 	return payload?.table ?? null;

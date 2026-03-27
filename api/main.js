@@ -1,6 +1,6 @@
 const kv = await Deno.openKv();
 
-const SYNC_VIEW_SCHEMA_VERSION = 6;
+const SYNC_VIEW_SCHEMA_VERSION = 7;
 const primaryOrigin = "https://tehes.github.io";
 const devOrigin = "http://127.0.0.1:5500";
 const STATE_TTL = 86_400_000;

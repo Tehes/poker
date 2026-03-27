@@ -1,8 +1,8 @@
 /* --------------------------------------------------------------------------------------------------
-Table Renderer Helpers
+Table View Renderer Helpers
 ---------------------------------------------------------------------------------------------------*/
 
-// Shared DOM renderer for table-style seat views.
+// Shared DOM renderer for synced table views, including seat state and transient table animations.
 // Put code here when a caller already decided the display state and only the DOM update is missing.
 // Do not decide poker rules, sync payload shape, polling behavior, or visibility policy here.
 
@@ -10,6 +10,10 @@ const MAX_VISUAL_STACK_CHIPS = 10;
 
 function getSeatEl(target) {
 	return target?.seatEl ?? target?.seat ?? null;
+}
+
+function getPotEl(target) {
+	return target?.potEl ?? null;
 }
 
 function getNameEl(target) {
@@ -38,6 +42,133 @@ function cancelWinnerReactionTimer(target) {
 	}
 	clearTimeout(target.winnerReactionTimer);
 	target.winnerReactionTimer = null;
+}
+
+function cancelChipTransferTimer(target) {
+	if (!target?.chipTransferTimer) {
+		return;
+	}
+	clearTimeout(target.chipTransferTimer);
+	target.chipTransferTimer = null;
+}
+
+function getChipTransferIncrement(amount, stepCount) {
+	if (!Number.isFinite(amount) || !Number.isFinite(stepCount) || stepCount <= 0) {
+		return 0;
+	}
+	return Math.floor(amount / stepCount);
+}
+
+function getPaidChipTransferAmount(transfer, startedAt, now) {
+	if (!transfer || !Number.isFinite(transfer.amount)) {
+		return 0;
+	}
+
+	const amount = transfer.amount;
+	const durationMs = Number.isFinite(transfer.durationMs) ? transfer.durationMs : 0;
+	const stepCount = Number.isFinite(transfer.stepCount) ? Math.max(0, transfer.stepCount) : 0;
+	if (now < startedAt) {
+		return 0;
+	}
+	if (durationMs <= 0 || stepCount === 0) {
+		return amount;
+	}
+
+	const elapsed = now - startedAt;
+	if (elapsed >= durationMs) {
+		return amount;
+	}
+
+	const stepDuration = durationMs / stepCount;
+	if (!Number.isFinite(stepDuration) || stepDuration <= 0) {
+		return amount;
+	}
+
+	const increment = getChipTransferIncrement(amount, stepCount);
+	const completedSteps = Math.min(stepCount, Math.floor(elapsed / stepDuration) + 1);
+	return Math.min(amount, increment * completedSteps);
+}
+
+function getNextChipTransferUpdateAt(chipTransfer, now) {
+	const transfers = Array.isArray(chipTransfer?.transfers) ? chipTransfer.transfers : [];
+	const startedAt = Number.isFinite(chipTransfer?.startedAt) ? chipTransfer.startedAt : 0;
+	let nextUpdateAt = null;
+
+	transfers.forEach((transfer) => {
+		const durationMs = Number.isFinite(transfer?.durationMs) ? transfer.durationMs : 0;
+		const stepCount = Number.isFinite(transfer?.stepCount) ? Math.max(0, transfer.stepCount) : 0;
+		const endAt = startedAt + durationMs;
+
+		if (now < startedAt) {
+			nextUpdateAt = nextUpdateAt === null ? startedAt : Math.min(nextUpdateAt, startedAt);
+			return;
+		}
+		if (durationMs <= 0 || stepCount === 0 || now >= endAt) {
+			return;
+		}
+
+		const stepDuration = durationMs / stepCount;
+		if (!Number.isFinite(stepDuration) || stepDuration <= 0) {
+			nextUpdateAt = nextUpdateAt === null ? endAt : Math.min(nextUpdateAt, endAt);
+			return;
+		}
+
+		const nextStepAt = Math.min(
+			endAt,
+			startedAt + (Math.floor((now - startedAt) / stepDuration) + 1) * stepDuration,
+		);
+		nextUpdateAt = nextUpdateAt === null ? nextStepAt : Math.min(nextUpdateAt, nextStepAt);
+	});
+
+	return nextUpdateAt;
+}
+
+function renderDisplayedChipTransferState(target, finalPot, players, chipTransfer, now) {
+	const potEl = getPotEl(target);
+	if (!potEl) {
+		return { isComplete: true };
+	}
+
+	const transfers = Array.isArray(chipTransfer?.transfers) ? chipTransfer.transfers : [];
+	const startedAt = Number.isFinite(chipTransfer?.startedAt) ? chipTransfer.startedAt : 0;
+	const remainingBySeat = new Map();
+	let remainingPot = 0;
+
+	transfers.forEach((transfer) => {
+		const amount = Number.isFinite(transfer?.amount) ? transfer.amount : 0;
+		if (amount <= 0) {
+			return;
+		}
+		const paidAmount = getPaidChipTransferAmount(transfer, startedAt, now);
+		const remainingAmount = Math.max(0, amount - paidAmount);
+		if (remainingAmount === 0) {
+			return;
+		}
+
+		remainingPot += remainingAmount;
+		const seatIndex = transfer.seatIndex;
+		remainingBySeat.set(seatIndex, (remainingBySeat.get(seatIndex) || 0) + remainingAmount);
+	});
+
+	potEl.textContent = `${finalPot + remainingPot}`;
+
+	const displayPlayers = players.map((player) => {
+		const remainingAmount = remainingBySeat.get(player.seatIndex) || 0;
+		const visibleChips = player.chips - remainingAmount;
+		if (player.totalEl) {
+			player.totalEl.textContent = `${visibleChips}`;
+		}
+		return {
+			chips: visibleChips,
+			stackChipEls: player.stackChipEls,
+		};
+	});
+
+	renderChipStacks(displayPlayers);
+
+	return {
+		isComplete: remainingPot === 0,
+	};
 }
 
 export function getActionLabelBadgeText(actionName = "") {
@@ -226,6 +357,75 @@ export function renderSeatWinnerState(target, isWinner = false) {
 	}
 
 	seatEl.classList.toggle("winner", isWinner === true);
+}
+
+export function clearChipTransferAnimation(target) {
+	cancelChipTransferTimer(target);
+	if (target) {
+		target.activeChipTransferId = null;
+	}
+}
+
+export function renderChipTransferAnimation(
+	target,
+	{ finalPot = 0, players = [], chipTransfer = null } = {},
+) {
+	cancelChipTransferTimer(target);
+
+	const normalizedPlayers = Array.isArray(players)
+		? players.filter((player) =>
+			Number.isFinite(player?.seatIndex) &&
+			Number.isFinite(player?.chips) &&
+			player?.totalEl &&
+			player?.stackChipEls
+		)
+		: [];
+	const transfers = Array.isArray(chipTransfer?.transfers)
+		? chipTransfer.transfers.filter((transfer) =>
+			Number.isFinite(transfer?.seatIndex) &&
+			Number.isFinite(transfer?.amount) &&
+			Number.isFinite(transfer?.durationMs) &&
+			Number.isFinite(transfer?.stepCount)
+		)
+		: [];
+
+	if (
+		!target ||
+		!getPotEl(target) ||
+		normalizedPlayers.length === 0 ||
+		transfers.length === 0 ||
+		!Number.isFinite(chipTransfer?.startedAt)
+	) {
+		clearChipTransferAnimation(target);
+		return;
+	}
+
+	target.activeChipTransferId = chipTransfer.id ?? null;
+
+	function renderStep() {
+		const now = Date.now();
+		const { isComplete } = renderDisplayedChipTransferState(
+			target,
+			finalPot,
+			normalizedPlayers,
+			{ ...chipTransfer, transfers },
+			now,
+		);
+		if (isComplete) {
+			cancelChipTransferTimer(target);
+			return;
+		}
+
+		const nextUpdateAt = getNextChipTransferUpdateAt({ ...chipTransfer, transfers }, now);
+		if (nextUpdateAt === null) {
+			cancelChipTransferTimer(target);
+			return;
+		}
+
+		target.chipTransferTimer = setTimeout(renderStep, Math.max(0, Math.ceil(nextUpdateAt - now)));
+	}
+
+	renderStep();
 }
 
 export function clearRenderedSeat(seatRef) {

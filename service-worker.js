@@ -52,7 +52,7 @@ const CORE_ASSETS = [
 	"./js/shared/actionModel.js",
 	"./js/shared/seatActionControls.js",
 	"./js/shared/syncViewModel.js",
-	"./js/shared/tableRenderer.js",
+	"./js/shared/tableViewRenderer.js",
 	"./css/style.css",
 	"./cards/1B.svg",
 	"./icons/rotate.svg",

@@ -41,8 +41,10 @@ import {
 	normalizeActionAmount,
 } from "./shared/actionModel.js";
 import {
+	clearChipTransferAnimation,
 	clearSeatActionLabel,
 	clearWinnerReaction,
+	renderChipTransferAnimation,
 	renderChipStacks,
 	renderCommunityCards as renderTableCommunityCards,
 	renderNotificationBar,
@@ -51,7 +53,7 @@ import {
 	renderSeatPill,
 	renderSeatWinnerState,
 	showWinnerReaction,
-} from "./shared/tableRenderer.js";
+} from "./shared/tableViewRenderer.js";
 import { initServiceWorker } from "./serviceWorkerRegistration.js";
 
 /* --------------------------------------------------------------------------------------------------
@@ -71,6 +73,11 @@ const logButton = document.querySelector("#log-button");
 const fastForwardButton = document.querySelector("#fast-forward-button");
 const potEl = document.getElementById("pot");
 const communityCardSlots = document.querySelectorAll("#community-cards .cardslot");
+const tableRenderTarget = {
+	potEl,
+	chipTransferTimer: null,
+	activeChipTransferId: null,
+};
 const overlayBackdrop = document.querySelector("#overlay-backdrop");
 const statsOverlay = document.querySelector("#stats-overlay");
 const statsCloseButton = document.querySelector("#stats-close-button");
@@ -138,6 +145,7 @@ let RUNOUT_PHASE_DELAY = DEFAULT_RUNOUT_PHASE_DELAY;
 const FAST_FORWARD_RUNOUT_PHASE_DELAY = 320;
 const FAST_FORWARD_CHIP_TRANSFER_DURATION = 160;
 const FAST_FORWARD_CHIP_TRANSFER_STEPS = 8;
+const DEFAULT_CHIP_TRANSFER_STEPS = 30;
 const WINNER_REACTION_DURATION = 2000;
 
 const HISTORY_LOG = false; // Set to true to enable history logging in the console
@@ -161,9 +169,11 @@ const ACTION_POLL_INTERVAL = 1000;
 let stateSyncTimer = null;
 let stateSyncTimerDelay = null;
 let runoutPhaseTimer = null;
+let chipTransferFinishTimer = null;
 let summaryButtonsVisible = false;
 let handFastForwardActive = false;
 let autoplayToGameEnd = false;
+let nextChipTransferId = 1;
 
 // --- Analytics --------------------------------------------------------------
 let totalHands = 0;
@@ -211,6 +221,7 @@ const gameState = {
 	communityCards: [],
 	players: [],
 	allPlayers: [],
+	chipTransfer: null,
 	pendingAction: null,
 	smallBlind: INITIAL_SMALL_BLIND,
 	bigBlind: INITIAL_BIG_BLIND,
@@ -324,7 +335,9 @@ function getPlayerSeatRenderData(playerList = gameState.players) {
 				return null;
 			}
 			return {
+				seatIndex: player.seatIndex,
 				chips: player.chips,
+				totalEl: seatRef.totalEl,
 				stackChipEls: seatRef.stackChipEls,
 			};
 		})
@@ -713,6 +726,38 @@ function buildPublicPlayerWinnerReactionState(player) {
 	};
 }
 
+function buildPublicChipTransferState() {
+	const chipTransfer = gameState.chipTransfer;
+	if (
+		!chipTransfer ||
+		!Number.isFinite(chipTransfer.startedAt) ||
+		!Array.isArray(chipTransfer.transfers)
+	) {
+		return null;
+	}
+
+	const transfers = chipTransfer.transfers.filter((transfer) =>
+		Number.isFinite(transfer?.seatIndex) &&
+		Number.isFinite(transfer?.amount) &&
+		Number.isFinite(transfer?.durationMs) &&
+		Number.isFinite(transfer?.stepCount)
+	);
+	if (transfers.length === 0) {
+		return null;
+	}
+
+	return {
+		id: chipTransfer.id,
+		startedAt: chipTransfer.startedAt,
+		transfers: transfers.map((transfer) => ({
+			seatIndex: transfer.seatIndex,
+			amount: transfer.amount,
+			durationMs: transfer.durationMs,
+			stepCount: transfer.stepCount,
+		})),
+	};
+}
+
 function getRunoutPhaseDelay() {
 	if (SPEED_MODE) {
 		return 0;
@@ -778,6 +823,14 @@ function syncRuntimePlayback() {
 		return;
 	}
 	refreshNotificationPlayback();
+}
+
+function clearChipTransferFinishTimer() {
+	if (chipTransferFinishTimer === null) {
+		return;
+	}
+	clearTimeout(chipTransferFinishTimer);
+	chipTransferFinishTimer = null;
 }
 
 function enqueueNotification(msg) {
@@ -1067,6 +1120,7 @@ function buildSyncView() {
 			playersPublic: gameState.players.map((player) =>
 				buildPublicPlayerView(player, communityCards)
 			),
+			chipTransfer: buildPublicChipTransferState(),
 			pendingAction: gameState.pendingAction ? { ...gameState.pendingAction } : null,
 		},
 		// seatViews carries one private projection per seat; the backend narrows this to one seat.
@@ -1531,7 +1585,7 @@ function setDealer() {
 }
 
 function setBlinds() {
-	// When the dealer is back at initialDealer → increment orbit
+	// When the dealer is back at initialDealer â†’ increment orbit
 	if (gameState.players[0].name === gameState.initialDealerName) {
 		gameState.dealerOrbitCount++;
 		if (gameState.dealerOrbitCount > 0 && gameState.dealerOrbitCount % 2 === 0) {
@@ -1592,9 +1646,7 @@ function dealCards() {
 	}
 }
 
-/**
- * Execute the standard pre-flop steps: rotate dealer, post blinds, deal cards, start betting.
- */
+// Execute the standard pre-flop steps: rotate dealer, post blinds, deal cards, start betting.
 function preFlop() {
 	// --- Hand Start And Reset ---------------------------------------------------
 	// Analytics: count hands and mark start time
@@ -1603,10 +1655,13 @@ function preFlop() {
 	gameState.currentPhaseIndex = 0;
 	gameState.gameFinished = false;
 	gameState.handInProgress = false;
+	gameState.chipTransfer = null;
 	if (runoutPhaseTimer) {
 		clearTimeout(runoutPhaseTimer);
 		runoutPhaseTimer = null;
 	}
+	clearChipTransferFinishTimer();
+	clearChipTransferAnimation(tableRenderTarget);
 
 	startButton.classList.add("hidden");
 	closeAllOverlays();
@@ -2400,51 +2455,101 @@ function startBettingRound() {
 Showdown And Payout Flow
 ---------------------------------------------------------------------------------------------------*/
 
-/**
- * Animate chip transfer from the pot display to a player's total chips.
- * amount   – integer to transfer
- * playerObj – player object to receive chips
- * onDone   – callback after animation completes
- */
-function animateChipTransfer(amount, playerObj, onDone) {
-	if (SPEED_MODE) {
-		gameState.pot -= amount;
-		renderPot();
-		playerObj.chips += amount;
-		renderPlayerTotal(playerObj);
+// Build the synchronized payout transfer plan and let the shared table-view renderer
+// animate the visible pot and stack counts from the final canonical state.
+function getChipTransferStepCount() {
+	if (isTurboPlaybackActive()) {
+		return FAST_FORWARD_CHIP_TRANSFER_STEPS;
+	}
+	return DEFAULT_CHIP_TRANSFER_STEPS;
+}
 
-		if (onDone) onDone();
+function getChipTransferDurationMs(amount) {
+	if (isTurboPlaybackActive()) {
+		return FAST_FORWARD_CHIP_TRANSFER_DURATION;
+	}
+	return Math.min(Math.max(amount * 20, 300), 3000);
+}
+
+function buildChipTransferState(transferQueue) {
+	if (
+		SPEED_MODE ||
+		!Array.isArray(transferQueue) ||
+		transferQueue.length === 0
+	) {
+		return null;
+	}
+
+	const startedAt = Date.now();
+	return {
+		id: nextChipTransferId++,
+		startedAt,
+		transfers: transferQueue.map((transfer) => ({
+			seatIndex: transfer.player.seatIndex,
+			amount: transfer.amount,
+			durationMs: getChipTransferDurationMs(transfer.amount),
+			stepCount: getChipTransferStepCount(),
+		})),
+	};
+}
+
+function applyChipTransferResults(transferQueue) {
+	transferQueue.forEach((transfer) => {
+		transfer.player.chips += transfer.amount;
+	});
+	gameState.pot = 0;
+}
+
+function getChipTransferRemainingDuration(chipTransfer) {
+	if (!chipTransfer || !Array.isArray(chipTransfer.transfers) || chipTransfer.transfers.length === 0) {
+		return 0;
+	}
+
+	const endAt = chipTransfer.transfers.reduce(
+		(maxEndAt, transfer) => Math.max(maxEndAt, chipTransfer.startedAt + transfer.durationMs),
+		chipTransfer.startedAt,
+	);
+	return Math.max(0, Math.ceil(endAt - Date.now()));
+}
+
+function startChipTransferAnimation(transferQueue, onDone) {
+	if (!Array.isArray(transferQueue) || transferQueue.length === 0) {
+		if (onDone) {
+			onDone();
+		}
 		return;
 	}
 
-	const steps = isTurboPlaybackActive() ? FAST_FORWARD_CHIP_TRANSFER_STEPS : 30;
-	const totalDuration = isTurboPlaybackActive()
-		? FAST_FORWARD_CHIP_TRANSFER_DURATION
-		: Math.min(Math.max(amount * 20, 300), 3000);
-	const delay = totalDuration / steps;
-	const increment = Math.floor(amount / steps);
-	const remainder = amount - increment * steps;
-	let currentStep = 0;
+	clearChipTransferFinishTimer();
+	clearChipTransferAnimation(tableRenderTarget);
 
-	function step() {
-		if (currentStep < steps) {
-			gameState.pot -= increment;
-			renderPot();
-			playerObj.chips += increment;
-			renderPlayerTotal(playerObj);
+	const chipTransfer = buildChipTransferState(transferQueue);
+	gameState.chipTransfer = chipTransfer;
+	applyChipTransferResults(transferQueue);
 
-			currentStep++;
-			setTimeout(step, delay);
-		} else {
-			gameState.pot -= remainder;
-			renderPot();
-			playerObj.chips += remainder;
-			renderPlayerTotal(playerObj);
-
-			if (onDone) onDone();
+	if (!chipTransfer) {
+		if (onDone) {
+			onDone();
 		}
+		return;
 	}
-	step();
+
+	renderChipTransferAnimation(tableRenderTarget, {
+		finalPot: gameState.pot,
+		players: getPlayerSeatRenderData(gameState.players),
+		chipTransfer,
+	});
+	queueStateSync(0);
+
+	chipTransferFinishTimer = setTimeout(() => {
+		chipTransferFinishTimer = null;
+		gameState.chipTransfer = null;
+		clearChipTransferAnimation(tableRenderTarget);
+		queueStateSync(0);
+		if (onDone) {
+			onDone();
+		}
+	}, getChipTransferRemainingDuration(chipTransfer));
 }
 
 function finishHandAfterShowdown() {
@@ -2537,9 +2642,8 @@ function doShowdown() {
 			revealedPlayers,
 			totalPayoutByPlayer,
 		});
-		queueStateSync(0);
 		enqueueNotification(`${winner.name} wins ${gameState.pot}!`);
-		animateChipTransfer(gameState.pot, winner, () => {
+		startChipTransferAnimation([{ player: winner, amount: gameState.pot }], () => {
 			finishHandAfterShowdown();
 		});
 		return;
@@ -2657,7 +2761,7 @@ function doShowdown() {
 
 		// ---- Build detailed payout message for this pot ----
 		if (winners.length === 1 && sidePots.length === 1) {
-			// Only one pot in the hand and a single winner → concise wording
+			// Only one pot in the hand and a single winner â†’ concise wording
 			const entry = spHands.find((h) => h.handObj === winners[0]);
 			potResults.push({
 				players: [entry.player.name],
@@ -2727,17 +2831,10 @@ function doShowdown() {
 		revealedPlayers: new Set(),
 		totalPayoutByPlayer,
 	});
-	queueStateSync(0);
 
 	// --- Payout Animation --------------------------------------------------------
-	// run all chip transfers in parallel
-	Promise.all(
-		transferQueue.map((t) =>
-			new Promise((resolve) => {
-				animateChipTransfer(t.amount, t.player, resolve);
-			})
-		),
-	).then(() => {
+	// Build one synced transfer plan and let host and remote play the same animation locally.
+	startChipTransferAnimation(transferQueue, () => {
 		finishHandAfterShowdown();
 	});
 	return; // exit doShowdown early because UI flow continues in animation
@@ -2826,7 +2923,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-27-v4";
+const SERVICE_WORKER_VERSION = "2026-03-27-v7";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

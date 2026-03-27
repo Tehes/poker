@@ -3,7 +3,8 @@ Imports
 ---------------------------------------------------------------------------------------------------*/
 
 // Synced remote-table runtime.
-// Put code here for polling one table projection and mapping synced state into renderer and action-control helpers.
+// Put code here for polling one table projection and mapping synced state into shared table-view
+// renderer and action-control helpers.
 // Do not reimplement poker rules, sync schema helpers, or generic render-only primitives here.
 
 import {
@@ -15,15 +16,17 @@ import {
 } from "./shared/seatActionControls.js";
 import { getSeatView, getTableView } from "./shared/syncViewModel.js";
 import {
+	clearChipTransferAnimation,
 	clearWinnerReaction,
 	clearRenderedSeat,
+	renderChipTransferAnimation,
 	renderChipStacks,
 	renderCommunityCards,
 	renderNotificationBar,
 	renderProjectedSeat,
 	renderSeatActionLabel,
 	showWinnerReaction,
-} from "./shared/tableRenderer.js";
+} from "./shared/tableViewRenderer.js";
 
 /* --------------------------------------------------------------------------------------------------
 Constants And DOM References
@@ -32,6 +35,11 @@ Constants And DOM References
 const notificationEl = document.getElementById("notification");
 const potEl = document.getElementById("pot");
 const communityCardSlots = document.querySelectorAll("#community-cards .cardslot");
+const tableRenderTarget = {
+	potEl,
+	chipTransferTimer: null,
+	activeChipTransferId: null,
+};
 const foldButton = document.getElementById("fold-button");
 const actionButton = document.getElementById("action-button");
 const amountSlider = document.getElementById("amount-slider");
@@ -106,6 +114,23 @@ function findSeatRef(publicSeat) {
 	return seatRefs.find((seatRef) => seatRef.seatSlot === publicSeat?.seatIndex) ?? null;
 }
 
+function getRemotePlayerRenderData(playersPublic = []) {
+	return playersPublic
+		.map((publicSeat) => {
+			const seatRef = findSeatRef(publicSeat);
+			if (!seatRef) {
+				return null;
+			}
+			return {
+				seatIndex: publicSeat.seatIndex,
+				chips: publicSeat.chips,
+				totalEl: seatRef.totalEl,
+				stackChipEls: seatRef.stackChipEls,
+			};
+		})
+		.filter((player) => player !== null);
+}
+
 function applyRemoteState(payload) {
 	const tableView = getTableView(payload);
 	const seatView = getSeatView(payload);
@@ -113,6 +138,7 @@ function applyRemoteState(payload) {
 		setViewSwitchLinkVisible(remoteSwitchLink, false);
 		actionControls.hide();
 		setNotification("Seat unavailable.");
+		clearChipTransferAnimation(tableRenderTarget);
 		seatRefs.forEach(clearRenderedSeat);
 		renderCommunityCards(communityCardSlots, []);
 		potEl.textContent = "0";
@@ -149,21 +175,18 @@ function applyRemoteState(payload) {
 			clearWinnerReaction(seatRef);
 		}
 	});
-	renderChipStacks(
-		playersPublic
-			.map((publicSeat) => {
-				const seatRef = findSeatRef(publicSeat);
-				if (!seatRef) {
-					return null;
-				}
-				return {
-					chips: publicSeat.chips,
-					stackChipEls: seatRef.stackChipEls,
-				};
-			})
-			.filter((seatRef) => seatRef !== null),
-	);
+	const remotePlayerRenderData = getRemotePlayerRenderData(playersPublic);
+	renderChipStacks(remotePlayerRenderData);
 	potEl.textContent = `${tableView.pot ?? 0}`;
+	if (tableView.chipTransfer) {
+		renderChipTransferAnimation(tableRenderTarget, {
+			finalPot: tableView.pot ?? 0,
+			players: remotePlayerRenderData,
+			chipTransfer: tableView.chipTransfer,
+		});
+	} else {
+		clearChipTransferAnimation(tableRenderTarget);
+	}
 	renderCommunityCards(communityCardSlots, tableView.communityCards);
 	actionControls.render(seatView, pendingAction);
 	setViewSwitchLinkVisible(remoteSwitchLink, !showTurnControls);
@@ -235,6 +258,7 @@ function init() {
 	document.addEventListener("visibilitychange", handleVisibilityChange);
 	actionControls.init();
 	configureViewSwitchLink(remoteSwitchLink, "hole-cards.html", tableId, seatIndexParam);
+	clearChipTransferAnimation(tableRenderTarget);
 	seatRefs.forEach(clearRenderedSeat);
 	setViewSwitchLinkVisible(remoteSwitchLink, false);
 	renderCommunityCards(communityCardSlots, []);
