@@ -1204,7 +1204,7 @@ const humanTurnController = createHumanTurnController({
 	applyTurnAction,
 	continueAfterResolvedTurn,
 	getPlayerActionState: (player) => getPlayerActionState(gameState, player),
-	removePlayerSeatClasses,
+	getResolvedTurnMeta,
 });
 
 /* --------------------------------------------------------------------------------------------------
@@ -2026,6 +2026,25 @@ function continueAfterResolvedTurn({
 	}
 }
 
+function getResolvedTurnMeta(resolvedAction) {
+	if (resolvedAction?.action === "fold") {
+		return {
+			logPrefix: "fold",
+			advanceReason: "fold",
+		};
+	}
+	if (resolvedAction?.action === "allin") {
+		return {
+			logPrefix: "human",
+			advanceReason: "human-allin",
+		};
+	}
+	return {
+		logPrefix: "human",
+		advanceReason: "human",
+	};
+}
+
 function applyTurnAction(player, actionRequest) {
 	if (!player || !actionRequest) {
 		return null;
@@ -2764,7 +2783,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-28-v7";
+const SERVICE_WORKER_VERSION = "2026-03-28-v8";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
