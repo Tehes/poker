@@ -6,7 +6,6 @@
 // Do not add pure poker rules, reusable action math, sync schema helpers, or generic render-only helpers here.
 // Prefer moving new code toward the existing modules instead of introducing additional modules.
 
-
 /* --------------------------------------------------------------------------------------------------
 Imports
 ---------------------------------------------------------------------------------------------------*/
@@ -37,15 +36,14 @@ import {
 	getActionButtonLabel,
 	getActionRequestForAmount,
 	getPlayerActionState,
-	isInvalidRaiseAmount,
-	normalizeActionAmount,
 } from "./shared/actionModel.js";
+import { createActionAmountControls } from "./shared/seatActionControls.js";
 import {
 	clearChipTransferAnimation,
 	clearSeatActionLabel,
 	clearWinnerReaction,
-	renderChipTransferAnimation,
 	renderChipStacks,
+	renderChipTransferAnimation,
 	renderCommunityCards as renderTableCommunityCards,
 	renderNotificationBar,
 	renderSeatActionLabel,
@@ -68,6 +66,8 @@ const closeButtons = document.querySelectorAll(".close");
 const notification = document.querySelector("#notification");
 const foldButton = document.querySelector("#fold-button");
 const actionButton = document.querySelector("#action-button");
+const amountControls = document.querySelector("#amount-controls");
+const amountDecrementButton = document.querySelector("#amount-decrement-button");
 const statsButton = document.querySelector("#stats-button");
 const logButton = document.querySelector("#log-button");
 const fastForwardButton = document.querySelector("#fast-forward-button");
@@ -89,7 +89,15 @@ const instructionsOverlay = document.querySelector("#instructions-overlay");
 const instructionsCloseButton = document.querySelector("#instructions-close-button");
 const logList = document.querySelector("#log-list");
 const amountSlider = document.querySelector("#amount-slider");
+const amountIncrementButton = document.querySelector("#amount-increment-button");
 const sliderOutput = document.querySelector("output");
+const actionAmountControls = createActionAmountControls({
+	actionButton,
+	amountSlider,
+	sliderOutput,
+	decrementButton: amountDecrementButton,
+	incrementButton: amountIncrementButton,
+});
 const seatRefs = Array.from(document.querySelectorAll(".seat")).map((seatEl, seatSlot) => ({
 	seatSlot,
 	seatEl,
@@ -912,8 +920,8 @@ function activateFastForward() {
 function hideActionControls() {
 	foldButton.classList.add("hidden");
 	actionButton.classList.add("hidden");
-	amountSlider.classList.add("hidden");
-	sliderOutput.classList.add("hidden");
+	amountControls.classList.add("hidden");
+	actionAmountControls.clear();
 	updateFastForwardButton();
 }
 
@@ -1502,7 +1510,9 @@ function createPlayers() {
 		}
 	}
 
-	const activeSeatRefs = seatRefs.filter((seatRef) => !seatRef.seatEl.classList.contains("hidden"));
+	const activeSeatRefs = seatRefs.filter((seatRef) =>
+		!seatRef.seatEl.classList.contains("hidden")
+	);
 	for (const seatRef of activeSeatRefs) {
 		const seatIndex = gameState.players.length;
 		const playerState = {
@@ -2162,8 +2172,12 @@ function runHumanTurn({ player, cycles, anyUncalled, nextPlayer }) {
 	setActiveTurnPlayer(player);
 	actionButton.classList.remove("hidden");
 	foldButton.classList.remove("hidden");
-	amountSlider.classList.remove("hidden");
-	sliderOutput.classList.remove("hidden");
+	amountControls.classList.remove("hidden");
+	foldButton.disabled = false;
+	actionButton.disabled = false;
+	amountDecrementButton.disabled = false;
+	amountSlider.disabled = false;
+	amountIncrementButton.disabled = false;
 
 	const actionState = getPlayerActionState(gameState, player);
 	const pendingAction = setPendingAction(player);
@@ -2171,31 +2185,13 @@ function runHumanTurn({ player, cycles, anyUncalled, nextPlayer }) {
 	let remoteActionInFlight = false;
 	let turnResolved = false;
 
-	amountSlider.min = actionState.minAmount;
-	amountSlider.max = actionState.maxAmount;
-	amountSlider.step = CHIP_UNIT;
-	amountSlider.value = actionState.minAmount;
-	sliderOutput.value = actionState.minAmount;
-
-	function onSliderInput() {
-		const val = Number.parseInt(amountSlider.value, 10);
-		sliderOutput.classList.toggle("invalid", isInvalidRaiseAmount(val, actionState));
-		actionButton.textContent = getActionButtonLabel(val, actionState);
-	}
-
-	function onSliderChange() {
-		const val = Number.parseInt(amountSlider.value, 10);
-		const normalizedAmount = normalizeActionAmount(val, actionState);
-		amountSlider.value = normalizedAmount;
-		sliderOutput.value = normalizedAmount;
-		sliderOutput.classList.remove("invalid");
-		onSliderInput();
-	}
+	actionAmountControls.render(actionState, {
+		actionStep: CHIP_UNIT,
+		resetAmount: true,
+	});
 
 	function cleanupHumanTurn() {
 		removePlayerSeatClasses(player, "active");
-		amountSlider.removeEventListener("input", onSliderInput);
-		amountSlider.removeEventListener("change", onSliderChange);
 		foldButton.removeEventListener("click", onFold);
 		actionButton.removeEventListener("click", onAction);
 		hideActionControls();
@@ -2310,11 +2306,8 @@ function runHumanTurn({ player, cycles, anyUncalled, nextPlayer }) {
 		submitHumanTurn({ action: "fold" });
 	}
 
-	amountSlider.addEventListener("input", onSliderInput);
-	amountSlider.addEventListener("change", onSliderChange);
 	foldButton.addEventListener("click", onFold);
 	actionButton.addEventListener("click", onAction);
-	onSliderInput();
 	if (pendingAction?.turnToken) {
 		scheduleRemoteActionPoll();
 	}
@@ -2502,7 +2495,10 @@ function applyChipTransferResults(transferQueue) {
 }
 
 function getChipTransferRemainingDuration(chipTransfer) {
-	if (!chipTransfer || !Array.isArray(chipTransfer.transfers) || chipTransfer.transfers.length === 0) {
+	if (
+		!chipTransfer || !Array.isArray(chipTransfer.transfers) ||
+		chipTransfer.transfers.length === 0
+	) {
 		return 0;
 	}
 
@@ -2891,6 +2887,7 @@ function init() {
 	overlayBackdrop.addEventListener("click", closeAllOverlays, false);
 	globalThis.addEventListener("pagehide", () => trackUnfinishedExit(), false);
 	globalThis.addEventListener("beforeunload", () => trackUnfinishedExit(), false);
+	actionAmountControls.init();
 	renderPot();
 	renderTableCommunityCards(communityCardSlots, gameState.communityCards);
 
@@ -2924,7 +2921,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-27-v8";
+const SERVICE_WORKER_VERSION = "2026-03-28-v6";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

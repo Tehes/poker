@@ -43,6 +43,122 @@ export function setViewSwitchLinkVisible(linkEl, isVisible) {
 	linkEl.classList.toggle("hidden", !isVisible);
 }
 
+function getSliderStepAmount(amountSlider) {
+	const parsedStep = Number.parseInt(amountSlider.step, 10);
+	if (Number.isNaN(parsedStep) || parsedStep <= 0) {
+		return 1;
+	}
+	return parsedStep;
+}
+
+function getSteppedActionAmount(currentAmount, actionState, sliderStep, direction) {
+	const nextAmount = clampActionAmount(currentAmount + (direction * sliderStep), actionState);
+	if (!isInvalidRaiseAmount(nextAmount, actionState)) {
+		return nextAmount;
+	}
+
+	return direction > 0
+		? normalizeActionAmount(nextAmount, actionState)
+		: actionState.minAmount;
+}
+
+export function createActionAmountControls({
+	actionButton,
+	amountSlider,
+	sliderOutput,
+	decrementButton = null,
+	incrementButton = null,
+}) {
+	let currentActionState = null;
+
+	function setCurrentAmount(amount, { normalize = false } = {}) {
+		if (!currentActionState) {
+			return;
+		}
+
+		const parsedAmount = Number.isNaN(amount) ? currentActionState.minAmount : amount;
+		const nextAmount = normalize
+			? normalizeActionAmount(parsedAmount, currentActionState)
+			: clampActionAmount(parsedAmount, currentActionState);
+
+		amountSlider.value = nextAmount;
+		sliderOutput.value = nextAmount;
+		sliderOutput.classList.toggle("invalid", isInvalidRaiseAmount(nextAmount, currentActionState));
+		actionButton.textContent = getActionButtonLabel(nextAmount, currentActionState);
+	}
+
+	function handleActionSliderInput() {
+		setCurrentAmount(Number.parseInt(amountSlider.value, 10));
+	}
+
+	function handleActionSliderChange() {
+		setCurrentAmount(Number.parseInt(amountSlider.value, 10), { normalize: true });
+	}
+
+	function stepAmount(direction) {
+		if (!currentActionState) {
+			return;
+		}
+
+		const currentAmount = clampActionAmount(
+			Number.parseInt(amountSlider.value, 10),
+			currentActionState,
+		);
+		const sliderStep = getSliderStepAmount(amountSlider);
+		const nextAmount = getSteppedActionAmount(
+			currentAmount,
+			currentActionState,
+			sliderStep,
+			direction,
+		);
+		setCurrentAmount(nextAmount);
+	}
+
+	function handleDecrementClick() {
+		stepAmount(-1);
+	}
+
+	function handleIncrementClick() {
+		stepAmount(1);
+	}
+
+	function init() {
+		amountSlider.addEventListener("input", handleActionSliderInput);
+		amountSlider.addEventListener("change", handleActionSliderChange);
+		decrementButton?.addEventListener("click", handleDecrementClick);
+		incrementButton?.addEventListener("click", handleIncrementClick);
+	}
+
+	function clear() {
+		currentActionState = null;
+		sliderOutput.classList.remove("invalid");
+	}
+
+	function render(actionState, { actionStep = amountSlider.step, resetAmount = false } = {}) {
+		currentActionState = actionState;
+		if (!currentActionState) {
+			clear();
+			return;
+		}
+
+		amountSlider.min = currentActionState.minAmount;
+		amountSlider.max = currentActionState.maxAmount;
+		amountSlider.step = actionStep;
+
+		if (resetAmount) {
+			amountSlider.value = currentActionState.minAmount;
+		}
+
+		setCurrentAmount(Number.parseInt(amountSlider.value, 10));
+	}
+
+	return {
+		init,
+		clear,
+		render,
+	};
+}
+
 export function createSeatActionControls({
 	tableId,
 	seatIndex,
@@ -53,10 +169,19 @@ export function createSeatActionControls({
 	actionButton,
 	amountSlider,
 	sliderOutput,
+	decrementButton = null,
+	incrementButton = null,
 	onActionError = null,
 }) {
 	let currentPendingAction = null;
 	let isSubmittingAction = false;
+	const amountControls = createActionAmountControls({
+		actionButton,
+		amountSlider,
+		sliderOutput,
+		decrementButton,
+		incrementButton,
+	});
 
 	function setVisible(isVisible) {
 		visibleElements.forEach((el) => {
@@ -71,37 +196,12 @@ export function createSeatActionControls({
 		foldButton.disabled = !enabled;
 		actionButton.disabled = !enabled;
 		amountSlider.disabled = !enabled;
-	}
-
-	function updatePrimaryActionLabel() {
-		if (!currentPendingAction) {
-			return;
+		if (decrementButton) {
+			decrementButton.disabled = !enabled;
 		}
-
-		const amount = clampActionAmount(
-			Number.parseInt(amountSlider.value, 10),
-			currentPendingAction,
-		);
-		sliderOutput.value = amount;
-		sliderOutput.classList.toggle("invalid", isInvalidRaiseAmount(amount, currentPendingAction));
-		actionButton.textContent = getActionButtonLabel(amount, currentPendingAction);
-	}
-
-	function handleActionSliderInput() {
-		updatePrimaryActionLabel();
-	}
-
-	function handleActionSliderChange() {
-		if (!currentPendingAction) {
-			return;
+		if (incrementButton) {
+			incrementButton.disabled = !enabled;
 		}
-
-		const amount = Number.parseInt(amountSlider.value, 10);
-		const normalizedAmount = normalizeActionAmount(amount, currentPendingAction);
-		amountSlider.value = normalizedAmount;
-		sliderOutput.value = normalizedAmount;
-		sliderOutput.classList.remove("invalid");
-		updatePrimaryActionLabel();
 	}
 
 	async function submitActionRequest(action, amount = null) {
@@ -156,8 +256,7 @@ export function createSeatActionControls({
 	}
 
 	function init() {
-		amountSlider.addEventListener("input", handleActionSliderInput);
-		amountSlider.addEventListener("change", handleActionSliderChange);
+		amountControls.init();
 		foldButton.addEventListener("click", handleFoldAction);
 		actionButton.addEventListener("click", handlePrimaryAction);
 	}
@@ -166,7 +265,7 @@ export function createSeatActionControls({
 		currentPendingAction = null;
 		isSubmittingAction = false;
 		setVisible(false);
-		sliderOutput.classList.remove("invalid");
+		amountControls.clear();
 		setEnabled(false);
 	}
 
@@ -179,20 +278,13 @@ export function createSeatActionControls({
 		const isNewTurn = currentPendingAction?.turnToken !== pendingAction.turnToken;
 		currentPendingAction = pendingAction;
 		setVisible(true);
-
-		amountSlider.min = pendingAction.minAmount;
-		amountSlider.max = pendingAction.maxAmount;
-		amountSlider.step = actionStep;
-
 		if (isNewTurn) {
 			isSubmittingAction = false;
-			amountSlider.value = pendingAction.minAmount;
-		} else {
-			const currentAmount = Number.parseInt(amountSlider.value, 10);
-			amountSlider.value = clampActionAmount(currentAmount, pendingAction);
 		}
-
-		updatePrimaryActionLabel();
+		amountControls.render(pendingAction, {
+			actionStep,
+			resetAmount: isNewTurn,
+		});
 		setEnabled(!isSubmittingAction);
 	}
 

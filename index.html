@@ -284,9 +284,13 @@
 				<button type="button" id="fast-forward-button" class="hidden" name="button">Fast Forward</button>
 				<button type="button" id="fold-button" class="hidden" name="button">Fold</button>
 				<button type="button" id="action-button" class="hidden" name="button">Check</button>
-				<input type="range" id="amount-slider" class="hidden" name="amount" value="0" min="0" max="2000"
-					step="10" oninput="this.nextElementSibling.value = this.value">
-				<output class="hidden">0</output>
+				<div id="amount-controls" class="amount-controls hidden">
+					<button type="button" id="amount-decrement-button" class="amount-step-button" name="button">-</button>
+					<input type="range" id="amount-slider" name="amount" value="0" min="0" max="2000"
+						step="10">
+					<button type="button" id="amount-increment-button" class="amount-step-button" name="button">+</button>
+					<output>0</output>
+				</div>
 			</section>
 		</div>
 	</main>

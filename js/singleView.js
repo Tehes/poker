@@ -31,7 +31,10 @@ const winProbabilityEl = document.querySelector("#single .win-probability");
 const singleActionPanelEl = document.getElementById("single-action-panel");
 const singleFoldButton = document.getElementById("single-fold-button");
 const singleActionButton = document.getElementById("single-action-button");
+const singleAmountControls = document.getElementById("single-amount-controls");
+const singleAmountDecrementButton = document.getElementById("single-amount-decrement-button");
 const singleAmountSlider = document.getElementById("single-amount-slider");
+const singleAmountIncrementButton = document.getElementById("single-amount-increment-button");
 const singleSliderOutput = document.getElementById("single-slider-output");
 const singleSwitchLink = document.getElementById("single-switch-link");
 const onlineOnlyElements = [betEl, potEl, singleActionPanelEl];
@@ -71,11 +74,17 @@ const actionControls = createSeatActionControls({
 	seatIndex: seatIndexParam,
 	actionEndpoint: ACTION_ENDPOINT,
 	actionStep: ACTION_STEP,
-	visibleElements: [singleFoldButton, singleActionButton, singleAmountSlider, singleSliderOutput],
+	visibleElements: [
+		singleFoldButton,
+		singleActionButton,
+		singleAmountControls,
+	],
 	foldButton: singleFoldButton,
 	actionButton: singleActionButton,
 	amountSlider: singleAmountSlider,
 	sliderOutput: singleSliderOutput,
+	decrementButton: singleAmountDecrementButton,
+	incrementButton: singleAmountIncrementButton,
 });
 
 /* --------------------------------------------------------------------------------------------------

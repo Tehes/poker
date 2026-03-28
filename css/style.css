@@ -105,6 +105,26 @@ button:disabled {
     box-shadow: var(--shadow-light);
 }
 
+.amount-step-button {
+    flex: 0 0 45px;
+    padding: 1.5vmin 0;
+    margin: 0 1vmin;
+    max-height: 45px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    line-height: 1;
+}
+
+.amount-controls {
+    flex: 1 1 445px;
+    max-width: 100%;
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+}
+
 .action-link {
     padding: 1vmin 2vmin;
     border-radius: 1vmin;
@@ -135,8 +155,9 @@ button:disabled {
 }
 
 input[type=range] {
-    flex: 1 0 auto;
-    margin: 2vmin;
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 2vmin 1vmin;
     -webkit-appearance: none;
     appearance: none;
     height: 25px;
@@ -285,14 +306,13 @@ SINGLE VIEW
     border-bottom: 1px dashed var(--font-color);
 }
 
-#single input[type=range] {
-    flex-basis: 80%;
-    margin: 1.5rem 0;
-}
-
 #single-action-status {
     color: var(--yellow);
     text-align: center;
+}
+
+#single .chips {
+    margin-bottom: 1rem;
 }
 
 #single .chips :where(.total, .bet) {
@@ -463,6 +483,7 @@ TABLE-MIDDLE
     justify-content: center;
     align-items: center;
     width: 100%;
+    gap: 1rem 0;
 }
 
 /*

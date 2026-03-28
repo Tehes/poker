@@ -43,7 +43,10 @@ const tableRenderTarget = {
 };
 const foldButton = document.getElementById("fold-button");
 const actionButton = document.getElementById("action-button");
+const amountControls = document.getElementById("amount-controls");
+const amountDecrementButton = document.getElementById("amount-decrement-button");
 const amountSlider = document.getElementById("amount-slider");
+const amountIncrementButton = document.getElementById("amount-increment-button");
 const sliderOutput = document.querySelector("output");
 const remoteSwitchLink = document.getElementById("remote-switch-link");
 const seatRefs = Array.from(document.querySelectorAll(".seat")).map((seatEl, seatSlot) => ({
@@ -92,11 +95,17 @@ const actionControls = createSeatActionControls({
 	seatIndex: seatIndexParam,
 	actionEndpoint: ACTION_ENDPOINT,
 	actionStep: ACTION_STEP,
-	visibleElements: [foldButton, actionButton, amountSlider, sliderOutput],
+	visibleElements: [
+		foldButton,
+		actionButton,
+		amountControls,
+	],
 	foldButton,
 	actionButton,
 	amountSlider,
 	sliderOutput,
+	decrementButton: amountDecrementButton,
+	incrementButton: amountIncrementButton,
 	onActionError: () => setNotification("Action request failed."),
 });
 
