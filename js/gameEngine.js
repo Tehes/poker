@@ -175,6 +175,43 @@ export function recordPlayerActionStats(gameState, player, actionName) {
 	}
 }
 
+export function getPlayerActionFollowUpEffects(gameState, player, actionName) {
+	const followUpEffects = {
+		clearWinProbability: actionName === "fold",
+		refreshHandStrength: actionName === "fold",
+		revealActiveHoleCards: false,
+		recomputeSpectatorWinProbabilities: false,
+		probabilityReason: "",
+		skipProbabilityLogReason: "",
+	};
+
+	if (!gameState || !player) {
+		return followUpEffects;
+	}
+
+	if (actionName !== "check" && isAllInRunout(gameState.players, gameState.currentBet)) {
+		followUpEffects.revealActiveHoleCards = true;
+		if (gameState.currentPhaseIndex > 0) {
+			followUpEffects.recomputeSpectatorWinProbabilities = true;
+			followUpEffects.probabilityReason = "allin-runout";
+		} else {
+			followUpEffects.skipProbabilityLogReason = "allin-runout-preflop";
+		}
+		return followUpEffects;
+	}
+
+	if (gameState.spectatorMode && actionName === "fold") {
+		if (gameState.currentPhaseIndex > 0) {
+			followUpEffects.recomputeSpectatorWinProbabilities = true;
+			followUpEffects.probabilityReason = "fold";
+		} else {
+			followUpEffects.skipProbabilityLogReason = "fold-preflop";
+		}
+	}
+
+	return followUpEffects;
+}
+
 export function areHoleCardsFaceUp(player) {
 	return player.visibleHoleCards.every(Boolean);
 }

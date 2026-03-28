@@ -233,6 +233,43 @@ export function renderSeatActionLabel(
 	}, remainingDuration);
 }
 
+function getSeatActionClassName(actionName = "") {
+	switch (actionName) {
+		case "check":
+			return "checked";
+		case "call":
+			return "called";
+		case "raise":
+			return "raised";
+		case "allin":
+			return "allin";
+		default:
+			return "";
+	}
+}
+
+export function renderSeatResolvedAction(
+	target,
+	{ playerName = "", actionName = "", labelUntil = 0, isFolded = false } = {},
+) {
+	const seatEl = getSeatEl(target);
+	if (!seatEl) {
+		return;
+	}
+
+	seatEl.classList.remove("checked", "called", "raised", "allin");
+	const actionClassName = getSeatActionClassName(actionName);
+	if (actionClassName) {
+		seatEl.classList.add(actionClassName);
+	}
+	seatEl.classList.toggle("folded", isFolded === true);
+	renderSeatActionLabel(target, {
+		playerName,
+		actionName,
+		labelUntil,
+	});
+}
+
 export function clearWinnerReaction(target) {
 	const winnerReactionEl = getWinnerReactionEl(target);
 	cancelWinnerReactionTimer(target);
@@ -482,6 +519,36 @@ export function clearRenderedSeat(seatRef) {
 	seatRef.bigBlindEl.classList.add("hidden");
 	renderSeatPill(seatRef.handStrengthEl, "", false);
 	renderSeatPill(seatRef.winProbabilityEl, "", false);
+}
+
+export function renderHostSeat(seatRef, seatState = {}) {
+	if (!seatRef?.seatEl) {
+		return;
+	}
+
+	seatRef.nameEl.textContent = seatState.name ?? "";
+	seatRef.totalEl.textContent = `${seatState.chips ?? 0}`;
+	seatRef.betEl.textContent = `${seatState.roundBet ?? 0}`;
+	seatRef.dealerEl.classList.toggle("hidden", seatState.dealer !== true);
+	seatRef.smallBlindEl.classList.toggle("hidden", seatState.smallBlind !== true);
+	seatRef.bigBlindEl.classList.toggle("hidden", seatState.bigBlind !== true);
+	renderSeatCards(seatRef.cardEls, seatState.visibleCardCodes);
+	renderSeatPill(seatRef.handStrengthEl, seatState.handStrengthLabel || "");
+	renderSeatPill(seatRef.winProbabilityEl, seatState.winProbabilityLabel || "");
+	renderSeatWinnerState(seatRef, seatState.winner === true);
+	renderSeatResolvedAction(seatRef, {
+		playerName: seatState.name ?? "",
+		actionName: seatState.actionState?.name,
+		labelUntil: seatState.actionState?.labelUntil,
+		isFolded: seatState.folded === true,
+	});
+	seatRef.seatEl.classList.toggle("allin", seatState.allIn === true);
+
+	if (seatState.winnerReaction?.emoji) {
+		showWinnerReaction(seatRef, seatState.winnerReaction.emoji, seatState.winnerReaction.visibleUntil);
+	} else {
+		clearWinnerReaction(seatRef);
+	}
 }
 
 export function renderProjectedSeat(

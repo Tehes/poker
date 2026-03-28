@@ -12,7 +12,6 @@ Imports
 
 import { chooseBotAction, enqueueBotAction, setBotPlaybackFast } from "./bot.js";
 import {
-	areHoleCardsFaceUp,
 	buildSplitPayouts,
 	calculateWinProbabilities,
 	getBettingRoundStartIndex,
@@ -20,7 +19,7 @@ import {
 	getBotRevealDecision,
 	getCurrentPhase,
 	getNextDealerIndex,
-	getPlayerHandStrengthLabel,
+	getPlayerActionFollowUpEffects,
 	getVisibleSolvedHand,
 	INITIAL_BIG_BLIND,
 	INITIAL_DECK,
@@ -35,19 +34,15 @@ import { Hand } from "./pokersolver.js";
 import QrCreator from "./qr-creator.js";
 import { getActionButtonLabel, getPlayerActionState } from "./shared/actionModel.js";
 import { createHumanTurnController } from "./shared/humanTurnController.js";
+import { buildPublicPlayerView, buildSyncView } from "./shared/syncViewModel.js";
 import {
 	clearChipTransferAnimation,
-	clearSeatActionLabel,
-	clearWinnerReaction,
 	renderChipStacks,
 	renderChipTransferAnimation,
 	renderCommunityCards as renderTableCommunityCards,
+	renderHostSeat,
 	renderNotificationBar,
-	renderSeatActionLabel,
-	renderSeatCards,
-	renderSeatPill,
-	renderSeatWinnerState,
-	showWinnerReaction,
+	renderSeatResolvedAction,
 } from "./shared/tableViewRenderer.js";
 import { initServiceWorker } from "./serviceWorkerRegistration.js";
 
@@ -325,19 +320,6 @@ function clearPlayerActionState(player) {
 	player.actionState = null;
 }
 
-function getLivePlayerActionState(actionState, now = Date.now()) {
-	if (!actionState?.name || !Number.isFinite(actionState.labelUntil)) {
-		return null;
-	}
-	if (actionState.labelUntil <= now) {
-		return null;
-	}
-	return {
-		name: actionState.name,
-		labelUntil: actionState.labelUntil,
-	};
-}
-
 function clearPlayerWinnerReactionState(player) {
 	player.winnerReactionEmoji = "";
 	player.winnerReactionUntil = 0;
@@ -350,6 +332,52 @@ function bindSeatRefPlayer(player) {
 	}
 	seatRef.clearActionLabelState = () => clearPlayerActionState(player);
 	seatRef.clearWinnerReactionState = () => clearPlayerWinnerReactionState(player);
+}
+
+function buildPlayerSeatState(player, communityCards = getCommunityCardCodes()) {
+	const publicPlayerView = buildPublicPlayerView(player, communityCards, gameState);
+	const winProbabilityLabel = publicPlayerView.showWinProbability &&
+		typeof publicPlayerView.winProbability === "number"
+		? `${Math.round(publicPlayerView.winProbability)}%`
+		: "";
+
+	return {
+		name: publicPlayerView.name,
+		chips: publicPlayerView.chips,
+		roundBet: publicPlayerView.roundBet,
+		visibleCardCodes: publicPlayerView.publicHoleCards,
+		dealer: publicPlayerView.dealer,
+		smallBlind: publicPlayerView.smallBlind,
+		bigBlind: publicPlayerView.bigBlind,
+		folded: publicPlayerView.folded,
+		allIn: publicPlayerView.allIn,
+		winner: publicPlayerView.winner,
+		handStrengthLabel: publicPlayerView.handStrengthLabel,
+		winProbabilityLabel,
+		actionState: publicPlayerView.actionState,
+		winnerReaction: publicPlayerView.winnerReaction,
+	};
+}
+
+function renderPlayerSeat(player, communityCards = getCommunityCardCodes()) {
+	const seatRef = getSeatRef(player);
+	if (!seatRef) {
+		return;
+	}
+	renderHostSeat(seatRef, buildPlayerSeatState(player, communityCards));
+}
+
+function renderPlayerResolvedAction(player) {
+	const seatRef = getSeatRef(player);
+	if (!seatRef) {
+		return;
+	}
+	renderSeatResolvedAction(seatRef, {
+		playerName: player.name,
+		actionName: player.actionState?.name,
+		labelUntil: player.actionState?.labelUntil,
+		isFolded: player.folded,
+	});
 }
 
 function getPlayerSeatRenderData(playerList = gameState.players) {
@@ -374,19 +402,7 @@ function renderPlayerChipStacks(playerList = gameState.players) {
 }
 
 function renderPlayerTotal(player) {
-	const seatRef = getSeatRef(player);
-	if (!seatRef?.totalEl) {
-		return;
-	}
-	seatRef.totalEl.textContent = `${player.chips}`;
-}
-
-function renderPlayerRoundBet(player) {
-	const seatRef = getSeatRef(player);
-	if (!seatRef?.betEl) {
-		return;
-	}
-	seatRef.betEl.textContent = `${player.roundBet}`;
+	renderPlayerSeat(player);
 }
 
 function getRoleFlagName(role) {
@@ -492,63 +508,38 @@ function placePlayerBet(player, amount) {
 	const bet = Math.min(amount, player.chips);
 	player.roundBet += bet;
 	player.totalBet += bet;
-	renderPlayerRoundBet(player);
 	player.chips -= bet;
 	if (player.chips === 0) {
 		player.allIn = true;
 	}
-	renderPlayerTotal(player);
+	renderPlayerSeat(player);
 	return bet;
 }
 
 function resetPlayerRoundBet(player) {
 	player.roundBet = 0;
-	renderPlayerRoundBet(player);
+	renderPlayerSeat(player);
 }
 
 function clearPlayerActionLabel(player) {
-	const seatRef = getSeatRef(player);
-	if (!seatRef) {
-		return;
-	}
-	clearSeatActionLabel(seatRef, player.name);
-}
-
-function renderPlayerActionLabel(player) {
-	const seatRef = getSeatRef(player);
-	if (!seatRef) {
-		return;
-	}
-	const actionState = getLivePlayerActionState(player.actionState);
-	renderSeatActionLabel(seatRef, {
-		playerName: player.name,
-		actionName: actionState?.name,
-		labelUntil: actionState?.labelUntil,
-	});
+	clearPlayerActionState(player);
+	renderPlayerResolvedAction(player);
 }
 
 function clearPlayerWinnerReaction(player) {
-	const seatRef = getSeatRef(player);
-	if (!seatRef) {
-		return;
-	}
-	clearWinnerReaction(seatRef);
+	clearPlayerWinnerReactionState(player);
+	renderPlayerSeat(player);
 }
 
 function showPlayerWinnerReaction(player, emoji, visibleUntil) {
-	const seatRef = getSeatRef(player);
-	if (!seatRef) {
-		return;
-	}
-	showWinnerReaction(seatRef, emoji, visibleUntil);
+	player.winnerReactionEmoji = emoji;
+	player.winnerReactionUntil = visibleUntil;
+	renderPlayerSeat(player);
 }
 
 function renderPlayerWinnerState(player, isWinner = false) {
-	const seatRef = getSeatRef(player);
-	if (!seatRef) {
-		return;
-	}
-	renderSeatWinnerState(seatRef, isWinner);
+	player.isWinner = isWinner === true;
+	renderPlayerSeat(player);
 }
 
 /* --------------------------------------------------------------------------------------------------
@@ -590,14 +581,7 @@ function setPlayerVisibleHoleCards(player, visibleHoleCards) {
 }
 
 function renderPlayerHoleCards(player) {
-	const seatRef = getSeatRef(player);
-	if (!seatRef) {
-		return;
-	}
-	const visibleCards = player.holeCards.map((cardCode, index) =>
-		player.visibleHoleCards[index] ? cardCode : null
-	);
-	renderSeatCards(seatRef.cardEls, visibleCards);
+	renderPlayerSeat(player);
 }
 
 function getStatsPlayers() {
@@ -743,49 +727,18 @@ function getPlayerActionNotificationText(playerName, actionName, amount = 0) {
 	}
 }
 
-function buildPublicPlayerWinnerReactionState(player) {
-	if (!player?.winnerReactionEmoji || !Number.isFinite(player.winnerReactionUntil)) {
-		return null;
+function logSkippedPlayerActionProbability(player, action, skipProbabilityLogReason) {
+	switch (skipProbabilityLogReason) {
+		case "allin-runout-preflop":
+			logFlow("winProbability: preflop all-in runout pending", {
+				action,
+				name: player.name,
+			});
+			break;
+		case "fold-preflop":
+			logFlow("winProbability: preflop fold skipped", { name: player.name });
+			break;
 	}
-	if (player.winnerReactionUntil <= Date.now()) {
-		return null;
-	}
-	return {
-		emoji: player.winnerReactionEmoji,
-		visibleUntil: player.winnerReactionUntil,
-	};
-}
-
-function buildPublicChipTransferState() {
-	const chipTransfer = gameState.chipTransfer;
-	if (
-		!chipTransfer ||
-		!Number.isFinite(chipTransfer.startedAt) ||
-		!Array.isArray(chipTransfer.transfers)
-	) {
-		return null;
-	}
-
-	const transfers = chipTransfer.transfers.filter((transfer) =>
-		Number.isFinite(transfer?.seatIndex) &&
-		Number.isFinite(transfer?.amount) &&
-		Number.isFinite(transfer?.durationMs) &&
-		Number.isFinite(transfer?.stepCount)
-	);
-	if (transfers.length === 0) {
-		return null;
-	}
-
-	return {
-		id: chipTransfer.id,
-		startedAt: chipTransfer.startedAt,
-		transfers: transfers.map((transfer) => ({
-			seatIndex: transfer.seatIndex,
-			amount: transfer.amount,
-			durationMs: transfer.durationMs,
-			stepCount: transfer.stepCount,
-		})),
-	};
 }
 
 function getRunoutPhaseDelay() {
@@ -1066,90 +1019,6 @@ function clearPendingAction() {
 	queueStateSync(0);
 }
 
-function buildPublicPlayerView(player, communityCards) {
-	return {
-		seatIndex: player.seatIndex,
-		seatSlot: player.seatSlot,
-		name: player.name,
-		chips: player.chips,
-		roundBet: player.roundBet,
-		folded: player.folded,
-		allIn: player.allIn,
-		dealer: player.dealer,
-		smallBlind: player.smallBlind,
-		bigBlind: player.bigBlind,
-		publicHoleCards: player.holeCards.map((cardCode, index) =>
-			player.visibleHoleCards[index] ? cardCode : null
-		),
-		handStrengthLabel: shouldShowTableHandStrength(player, communityCards)
-			? getPlayerHandStrengthLabel(player, communityCards)
-			: "",
-		winProbability: player.winProbability,
-		showWinProbability: shouldShowTableWinProbability(player),
-		winner: player.isWinner === true,
-		actionState: getLivePlayerActionState(player.actionState),
-		winnerReaction: buildPublicPlayerWinnerReactionState(player),
-	};
-}
-
-// The table stays the canonical source for private display values.
-// Seat views receive already-decided visibility and computed display fields instead of recomputing
-// them on the phone, which keeps the single view thin and prevents rule drift.
-function shouldShowSeatHandStrength(player, communityCards) {
-	return gameState.currentPhaseIndex > 0 &&
-		communityCards.length >= 3 &&
-		!player.folded &&
-		player.holeCards.every(Boolean);
-}
-
-function shouldShowSeatWinProbability(player) {
-	return (gameState.spectatorMode || isAllInRunout(gameState.players, gameState.currentBet)) &&
-		gameState.currentPhaseIndex > 0 &&
-		!player.folded &&
-		player.holeCards.every(Boolean) &&
-		typeof player.winProbability === "number";
-}
-
-function buildSeatView(player, communityCards) {
-	return {
-		seatIndex: player.seatIndex,
-		seatSlot: player.seatSlot,
-		name: player.name,
-		chips: player.chips,
-		roundBet: player.roundBet,
-		folded: player.folded,
-		allIn: player.allIn,
-		holeCards: player.holeCards.slice(),
-		handStrengthLabel: shouldShowSeatHandStrength(player, communityCards)
-			? getPlayerHandStrengthLabel(player, communityCards)
-			: "",
-		winProbability: player.winProbability,
-		showWinProbability: shouldShowSeatWinProbability(player),
-	};
-}
-
-function buildSyncView() {
-	const communityCards = getCommunityCardCodes();
-
-	return {
-		table: {
-			// table contains public/shared state only.
-			phase: getCurrentPhase(gameState.currentPhaseIndex),
-			pot: gameState.pot,
-			activeSeatIndex: gameState.activeSeatIndex,
-			communityCards,
-			notifications: notifArr.slice(0, MAX_ITEMS),
-			playersPublic: gameState.players.map((player) =>
-				buildPublicPlayerView(player, communityCards)
-			),
-			chipTransfer: buildPublicChipTransferState(),
-			pendingAction: gameState.pendingAction ? { ...gameState.pendingAction } : null,
-		},
-		// seatViews carries one private projection per seat; the backend narrows this to one seat.
-		seatViews: gameState.players.map((player) => buildSeatView(player, communityCards)),
-	};
-}
-
 async function fetchPendingRemoteAction(turnToken) {
 	if (!hasStateSyncEnabled() || !turnToken) {
 		return null;
@@ -1179,7 +1048,7 @@ async function fetchPendingRemoteAction(turnToken) {
 async function sendTableState() {
 	const payload = {
 		tableId: tableId,
-		view: buildSyncView(),
+		view: buildSyncView(gameState, notifArr.slice(0, MAX_ITEMS)),
 	};
 
 	try {
@@ -1358,44 +1227,14 @@ function triggerMainPotWinnerReactions(context) {
 	});
 }
 
-function shouldShowTableHandStrength(player, communityCards) {
-	return gameState.currentPhaseIndex > 0 &&
-		communityCards.length >= 3 &&
-		areHoleCardsFaceUp(player);
-}
-
-function shouldShowTableWinProbability(player) {
-	return (gameState.spectatorMode || isAllInRunout(gameState.players, gameState.currentBet)) &&
-		gameState.currentPhaseIndex > 0 &&
-		areHoleCardsFaceUp(player) &&
-		typeof player.winProbability === "number";
-}
-
 function updateHandStrengthDisplays() {
 	const communityCards = getCommunityCardCodes();
-
-	gameState.players.forEach((p) => {
-		const handEl = getSeatRef(p)?.handStrengthEl ?? null;
-		if (!handEl) {
-			return;
-		}
-
-		const shouldShow = shouldShowTableHandStrength(p, communityCards);
-		const label = shouldShow ? getPlayerHandStrengthLabel(p, communityCards) : "";
-		renderSeatPill(handEl, label, shouldShow);
-	});
+	gameState.players.forEach((player) => renderPlayerSeat(player, communityCards));
 }
 
 function updateWinProbabilityDisplays() {
-	gameState.players.forEach((p) => {
-		const winEl = getSeatRef(p)?.winProbabilityEl ?? null;
-		if (!winEl) {
-			return;
-		}
-		const shouldShow = shouldShowTableWinProbability(p);
-		const label = shouldShow ? `${Math.round(p.winProbability)}%` : "";
-		renderSeatPill(winEl, label, shouldShow);
-	});
+	const communityCards = getCommunityCardCodes();
+	gameState.players.forEach((player) => renderPlayerSeat(player, communityCards));
 }
 
 function computeSpectatorWinProbabilities(reason = "") {
@@ -1908,58 +1747,30 @@ Turn Handling And Betting Round Flow
 ---------------------------------------------------------------------------------------------------*/
 
 function notifyPlayerAction(player, action = "", amount = 0) {
-	// Remove any previous action indicator before adding a new one
-	removePlayerSeatClasses(player, "checked", "called", "raised", "allin");
 	recordPlayerActionStats(gameState, player, action);
 
 	const msg = getPlayerActionNotificationText(player.name, action, amount);
-	switch (action) {
-		case "fold":
-			addPlayerSeatClasses(player, "folded");
-			break;
-		case "check":
-			addPlayerSeatClasses(player, "checked");
-			break;
-		case "call":
-			addPlayerSeatClasses(player, "called");
-			break;
-		case "raise":
-			addPlayerSeatClasses(player, "raised");
-			break;
-		case "allin":
-			addPlayerSeatClasses(player, "allin");
-			break;
-	}
-
 	if (action) {
 		setPlayerActionState(player, action, Date.now() + getActionLabelDuration());
-		renderPlayerActionLabel(player);
 	} else {
 		clearPlayerActionState(player);
-		clearPlayerActionLabel(player);
 	}
 
-	if (action === "fold") {
+	renderPlayerResolvedAction(player);
+
+	const followUpEffects = getPlayerActionFollowUpEffects(gameState, player, action);
+	if (followUpEffects.clearWinProbability) {
 		player.winProbability = 0;
+	}
+	if (followUpEffects.revealActiveHoleCards) {
+		revealActiveHoleCards();
+	} else if (followUpEffects.refreshHandStrength) {
 		updateHandStrengthDisplays();
 	}
-
-	if (action !== "check" && isAllInRunout(gameState.players, gameState.currentBet)) {
-		revealActiveHoleCards();
-		if (gameState.currentPhaseIndex > 0) {
-			computeSpectatorWinProbabilities("allin-runout");
-		} else {
-			logFlow("winProbability: preflop all-in runout pending", {
-				action,
-				name: player.name,
-			});
-		}
-	} else if (gameState.spectatorMode && action === "fold") {
-		if (gameState.currentPhaseIndex > 0) {
-			computeSpectatorWinProbabilities("fold");
-		} else {
-			logFlow("winProbability: preflop fold skipped", { name: player.name });
-		}
+	if (followUpEffects.recomputeSpectatorWinProbabilities) {
+		computeSpectatorWinProbabilities(followUpEffects.probabilityReason);
+	} else if (followUpEffects.skipProbabilityLogReason) {
+		logSkippedPlayerActionProbability(player, action, followUpEffects.skipProbabilityLogReason);
 	}
 	queueStateSync(0);
 	updateFastForwardButton();
@@ -2764,7 +2575,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-28-v9";
+const SERVICE_WORKER_VERSION = "2026-03-28-v10";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
