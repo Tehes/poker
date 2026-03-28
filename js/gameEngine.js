@@ -129,6 +129,52 @@ export function isAllInRunout(players, currentBet) {
 	return actionablePlayers[0].roundBet === currentBet;
 }
 
+export function recordPlayerActionStats(gameState, player, actionName) {
+	if (!gameState || !player) {
+		return;
+	}
+
+	if (gameState.currentPhaseIndex === 0) {
+		if (actionName === "call" || actionName === "raise" || actionName === "allin") {
+			player.stats.vpip++;
+		}
+		if (actionName === "raise" || actionName === "allin") {
+			player.stats.pfr++;
+		}
+	} else {
+		if (actionName === "raise" || actionName === "allin") {
+			player.stats.aggressiveActs++;
+		}
+		if (actionName === "call") {
+			player.stats.calls++;
+		}
+	}
+
+	if (gameState.currentPhaseIndex === 0 && (actionName === "raise" || actionName === "allin")) {
+		gameState.players.forEach((currentPlayer) => {
+			if (currentPlayer.botLine) {
+				currentPlayer.botLine.preflopAggressor = false;
+			}
+		});
+		if (player.botLine) {
+			player.botLine.preflopAggressor = true;
+		}
+	}
+
+	if (actionName === "allin") {
+		player.stats.allins++;
+	}
+
+	if (actionName === "fold") {
+		player.stats.folds++;
+		if (gameState.currentPhaseIndex === 0) {
+			player.stats.foldsPreflop++;
+		} else {
+			player.stats.foldsPostflop++;
+		}
+	}
+}
+
 export function areHoleCardsFaceUp(player) {
 	return player.visibleHoleCards.every(Boolean);
 }

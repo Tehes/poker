@@ -26,6 +26,7 @@ import {
 	INITIAL_DECK,
 	INITIAL_SMALL_BLIND,
 	isAllInRunout,
+	recordPlayerActionStats,
 	shuffleArray,
 	takeDeckCard,
 	trackUsedCard,
@@ -306,9 +307,35 @@ function getPlayerNameEl(player) {
 	return getSeatRef(player)?.nameEl ?? null;
 }
 
-function clearPlayerActionLabelState(player) {
-	player.lastActionName = "";
-	player.actionLabelUntil = 0;
+function setPlayerActionState(player, actionName, labelUntil) {
+	if (!player || !actionName || !Number.isFinite(labelUntil)) {
+		clearPlayerActionState(player);
+		return;
+	}
+	player.actionState = {
+		name: actionName,
+		labelUntil,
+	};
+}
+
+function clearPlayerActionState(player) {
+	if (!player) {
+		return;
+	}
+	player.actionState = null;
+}
+
+function getLivePlayerActionState(actionState, now = Date.now()) {
+	if (!actionState?.name || !Number.isFinite(actionState.labelUntil)) {
+		return null;
+	}
+	if (actionState.labelUntil <= now) {
+		return null;
+	}
+	return {
+		name: actionState.name,
+		labelUntil: actionState.labelUntil,
+	};
 }
 
 function clearPlayerWinnerReactionState(player) {
@@ -321,7 +348,7 @@ function bindSeatRefPlayer(player) {
 	if (!seatRef) {
 		return;
 	}
-	seatRef.clearActionLabelState = () => clearPlayerActionLabelState(player);
+	seatRef.clearActionLabelState = () => clearPlayerActionState(player);
 	seatRef.clearWinnerReactionState = () => clearPlayerWinnerReactionState(player);
 }
 
@@ -487,15 +514,16 @@ function clearPlayerActionLabel(player) {
 	clearSeatActionLabel(seatRef, player.name);
 }
 
-function renderPlayerActionLabel(player, actionName, labelUntil) {
+function renderPlayerActionLabel(player) {
 	const seatRef = getSeatRef(player);
 	if (!seatRef) {
 		return;
 	}
+	const actionState = getLivePlayerActionState(player.actionState);
 	renderSeatActionLabel(seatRef, {
 		playerName: player.name,
-		actionName,
-		labelUntil,
+		actionName: actionState?.name,
+		labelUntil: actionState?.labelUntil,
 	});
 }
 
@@ -698,17 +726,21 @@ function getActionLabelDuration() {
 	return ACTION_LABEL_DURATION;
 }
 
-function buildPublicPlayerActionState(player) {
-	if (!player?.lastActionName || !Number.isFinite(player.actionLabelUntil)) {
-		return null;
+function getPlayerActionNotificationText(playerName, actionName, amount = 0) {
+	switch (actionName) {
+		case "fold":
+			return `${playerName} folded.`;
+		case "check":
+			return `${playerName} checked.`;
+		case "call":
+			return `${playerName} called ${amount}.`;
+		case "raise":
+			return `${playerName} raised to ${amount}.`;
+		case "allin":
+			return `${playerName} is all-in.`;
+		default:
+			return `${playerName} did something…`;
 	}
-	if (player.actionLabelUntil <= Date.now()) {
-		return null;
-	}
-	return {
-		name: player.lastActionName,
-		labelUntil: player.actionLabelUntil,
-	};
 }
 
 function buildPublicPlayerWinnerReactionState(player) {
@@ -1055,7 +1087,7 @@ function buildPublicPlayerView(player, communityCards) {
 		winProbability: player.winProbability,
 		showWinProbability: shouldShowTableWinProbability(player),
 		winner: player.isWinner === true,
-		actionState: buildPublicPlayerActionState(player),
+		actionState: getLivePlayerActionState(player.actionState),
 		winnerReaction: buildPublicPlayerWinnerReactionState(player),
 	};
 }
@@ -1524,8 +1556,7 @@ function createPlayers() {
 			winnerReactionEmoji: "",
 			winnerReactionUntil: 0,
 			isWinner: false,
-			lastActionName: "",
-			actionLabelUntil: 0,
+			actionState: null,
 			winProbability: null,
 			seatIndex,
 			holeCards: [null, null],
@@ -1879,83 +1910,33 @@ Turn Handling And Betting Round Flow
 function notifyPlayerAction(player, action = "", amount = 0) {
 	// Remove any previous action indicator before adding a new one
 	removePlayerSeatClasses(player, "checked", "called", "raised", "allin");
-	// Update statistics based on action and phase
-	if (gameState.currentPhaseIndex === 0) {
-		if (action === "call" || action === "raise" || action === "allin") {
-			player.stats.vpip++;
-		}
-		if (action === "raise" || action === "allin") {
-			player.stats.pfr++;
-		}
-	} else {
-		if (action === "raise" || action === "allin") {
-			player.stats.aggressiveActs++;
-		}
-		if (action === "call") {
-			player.stats.calls++;
-		}
-	}
+	recordPlayerActionStats(gameState, player, action);
 
-	if (gameState.currentPhaseIndex === 0 && (action === "raise" || action === "allin")) {
-		gameState.players.forEach((p) => {
-			if (p.botLine) {
-				p.botLine.preflopAggressor = false;
-			}
-		});
-		if (player.botLine) {
-			player.botLine.preflopAggressor = true;
-		}
-	}
-
-	if (action === "allin") {
-		player.stats.allins++;
-	}
-
-	if (action === "fold") {
-		player.stats.folds++;
-		if (gameState.currentPhaseIndex === 0) {
-			player.stats.foldsPreflop++;
-		} else {
-			player.stats.foldsPostflop++;
-		}
-	}
-
-	let msg = "";
-	let actionLabel = "";
+	const msg = getPlayerActionNotificationText(player.name, action, amount);
 	switch (action) {
 		case "fold":
 			addPlayerSeatClasses(player, "folded");
-			actionLabel = "Fold";
-			msg = `${player.name} folded.`;
 			break;
 		case "check":
 			addPlayerSeatClasses(player, "checked");
-			actionLabel = "Check";
-			msg = `${player.name} checked.`;
 			break;
 		case "call":
 			addPlayerSeatClasses(player, "called");
-			actionLabel = `Call ${amount}`;
-			msg = `${player.name} called ${amount}.`;
 			break;
 		case "raise":
 			addPlayerSeatClasses(player, "raised");
-			actionLabel = `Raise ${amount}`;
-			msg = `${player.name} raised to ${amount}.`;
 			break;
 		case "allin":
 			addPlayerSeatClasses(player, "allin");
-			actionLabel = `All-In ${amount}`;
-			msg = `${player.name} is all-in.`;
 			break;
-		default:
-			msg = `${player.name} did something…`;
 	}
-	if (actionLabel) {
-		const actionLabelDuration = getActionLabelDuration();
-		player.lastActionName = action;
-		player.actionLabelUntil = Date.now() + actionLabelDuration;
-		renderPlayerActionLabel(player, action, player.actionLabelUntil);
+
+	if (action) {
+		setPlayerActionState(player, action, Date.now() + getActionLabelDuration());
+		renderPlayerActionLabel(player);
+	} else {
+		clearPlayerActionState(player);
+		clearPlayerActionLabel(player);
 	}
 
 	if (action === "fold") {
@@ -2783,7 +2764,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-28-v8";
+const SERVICE_WORKER_VERSION = "2026-03-28-v9";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
