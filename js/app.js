@@ -32,12 +32,8 @@ import {
 } from "./gameEngine.js";
 import { Hand } from "./pokersolver.js";
 import QrCreator from "./qr-creator.js";
-import {
-	getActionButtonLabel,
-	getActionRequestForAmount,
-	getPlayerActionState,
-} from "./shared/actionModel.js";
-import { createActionAmountControls } from "./shared/seatActionControls.js";
+import { getActionButtonLabel, getPlayerActionState } from "./shared/actionModel.js";
+import { createHumanTurnController } from "./shared/humanTurnController.js";
 import {
 	clearChipTransferAnimation,
 	clearSeatActionLabel,
@@ -91,13 +87,6 @@ const logList = document.querySelector("#log-list");
 const amountSlider = document.querySelector("#amount-slider");
 const amountIncrementButton = document.querySelector("#amount-increment-button");
 const sliderOutput = document.querySelector("output");
-const actionAmountControls = createActionAmountControls({
-	actionButton,
-	amountSlider,
-	sliderOutput,
-	decrementButton: amountDecrementButton,
-	incrementButton: amountIncrementButton,
-});
 const seatRefs = Array.from(document.querySelectorAll(".seat")).map((seatEl, seatSlot) => ({
 	seatSlot,
 	seatEl,
@@ -917,14 +906,6 @@ function activateFastForward() {
 	}
 }
 
-function hideActionControls() {
-	foldButton.classList.add("hidden");
-	actionButton.classList.add("hidden");
-	amountControls.classList.add("hidden");
-	actionAmountControls.clear();
-	updateFastForwardButton();
-}
-
 /* --------------------------------------------------------------------------------------------------
 Analytics And Remote State-Sync Helpers
 ---------------------------------------------------------------------------------------------------*/
@@ -1204,6 +1185,27 @@ function queueStateSync(delay = STATE_SYNC_DELAY) {
 		sendTableState();
 	}, nextDelay);
 }
+
+const humanTurnController = createHumanTurnController({
+	foldButton,
+	actionButton,
+	amountControls,
+	amountSlider,
+	sliderOutput,
+	decrementButton: amountDecrementButton,
+	incrementButton: amountIncrementButton,
+	actionPollInterval: ACTION_POLL_INTERVAL,
+	actionStep: CHIP_UNIT,
+	onControlsHidden: updateFastForwardButton,
+	setActiveTurnPlayer,
+	setPendingAction,
+	clearPendingAction,
+	fetchPendingRemoteAction,
+	applyTurnAction,
+	continueAfterResolvedTurn,
+	getPlayerActionState: (player) => getPlayerActionState(gameState, player),
+	removePlayerSeatClasses,
+});
 
 /* --------------------------------------------------------------------------------------------------
 Card Visibility, Hand-Strength, Reveal, And Winner-Reaction Logic
@@ -1755,7 +1757,7 @@ function preFlop() {
 		logFlow("tournament_end", { champion: champion.name });
 		gameState.gameFinished = true;
 		clearPendingAction();
-		hideActionControls();
+		humanTurnController.hide();
 		resetRuntimeFastForward();
 		if (!SPEED_MODE) {
 			globalThis.umami?.track("Poker", {
@@ -1851,7 +1853,7 @@ function setPhase() {
 }
 
 function queueRunoutPhaseAdvance(reason = "") {
-	hideActionControls();
+	humanTurnController.hide();
 	const runoutPhaseDelay = getRunoutPhaseDelay();
 	if (!isAllInRunout(gameState.players, gameState.currentBet) || runoutPhaseDelay === 0) {
 		return setPhase();
@@ -2121,23 +2123,9 @@ function normalizeBotActionRequest(player, decision) {
 	}
 }
 
-function getHumanAdvanceReason(action) {
-	if (action === "fold") {
-		return "fold";
-	}
-	if (action === "allin") {
-		return "human-allin";
-	}
-	return "human";
-}
-
-function getHumanLogPrefix(action) {
-	return action === "fold" ? "fold" : "human";
-}
-
 function runBotTurn({ player, cycles, anyUncalled, nextPlayer }) {
 	setActiveTurnPlayer(player);
-	hideActionControls();
+	humanTurnController.hide();
 	clearPlayerActionLabel(player);
 	removePlayerSeatClasses(player, "checked", "called", "raised", "allin");
 	setPlayerSeatName(player, "thinking …");
@@ -2166,151 +2154,6 @@ function runBotTurn({ player, cycles, anyUncalled, nextPlayer }) {
 			advanceReason: "bot",
 		});
 	});
-}
-
-function runHumanTurn({ player, cycles, anyUncalled, nextPlayer }) {
-	setActiveTurnPlayer(player);
-	actionButton.classList.remove("hidden");
-	foldButton.classList.remove("hidden");
-	amountControls.classList.remove("hidden");
-	foldButton.disabled = false;
-	actionButton.disabled = false;
-	amountDecrementButton.disabled = false;
-	amountSlider.disabled = false;
-	amountIncrementButton.disabled = false;
-
-	const actionState = getPlayerActionState(gameState, player);
-	const pendingAction = setPendingAction(player);
-	let remoteActionTimer = null;
-	let remoteActionInFlight = false;
-	let turnResolved = false;
-
-	actionAmountControls.render(actionState, {
-		actionStep: CHIP_UNIT,
-		resetAmount: true,
-	});
-
-	function cleanupHumanTurn() {
-		removePlayerSeatClasses(player, "active");
-		foldButton.removeEventListener("click", onFold);
-		actionButton.removeEventListener("click", onAction);
-		hideActionControls();
-		if (remoteActionTimer !== null) {
-			clearTimeout(remoteActionTimer);
-			remoteActionTimer = null;
-		}
-	}
-
-	function normalizeRemoteActionRequest(remoteAction) {
-		if (
-			!remoteAction ||
-			remoteAction.seatIndex !== player.seatIndex ||
-			remoteAction.turnToken !== pendingAction?.turnToken
-		) {
-			return null;
-		}
-
-		switch (remoteAction.action) {
-			case "fold":
-				return { action: "fold" };
-			case "check":
-				return actionState.canCheck ? getActionRequestForAmount(0, actionState) : null;
-			case "call":
-				return actionState.needToCall > 0
-					? getActionRequestForAmount(
-						Math.min(actionState.needToCall, player.chips),
-						actionState,
-					)
-					: null;
-			case "allin":
-				return player.chips > 0 ? { action: "allin", amount: player.chips } : null;
-			case "raise": {
-				const amount = Number.parseInt(remoteAction.amount, 10);
-				if (Number.isNaN(amount) || amount <= actionState.needToCall) {
-					return null;
-				}
-				return getActionRequestForAmount(Math.min(amount, player.chips), actionState);
-			}
-			default:
-				return null;
-		}
-	}
-
-	function submitHumanTurn(actionRequest) {
-		if (turnResolved || !actionRequest) {
-			return false;
-		}
-
-		const resolvedAction = applyTurnAction(player, actionRequest);
-		if (!resolvedAction) {
-			return false;
-		}
-
-		turnResolved = true;
-		clearPendingAction();
-		cleanupHumanTurn();
-		continueAfterResolvedTurn({
-			player,
-			cycles,
-			anyUncalled,
-			nextPlayer,
-			logPrefix: getHumanLogPrefix(resolvedAction.action),
-			advanceReason: getHumanAdvanceReason(resolvedAction.action),
-		});
-		return true;
-	}
-
-	function scheduleRemoteActionPoll() {
-		if (!pendingAction?.turnToken || turnResolved) {
-			return;
-		}
-		remoteActionTimer = setTimeout(pollRemoteAction, ACTION_POLL_INTERVAL);
-	}
-
-	async function pollRemoteAction() {
-		remoteActionTimer = null;
-		if (turnResolved || remoteActionInFlight || !pendingAction?.turnToken) {
-			return;
-		}
-
-		remoteActionInFlight = true;
-		try {
-			const remoteAction = await fetchPendingRemoteAction(pendingAction.turnToken);
-			if (turnResolved) {
-				return;
-			}
-			const normalizedRequest = normalizeRemoteActionRequest(remoteAction);
-			if (normalizedRequest) {
-				submitHumanTurn(normalizedRequest);
-				return;
-			}
-		} finally {
-			remoteActionInFlight = false;
-		}
-
-		if (!turnResolved) {
-			scheduleRemoteActionPoll();
-		}
-	}
-
-	function onAction() {
-		const amount = Number.parseInt(amountSlider.value, 10);
-		if (Number.isNaN(amount)) {
-			return;
-		}
-		const actionRequest = getActionRequestForAmount(amount, actionState);
-		submitHumanTurn(actionRequest);
-	}
-
-	function onFold() {
-		submitHumanTurn({ action: "fold" });
-	}
-
-	foldButton.addEventListener("click", onFold);
-	actionButton.addEventListener("click", onAction);
-	if (pendingAction?.turnToken) {
-		scheduleRemoteActionPoll();
-	}
 }
 
 function startBettingRound() {
@@ -2439,7 +2282,7 @@ function startBettingRound() {
 		}
 
 		// --- Human Branch ------------------------------------------------------------
-		return runHumanTurn({ player, cycles, anyUncalled, nextPlayer });
+		return humanTurnController.runHumanTurn({ player, cycles, anyUncalled, nextPlayer });
 	}
 
 	nextPlayer();
@@ -2557,7 +2400,7 @@ function finishHandAfterShowdown() {
 
 	gameState.handInProgress = false;
 	clearPendingAction();
-	hideActionControls();
+	humanTurnController.hide();
 	if (SPEED_MODE) {
 		queueStateSync();
 		preFlop();
@@ -2887,7 +2730,7 @@ function init() {
 	overlayBackdrop.addEventListener("click", closeAllOverlays, false);
 	globalThis.addEventListener("pagehide", () => trackUnfinishedExit(), false);
 	globalThis.addEventListener("beforeunload", () => trackUnfinishedExit(), false);
-	actionAmountControls.init();
+	humanTurnController.init();
 	renderPot();
 	renderTableCommunityCards(communityCardSlots, gameState.communityCards);
 
@@ -2921,7 +2764,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-28-v6";
+const SERVICE_WORKER_VERSION = "2026-03-28-v7";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

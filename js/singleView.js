@@ -12,7 +12,7 @@ import {
 	getSeatPendingAction,
 	setViewSwitchLinkVisible,
 	shouldShowSeatActionControls,
-} from "./shared/seatActionControls.js";
+} from "./shared/humanTurnController.js";
 import { getSeatView, getTableView } from "./shared/syncViewModel.js";
 
 /* --------------------------------------------------------------------------------------------------

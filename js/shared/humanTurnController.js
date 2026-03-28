@@ -1,10 +1,11 @@
 /* --------------------------------------------------------------------------------------------------
-Seat Action Controls
+Human Turn Controller And Seat Action Controls
 ---------------------------------------------------------------------------------------------------*/
 
-// Shared remote action-control wiring for seat-based views.
-// Put code here for slider/button state, request submission, and pending-action driven visibility.
-// Do not embed poker rules already covered by actionModel, nor polling, rendering, or full game flow here.
+// Shared action-control wiring for host, remote, and single-seat views.
+// Put code here for slider/button state, host human-turn orchestration, request submission, and
+// pending-action driven visibility.
+// Do not embed poker rules already covered by actionModel, nor generic rendering.
 
 import {
 	clampActionAmount,
@@ -57,9 +58,7 @@ function getSteppedActionAmount(currentAmount, actionState, sliderStep, directio
 		return nextAmount;
 	}
 
-	return direction > 0
-		? normalizeActionAmount(nextAmount, actionState)
-		: actionState.minAmount;
+	return direction > 0 ? normalizeActionAmount(nextAmount, actionState) : actionState.minAmount;
 }
 
 export function createActionAmountControls({
@@ -83,7 +82,10 @@ export function createActionAmountControls({
 
 		amountSlider.value = nextAmount;
 		sliderOutput.value = nextAmount;
-		sliderOutput.classList.toggle("invalid", isInvalidRaiseAmount(nextAmount, currentActionState));
+		sliderOutput.classList.toggle(
+			"invalid",
+			isInvalidRaiseAmount(nextAmount, currentActionState),
+		);
 		actionButton.textContent = getActionButtonLabel(nextAmount, currentActionState);
 	}
 
@@ -156,6 +158,246 @@ export function createActionAmountControls({
 		init,
 		clear,
 		render,
+	};
+}
+
+function getHumanAdvanceReason(action) {
+	if (action === "fold") {
+		return "fold";
+	}
+	if (action === "allin") {
+		return "human-allin";
+	}
+	return "human";
+}
+
+function getHumanLogPrefix(action) {
+	return action === "fold" ? "fold" : "human";
+}
+
+export function createHumanTurnController({
+	foldButton,
+	actionButton,
+	amountControls,
+	amountSlider,
+	sliderOutput,
+	decrementButton = null,
+	incrementButton = null,
+	actionPollInterval = 1000,
+	actionStep = 10,
+	onControlsHidden = null,
+	setActiveTurnPlayer,
+	setPendingAction,
+	clearPendingAction,
+	fetchPendingRemoteAction,
+	applyTurnAction,
+	continueAfterResolvedTurn,
+	getPlayerActionState,
+	removePlayerSeatClasses,
+}) {
+	let isInitialized = false;
+	let activeTurnCleanup = null;
+	const actionAmountControls = createActionAmountControls({
+		actionButton,
+		amountSlider,
+		sliderOutput,
+		decrementButton,
+		incrementButton,
+	});
+
+	function setVisible(isVisible) {
+		foldButton.classList.toggle("hidden", !isVisible);
+		actionButton.classList.toggle("hidden", !isVisible);
+		amountControls.classList.toggle("hidden", !isVisible);
+	}
+
+	function setEnabled(enabled) {
+		foldButton.disabled = !enabled;
+		actionButton.disabled = !enabled;
+		amountSlider.disabled = !enabled;
+		if (decrementButton) {
+			decrementButton.disabled = !enabled;
+		}
+		if (incrementButton) {
+			incrementButton.disabled = !enabled;
+		}
+	}
+
+	function resetControls() {
+		setVisible(false);
+		actionAmountControls.clear();
+		setEnabled(false);
+		onControlsHidden?.();
+	}
+
+	function init() {
+		if (isInitialized) {
+			return;
+		}
+		actionAmountControls.init();
+		isInitialized = true;
+		resetControls();
+	}
+
+	function hide() {
+		resetControls();
+	}
+
+	function runHumanTurn({ player, cycles, anyUncalled, nextPlayer }) {
+		if (!isInitialized) {
+			init();
+		}
+		if (typeof activeTurnCleanup === "function") {
+			activeTurnCleanup();
+		}
+
+		setActiveTurnPlayer(player);
+		setVisible(true);
+		setEnabled(true);
+
+		const actionState = getPlayerActionState(player);
+		const pendingAction = setPendingAction(player);
+		let remoteActionTimer = null;
+		let remoteActionInFlight = false;
+		let turnResolved = false;
+
+		actionAmountControls.render(actionState, {
+			actionStep,
+			resetAmount: true,
+		});
+
+		function cleanupHumanTurn() {
+			removePlayerSeatClasses(player, "active");
+			foldButton.removeEventListener("click", onFold);
+			actionButton.removeEventListener("click", onAction);
+			resetControls();
+			if (remoteActionTimer !== null) {
+				clearTimeout(remoteActionTimer);
+				remoteActionTimer = null;
+			}
+			activeTurnCleanup = null;
+		}
+
+		activeTurnCleanup = cleanupHumanTurn;
+
+		function normalizeRemoteActionRequest(remoteAction) {
+			if (
+				!remoteAction ||
+				remoteAction.seatIndex !== player.seatIndex ||
+				remoteAction.turnToken !== pendingAction?.turnToken
+			) {
+				return null;
+			}
+
+			switch (remoteAction.action) {
+				case "fold":
+					return { action: "fold" };
+				case "check":
+					return actionState.canCheck ? getActionRequestForAmount(0, actionState) : null;
+				case "call":
+					return actionState.needToCall > 0
+						? getActionRequestForAmount(
+							Math.min(actionState.needToCall, player.chips),
+							actionState,
+						)
+						: null;
+				case "allin":
+					return player.chips > 0 ? { action: "allin", amount: player.chips } : null;
+				case "raise": {
+					const amount = Number.parseInt(remoteAction.amount, 10);
+					if (Number.isNaN(amount) || amount <= actionState.needToCall) {
+						return null;
+					}
+					return getActionRequestForAmount(Math.min(amount, player.chips), actionState);
+				}
+				default:
+					return null;
+			}
+		}
+
+		function submitHumanTurn(actionRequest) {
+			if (turnResolved || !actionRequest) {
+				return false;
+			}
+
+			setEnabled(false);
+			const resolvedAction = applyTurnAction(player, actionRequest);
+			if (!resolvedAction) {
+				setEnabled(true);
+				return false;
+			}
+
+			turnResolved = true;
+			clearPendingAction();
+			cleanupHumanTurn();
+			continueAfterResolvedTurn({
+				player,
+				cycles,
+				anyUncalled,
+				nextPlayer,
+				logPrefix: getHumanLogPrefix(resolvedAction.action),
+				advanceReason: getHumanAdvanceReason(resolvedAction.action),
+			});
+			return true;
+		}
+
+		function scheduleRemoteActionPoll() {
+			if (!pendingAction?.turnToken || turnResolved) {
+				return;
+			}
+			remoteActionTimer = setTimeout(pollRemoteAction, actionPollInterval);
+		}
+
+		async function pollRemoteAction() {
+			remoteActionTimer = null;
+			if (turnResolved || remoteActionInFlight || !pendingAction?.turnToken) {
+				return;
+			}
+
+			remoteActionInFlight = true;
+			try {
+				const remoteAction = await fetchPendingRemoteAction(pendingAction.turnToken);
+				if (turnResolved) {
+					return;
+				}
+				const normalizedRequest = normalizeRemoteActionRequest(remoteAction);
+				if (normalizedRequest) {
+					submitHumanTurn(normalizedRequest);
+					return;
+				}
+			} finally {
+				remoteActionInFlight = false;
+			}
+
+			if (!turnResolved) {
+				scheduleRemoteActionPoll();
+			}
+		}
+
+		function onAction() {
+			const amount = Number.parseInt(amountSlider.value, 10);
+			if (Number.isNaN(amount)) {
+				return;
+			}
+			const actionRequest = getActionRequestForAmount(amount, actionState);
+			submitHumanTurn(actionRequest);
+		}
+
+		function onFold() {
+			submitHumanTurn({ action: "fold" });
+		}
+
+		foldButton.addEventListener("click", onFold);
+		actionButton.addEventListener("click", onAction);
+		if (pendingAction?.turnToken) {
+			scheduleRemoteActionPoll();
+		}
+	}
+
+	return {
+		init,
+		hide,
+		runHumanTurn,
 	};
 }
 
