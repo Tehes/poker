@@ -108,8 +108,9 @@ button:disabled {
 .amount-step-button {
     flex: 0 0 45px;
     padding: 1.5vmin 0;
-    margin: 0 1vmin;
-    max-height: 45px;
+    margin: 0;
+    max-height: 25px;
+    border-radius: 999px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -123,6 +124,8 @@ button:disabled {
     display: flex;
     align-items: center;
     flex-wrap: nowrap;
+    gap: 2vmin;
+    margin: 0 2vmin;
 }
 
 .action-link {
@@ -157,7 +160,7 @@ button:disabled {
 input[type=range] {
     flex: 1 1 auto;
     min-width: 0;
-    margin: 2vmin 1vmin;
+    margin: 10px 0;
     -webkit-appearance: none;
     appearance: none;
     height: 25px;

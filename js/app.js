@@ -337,7 +337,7 @@ function bindSeatRefPlayer(player) {
 function buildPlayerSeatState(player, communityCards = getCommunityCardCodes()) {
 	const publicPlayerView = buildPublicPlayerView(player, communityCards, gameState);
 	const winProbabilityLabel = publicPlayerView.showWinProbability &&
-		typeof publicPlayerView.winProbability === "number"
+			typeof publicPlayerView.winProbability === "number"
 		? `${Math.round(publicPlayerView.winProbability)}%`
 		: "";
 
@@ -2575,7 +2575,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-28-v10";
+const SERVICE_WORKER_VERSION = "2026-03-29-v1";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
