@@ -105,6 +105,177 @@ export function buildSplitPayouts(amount, winners, players, chipUnit = 10) {
 	return payouts;
 }
 
+function buildSidePots(contributors) {
+	const sidePots = [];
+	const sorted = contributors.slice().sort((a, b) => a.totalBet - b.totalBet);
+	let previousLevel = 0;
+
+	for (let i = 0; i < sorted.length; i++) {
+		const level = sorted[i].totalBet;
+		const diff = level - previousLevel;
+		if (diff <= 0) {
+			continue;
+		}
+		const eligible = sorted.slice(i);
+		sidePots.push({
+			amount: diff * eligible.length,
+			eligible,
+		});
+		previousLevel = level;
+	}
+
+	return sidePots;
+}
+
+function mergeEquivalentSidePots(sidePots) {
+	for (let i = 0; i < sidePots.length - 1;) {
+		const eligibleA = sidePots[i].eligible.filter((player) => !player.folded);
+		const eligibleB = sidePots[i + 1].eligible.filter((player) => !player.folded);
+
+		const sameEligible = eligibleA.length === eligibleB.length &&
+			eligibleA.every((player) => eligibleB.includes(player));
+
+		if (sameEligible) {
+			sidePots[i].amount += sidePots[i + 1].amount;
+			sidePots.splice(i + 1, 1);
+		} else {
+			i++;
+		}
+	}
+
+	return sidePots;
+}
+
+function buildTotalPayoutByPlayer(transferQueue) {
+	return transferQueue.reduce((payouts, transfer) => {
+		const currentTotal = payouts.get(transfer.player) || 0;
+		payouts.set(transfer.player, currentTotal + transfer.amount);
+		return payouts;
+	}, new Map());
+}
+
+export function resolveShowdown(players, communityCards, chipUnit = 10) {
+	const activePlayers = players.filter((player) => !player.folded);
+	const contributors = players.filter((player) => player.totalBet > 0);
+	const totalPot = contributors.reduce((sum, player) => sum + player.totalBet, 0);
+	const hadShowdown = activePlayers.length > 1;
+	const emptyResult = {
+		activePlayers,
+		contributors,
+		hadShowdown,
+		uncontestedWinner: null,
+		mainPotWinners: [],
+		winningPlayers: [],
+		transferQueue: [],
+		potResults: [],
+		totalPayoutByPlayer: new Map(),
+		totalPot,
+	};
+
+	if (activePlayers.length === 0) {
+		return emptyResult;
+	}
+
+	if (activePlayers.length === 1) {
+		const winner = activePlayers[0];
+		const transferQueue = [{ player: winner, amount: totalPot }];
+		return {
+			...emptyResult,
+			uncontestedWinner: winner,
+			mainPotWinners: [winner],
+			winningPlayers: [winner],
+			transferQueue,
+			totalPayoutByPlayer: buildTotalPayoutByPlayer(transferQueue),
+		};
+	}
+
+	const sidePots = mergeEquivalentSidePots(buildSidePots(contributors));
+	const transferQueue = [];
+	const potResults = [];
+	let mainPotWinners = [];
+	const winningPlayers = new Set();
+
+	sidePots.forEach((sidePot, potIndex) => {
+		const eligiblePlayers = sidePot.eligible.filter((player) => !player.folded);
+		if (eligiblePlayers.length === 0) {
+			return;
+		}
+
+		if (eligiblePlayers.length === 1) {
+			const solePlayer = eligiblePlayers[0];
+			const isRefundOnly = sidePot.eligible.length === 1;
+			if (potIndex === 0) {
+				mainPotWinners = [solePlayer];
+			}
+			transferQueue.push({ player: solePlayer, amount: sidePot.amount });
+			if (!isRefundOnly) {
+				winningPlayers.add(solePlayer);
+			}
+			potResults.push({
+				players: [solePlayer.name],
+				amount: sidePot.amount,
+				hand: null,
+				isRefundOnly,
+			});
+			return;
+		}
+
+		const handEntries = eligiblePlayers.map((player) => ({
+			player,
+			handObj: Hand.solve([...player.holeCards, ...communityCards]),
+		}));
+		const winningHands = Hand.winners(handEntries.map((entry) => entry.handObj));
+		const potWinners = winningHands.map((winnerHand) => {
+			const winnerEntry = handEntries.find((entry) => entry.handObj === winnerHand);
+			return winnerEntry.player;
+		});
+		const splitPayouts = buildSplitPayouts(sidePot.amount, potWinners, players, chipUnit);
+
+		if (potIndex === 0) {
+			mainPotWinners = potWinners.slice();
+		}
+
+		winningHands.forEach((winnerHand) => {
+			const winnerEntry = handEntries.find((entry) => entry.handObj === winnerHand);
+			winningPlayers.add(winnerEntry.player);
+			transferQueue.push({
+				player: winnerEntry.player,
+				amount: splitPayouts.get(winnerEntry.player) || 0,
+			});
+		});
+
+		if (winningHands.length === 1) {
+			const winnerEntry = handEntries.find((entry) => entry.handObj === winningHands[0]);
+			potResults.push({
+				players: [winnerEntry.player.name],
+				amount: sidePot.amount,
+				hand: winningHands[0].name,
+				isRefundOnly: false,
+			});
+			return;
+		}
+
+		potResults.push({
+			players: winningHands.map((winnerHand) => {
+				const winnerEntry = handEntries.find((entry) => entry.handObj === winnerHand);
+				return winnerEntry.player.name;
+			}),
+			amount: sidePot.amount,
+			hand: null,
+			isRefundOnly: false,
+		});
+	});
+
+	return {
+		...emptyResult,
+		mainPotWinners,
+		winningPlayers: Array.from(winningPlayers),
+		transferQueue,
+		potResults,
+		totalPayoutByPlayer: buildTotalPayoutByPlayer(transferQueue),
+	};
+}
+
 export function combinationCount(n, k) {
 	if (k < 0 || k > n) {
 		return 0;

@@ -195,10 +195,14 @@ input[type=range]:disabled {
 }
 
 output {
-    width: 58px;
+    width: 76px;
     text-align: center;
+    background-color: var(--blue);
+    box-shadow: inset var(--shadow-pressed);
     color: var(--yellow);
-    font-size: 1.2em;
+    border-radius: 999px;
+    padding: 5px 1rem;
+    font-size: 1em;
 }
 
 output.invalid {
@@ -391,7 +395,7 @@ TABLE-MIDDLE
     background-color: var(--blue);
     box-shadow: inset var(--shadow-pressed);
     color: var(--yellow);
-    border-radius: 30px;
+    border-radius: 999px;
     min-width: 85px;
     text-align: center;
     flex: 0 0 auto;

@@ -2,6 +2,7 @@
 // Current state: this file is still a transition layer and therefore contains legacy code that mixes
 // orchestration with some engine-adjacent logic.
 // Target state: app.js should coordinate modules, while pure poker logic lives in gameEngine.js and
+// browser-facing helpers live in the shared modules.
 // Put code here when it coordinates engine state, bots, sync, timers, analytics, or DOM side effects.
 // Do not add pure poker rules, reusable action math, sync schema helpers, or generic render-only helpers here.
 // Prefer moving new code toward the existing modules instead of introducing additional modules.
@@ -12,7 +13,6 @@ Imports
 
 import { chooseBotAction, enqueueBotAction, setBotPlaybackFast } from "./bot.js";
 import {
-	buildSplitPayouts,
 	calculateWinProbabilities,
 	getBettingRoundStartIndex,
 	getBlindSeatIndexes,
@@ -26,11 +26,11 @@ import {
 	INITIAL_SMALL_BLIND,
 	isAllInRunout,
 	recordPlayerActionStats,
+	resolveShowdown,
 	shuffleArray,
 	takeDeckCard,
 	trackUsedCard,
 } from "./gameEngine.js";
-import { Hand } from "./pokersolver.js";
 import QrCreator from "./qr-creator.js";
 import { getActionButtonLabel, getPlayerActionState } from "./shared/actionModel.js";
 import { createHumanTurnController } from "./shared/humanTurnController.js";
@@ -2246,41 +2246,50 @@ function doShowdown() {
 	// Reset round bets now that they are in the pot
 	gameState.players.forEach((p) => resetPlayerRoundBet(p));
 
-	// Filter active players
-	const activePlayers = gameState.players.filter((p) => !p.folded);
-	const contributors = gameState.players.filter((p) => p.totalBet > 0);
+	const communityCards = getCommunityCardCodes();
+	const {
+		activePlayers,
+		contributors,
+		hadShowdown,
+		uncontestedWinner,
+		mainPotWinners,
+		winningPlayers,
+		transferQueue,
+		potResults,
+		totalPayoutByPlayer,
+		totalPot,
+	} = resolveShowdown(gameState.players, communityCards, CHIP_UNIT);
 
-	const hadShowdown = activePlayers.length > 1;
 	if (hadShowdown) {
 		activePlayers.forEach((p) => p.stats.showdowns++);
-	}
-
-	// Reveal hole cards of all active players
-	if (activePlayers.length > 1) {
 		revealActiveHoleCards();
 	}
 
-	// --- Single Winner Path ------------------------------------------------------
-	// Single-player case: immediate win (no hand needed)
-	if (activePlayers.length === 1) {
-		const winner = activePlayers[0];
-		const communityCards = getCommunityCardCodes();
-		const totalPayoutByPlayer = new Map([[winner, gameState.pot]]);
+	winningPlayers.forEach((player) => {
+		player.stats.handsWon++;
+		if (hadShowdown) {
+			player.stats.showdownsWon++;
+		}
+	});
+
+	mainPotWinners.forEach((player) => {
+		player.isWinner = true;
+		renderPlayerWinnerState(player, true);
+		removePlayerSeatClasses(player, "active");
+	});
+
+	if (uncontestedWinner) {
 		const revealedPlayers = new Set();
-		const revealDecision = getBotRevealDecision(winner, communityCards);
-		winner.stats.handsWon++;
-		winner.isWinner = true;
-		renderPlayerWinnerState(winner, true);
-		removePlayerSeatClasses(winner, "active");
+		const revealDecision = getBotRevealDecision(uncontestedWinner, communityCards);
 		if (revealDecision) {
-			revealedPlayers.add(winner);
-			applyBotReveal(winner, revealDecision);
-			registerBotReveal(winner);
+			revealedPlayers.add(uncontestedWinner);
+			applyBotReveal(uncontestedWinner, revealDecision);
+			registerBotReveal(uncontestedWinner);
 			enqueueNotification(
-				`${winner.name} reveals ${revealDecision.codes.map(formatCardLabel).join(" ")}`,
+				`${uncontestedWinner.name} reveals ${revealDecision.codes.map(formatCardLabel).join(" ")}`,
 			);
 		} else {
-			hidePlayerQr(winner);
+			hidePlayerQr(uncontestedWinner);
 		}
 		triggerMainPotWinnerReactions({
 			activePlayerCount: activePlayers.length,
@@ -2288,159 +2297,20 @@ function doShowdown() {
 			communityCards,
 			contributors,
 			hadShowdown,
-			mainPotWinnerCount: 1,
-			mainPotWinners: [winner],
+			mainPotWinnerCount: mainPotWinners.length,
+			mainPotWinners,
 			revealedPlayers,
 			totalPayoutByPlayer,
 		});
-		enqueueNotification(`${winner.name} wins ${gameState.pot}!`);
-		startChipTransferAnimation([{ player: winner, amount: gameState.pot }], () => {
+		enqueueNotification(`${uncontestedWinner.name} wins ${totalPot}!`);
+		startChipTransferAnimation(transferQueue, () => {
 			finishHandAfterShowdown();
 		});
 		return;
 	}
 
-	const communityCards = getCommunityCardCodes();
-
-	// --- Side Pot Construction ---------------------------------------------------
-	// ---- Build side pots based on each player's totalBet ----
-	const contenders = contributors.slice();
-	const sidePots = [];
-	const sorted = contenders.slice().sort((a, b) => a.totalBet - b.totalBet);
-	let prev = 0;
-	for (let i = 0; i < sorted.length; i++) {
-		const lvl = sorted[i].totalBet;
-		const diff = lvl - prev;
-		if (diff > 0) {
-			const eligible = sorted.slice(i);
-			sidePots.push({
-				amount: diff * eligible.length,
-				eligible,
-			});
-			prev = lvl;
-		}
-	}
-
-	// ------------------------------------------------------------------
-	// COSMETIC MERGE: combine consecutive side pots whose eligible
-	// player sets are identical.  This removes tiny "blind-only" pots
-	// when all remaining contenders have contributed to the next level.
-	for (let i = 0; i < sidePots.length - 1;) {
-		const eligA = sidePots[i].eligible.filter((p) => !p.folded);
-		const eligB = sidePots[i + 1].eligible.filter((p) => !p.folded);
-
-		const sameEligible = eligA.length === eligB.length &&
-			eligA.every((p) => eligB.includes(p));
-
-		if (sameEligible) {
-			// Merge amounts and discard the next pot
-			sidePots[i].amount += sidePots[i + 1].amount;
-			sidePots.splice(i + 1, 1);
-			// Do not increment i – check the newly merged pot against the next
-		} else {
-			i++; // move to next pair
-		}
-	}
-	// ------------------------------------------------------------------
-
-	// ---- Collect animated chip transfers ----
-	const transferQueue = [];
-	const winnersSet = new Set();
-	let mainPotWinners = [];
-
-	// --- Pot Evaluation ----------------------------------------------------------
-	// ---- Evaluate each side pot ----
-	// Collect results for notification consolidation
-	const potResults = [];
-	sidePots.forEach((sp, potIdx) => {
-		const spHands = sp.eligible
-			.filter((p) => !p.folded) // only players still in the hand can win
-			.map((p) => {
-				const seven = [...p.holeCards, ...communityCards];
-				return { player: p, handObj: Hand.solve(seven) };
-			});
-
-		// --- If only one player is eligible for this pot, refund/award it immediately ---
-		if (sp.eligible.filter((p) => !p.folded).length === 1) {
-			const solePlayer = sp.eligible.find((p) => !p.folded);
-			if (potIdx === 0) {
-				mainPotWinners = [solePlayer];
-			}
-			transferQueue.push({ player: solePlayer, amount: sp.amount });
-			if (!winnersSet.has(solePlayer)) {
-				solePlayer.stats.handsWon++;
-				if (hadShowdown) solePlayer.stats.showdownsWon++;
-				winnersSet.add(solePlayer);
-			}
-			// Collect for notification consolidation
-			potResults.push({ players: [solePlayer.name], amount: sp.amount, hand: null });
-			return;
-		}
-
-		const winners = Hand.winners(spHands.map((h) => h.handObj));
-		const potWinners = winners.map((winnerHand) => {
-			const winnerEntry = spHands.find((h) => h.handObj === winnerHand);
-			return winnerEntry.player;
-		});
-		// Use odd-chip payouts here so split pots stay on 10-chip stacks.
-		const splitPayouts = buildSplitPayouts(
-			sp.amount,
-			potWinners,
-			gameState.players,
-			CHIP_UNIT,
-		);
-		if (potIdx === 0) {
-			mainPotWinners = potWinners.slice();
-		}
-
-		winners.forEach((w) => {
-			const entry = spHands.find((h) => h.handObj === w);
-			const payout = splitPayouts.get(entry.player) || 0;
-			transferQueue.push({ player: entry.player, amount: payout });
-			if (!winnersSet.has(entry.player)) {
-				entry.player.stats.handsWon++;
-				if (hadShowdown) entry.player.stats.showdownsWon++;
-				winnersSet.add(entry.player);
-			}
-			// Highlight winners only for the main pot
-			if (potIdx === 0) {
-				entry.player.isWinner = true;
-				renderPlayerWinnerState(entry.player, true);
-				removePlayerSeatClasses(entry.player, "active");
-			}
-		});
-
-		// ---- Build detailed payout message for this pot ----
-		if (winners.length === 1 && sidePots.length === 1) {
-			// Only one pot in the hand and a single winner â†’ concise wording
-			const entry = spHands.find((h) => h.handObj === winners[0]);
-			potResults.push({
-				players: [entry.player.name],
-				amount: sp.amount,
-				hand: winners[0].name,
-			});
-		} else if (winners.length === 1) {
-			// Single winner but multiple pots in the hand
-			const entry = spHands.find((h) => h.handObj === winners[0]);
-			potResults.push({
-				players: [entry.player.name],
-				amount: sp.amount,
-				hand: winners[0].name,
-			});
-		} else {
-			potResults.push({
-				players: winners.map((w) => {
-					const e = spHands.find((h) => h.handObj === w);
-					return `${e.player.name}`;
-				}),
-				amount: sp.amount,
-				hand: null,
-			});
-		}
-	});
-
-	// Filter out side-pots where the winner only gets their own bet back (no profit)
-	const filteredResults = potResults.filter((r) => !(r.players.length === 1 && r.hand === null));
+	// Skip pure refund-only side pots in the log. They animate correctly, but they are not real wins.
+	const filteredResults = potResults.filter((result) => result.isRefundOnly !== true);
 
 	// --- Notification Consolidation ----------------------------------------------
 	// Consolidate notifications: if same player wins all pots, combine amounts
@@ -2466,11 +2336,6 @@ function doShowdown() {
 		}
 	}
 
-	const totalPayoutByPlayer = transferQueue.reduce((payouts, transfer) => {
-		const currentTotal = payouts.get(transfer.player) || 0;
-		payouts.set(transfer.player, currentTotal + transfer.amount);
-		return payouts;
-	}, new Map());
 	triggerMainPotWinnerReactions({
 		activePlayerCount: activePlayers.length,
 		bigBlind: gameState.bigBlind,
@@ -2575,7 +2440,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-29-v1";
+const SERVICE_WORKER_VERSION = "2026-03-29-v2";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
