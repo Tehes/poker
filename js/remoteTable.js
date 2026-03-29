@@ -1,11 +1,19 @@
+/* ==================================================================================================
+MODULE BOUNDARY: Synced Remote Table Runtime
+================================================================================================== */
+
+// CURRENT STATE: Polls one table projection and maps synchronized state into shared table-view
+// renderer and action-control helpers.
+// TARGET STATE: Stay a thin runtime wrapper around polling, projection mapping, and shared helper
+// composition.
+// PUT HERE: Remote table polling, projection handling, and glue code that connects shared view and
+// control modules.
+// DO NOT PUT HERE: Reimplemented poker rules, sync schema helpers, or generic render-only
+// primitives.
+
 /* --------------------------------------------------------------------------------------------------
 Imports
 ---------------------------------------------------------------------------------------------------*/
-
-// Synced remote-table runtime.
-// Put code here for polling one table projection and mapping synced state into shared table-view
-// renderer and action-control helpers.
-// Do not reimplement poker rules, sync schema helpers, or generic render-only primitives here.
 
 import {
 	configureViewSwitchLink,

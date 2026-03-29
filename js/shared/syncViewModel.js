@@ -1,9 +1,13 @@
-/* --------------------------------------------------------------------------------------------------
-Sync View Model Helpers
----------------------------------------------------------------------------------------------------*/
-// Shared sync schema and payload access helpers.
-// Put code here for payload versioning, projection lookup, and shape helpers shared by table, seat, and backend code.
-// Do not fetch, render, poll, or compute poker flow here.
+/* ==================================================================================================
+MODULE BOUNDARY: Shared Sync View Model
+================================================================================================== */
+
+// CURRENT STATE: Shared sync schema and projection helpers for host, seat, and backend code.
+// TARGET STATE: Remain the single source of truth for synchronized payload shape, versioning, and
+// public versus private seat projections.
+// PUT HERE: Payload versioning, projection lookup, and shape helpers shared by table, seat, and
+// backend code.
+// DO NOT PUT HERE: Fetching, rendering, polling, or poker-flow decisions.
 
 import {
 	areHoleCardsFaceUp,

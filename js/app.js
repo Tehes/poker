@@ -1,11 +1,18 @@
-// Main table runtime.
-// Current state: this file is still a transition layer and therefore contains legacy code that mixes
-// orchestration with some engine-adjacent logic.
-// Target state: app.js should coordinate modules, while pure poker logic lives in gameEngine.js and
-// browser-facing helpers live in the shared modules.
-// Put code here when it coordinates engine state, bots, sync, timers, analytics, or DOM side effects.
-// Do not add pure poker rules, reusable action math, sync schema helpers, or generic render-only helpers here.
-// Prefer moving new code toward the existing modules instead of introducing additional modules.
+/* ==================================================================================================
+MODULE BOUNDARY: Main Table Runtime
+================================================================================================== */
+
+// CURRENT STATE: Coordinates browser-facing game flow, bots, sync, timers, analytics, and DOM
+// effects. Showdown resolution is now extracted, but some setup and betting-round orchestration
+// still remains here as legacy transition code.
+// TARGET STATE: app.js should stay as the browser-facing orchestrator only. Pure poker rules and
+// state transforms should live in gameEngine.js, while reusable UI, sync, and control primitives
+// should live in shared/*.
+// PUT HERE: Engine orchestration, notifications, timers, sync, analytics, bot playback, and DOM
+// side effects.
+// DO NOT PUT HERE: Pure poker rules, reusable action math, sync schema helpers, or generic
+// render-only helpers.
+// PREFERENCE: Extend the existing modules before introducing new ones.
 
 /* --------------------------------------------------------------------------------------------------
 Imports

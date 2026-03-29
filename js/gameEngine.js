@@ -1,17 +1,19 @@
 import { Hand } from "./pokersolver.js";
 
-/* --------------------------------------------------------------------------------------------------
-Engine Foundations
----------------------------------------------------------------------------------------------------*/
+/* ==================================================================================================
+MODULE BOUNDARY: Pure Poker Engine
+================================================================================================== */
 
-// Pure poker engine helpers and constants used by the table runtime.
-// Current state: this module is intentionally partial; some legacy engine logic still lives in app.js
-// and should move here gradually when it can be separated from DOM and runtime concerns.
-// Target state: gameEngine.js should own pure poker rules and state transforms, while app.js only
-// orchestrates browser-facing flow.
-// Put code here when logic depends only on explicit inputs and can run without DOM, fetch, timers, or view objects.
-// Do not add element refs, sync payload shaping, notification handling, or browser side effects here.
-// Prefer extending this module or the existing shared modules instead of creating new ones.
+// CURRENT STATE: Owns hand evaluation, payout math, showdown resolution, and other pure poker
+// helpers used by the table runtime. Some setup and betting-round state transforms still remain in
+// app.js.
+// TARGET STATE: gameEngine.js should own every pure poker rule and state transform that can run
+// without DOM, fetch, timers, or view objects, while app.js only orchestrates browser-facing flow.
+// PUT HERE: Deterministic poker rules, hand evaluation, payouts, betting order helpers, and state
+// transforms derived from explicit inputs.
+// DO NOT PUT HERE: Element refs, sync payload shaping, notification handling, network access, or
+// browser side effects.
+// PREFERENCE: Extend this module or the existing shared modules before creating new modules.
 
 export const PHASES = ["preflop", "flop", "turn", "river", "showdown"];
 

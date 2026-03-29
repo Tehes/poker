@@ -1,10 +1,14 @@
-/* --------------------------------------------------------------------------------------------------
-Action Model Helpers
----------------------------------------------------------------------------------------------------*/
+/* ==================================================================================================
+MODULE BOUNDARY: Shared Action Model
+================================================================================================== */
 
-// Shared action math for table and seat controls.
-// Put code here when check/call/raise/all-in math can be derived from explicit game state only.
-// Do not submit actions, read DOM controls, or own turn flow here.
+// CURRENT STATE: Single shared source of truth for check, call, raise, and all-in amount math used
+// by host and seat controls.
+// TARGET STATE: Keep all action math that can be derived from explicit game state in one place so
+// every UI uses the same rules.
+// PUT HERE: Amount normalization, button labels, and semantic action derivation from explicit game
+// state.
+// DO NOT PUT HERE: Action submission, DOM control handling, polling, or turn-flow ownership.
 
 export function getPlayerActionState(gameState, player) {
 	const needToCall = Math.max(0, gameState.currentBet - player.roundBet);

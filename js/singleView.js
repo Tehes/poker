@@ -1,10 +1,19 @@
+/* ==================================================================================================
+MODULE BOUNDARY: Synced Single-Seat Runtime
+================================================================================================== */
+
+// CURRENT STATE: Polls one private seat projection and maps synchronized state into the local seat
+// view.
+// TARGET STATE: Stay a thin runtime wrapper around seat projection polling and private-seat UI
+// mapping.
+// PUT HERE: Seat polling, projection handling, and glue code that connects shared helpers to the
+// local seat UI.
+// DO NOT PUT HERE: Recomputed poker rules, visibility decisions, shared action math, or renderer
+// primitives.
+
 /* --------------------------------------------------------------------------------------------------
 Imports
 ---------------------------------------------------------------------------------------------------*/
-
-// Synced single-seat runtime.
-// Put code here for polling one seat projection and mapping synced state into the private seat view.
-// Do not recompute poker rules or visibility decisions, and do not move shared action math or renderer primitives here.
 
 import {
 	configureViewSwitchLink,

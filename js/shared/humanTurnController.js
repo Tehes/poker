@@ -1,13 +1,17 @@
-/* --------------------------------------------------------------------------------------------------
-Human Turn Controller And Seat Action Controls
----------------------------------------------------------------------------------------------------*/
+/* ==================================================================================================
+MODULE BOUNDARY: Shared Human Turn Controller
+================================================================================================== */
 
-// Shared action-control wiring for host, remote, and single-seat views.
-// This file is intentionally layered:
+// CURRENT STATE: Shared action-control shell for the host table, remote table, and private seat
+// views.
+// TARGET STATE: Keep input wiring and control-state synchronization shared, while poker rules stay
+// in actionModel and runtime flow ownership stays with the callers.
+// LAYERS:
 // 1) amount-only slider/button math
 // 2) one shared interactive control shell
 // 3) thin flow-specific wrappers for host and synced seat views
-// Do not embed poker rules already covered by actionModel, nor generic rendering.
+// DO NOT PUT HERE: Poker rules already covered by actionModel, sync schema helpers, or generic
+// rendering primitives.
 
 import {
 	clampActionAmount,

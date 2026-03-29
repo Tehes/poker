@@ -1,12 +1,17 @@
-/*
- * bot.js
- *
- * Implements the poker bot's decision-making logic, including hand evaluation,
- * action selection based on game context, and managing delayed execution of bot actions.
- *
- * Winner-take-all tournament with no payout ladder: bot decisions are chip-EV driven
- * (plus M-ratio zones) with a light elimination-risk guardrail for large calls.
- */
+/* ==================================================================================================
+MODULE BOUNDARY: Bot Decision Engine
+================================================================================================== */
+
+// CURRENT STATE: Owns poker bot decision logic, including hand evaluation, action selection, debug
+// instrumentation, and queued action playback timing.
+// TARGET STATE: Stay the single place for autonomous bot behavior, while pure generic poker rules
+// remain in gameEngine.js and browser-facing flow stays in app.js.
+// PUT HERE: Bot heuristics, opponent-independent decision rules, debug hooks, and delayed execution
+// control for bot actions.
+// DO NOT PUT HERE: DOM updates, sync payload shaping, notification flow, or generic poker helpers
+// that should be reused outside bot play.
+// STRATEGY NOTE: Winner-take-all tournament with no payout ladder. Bot decisions are chip-EV driven
+// with M-ratio zones and a light elimination-risk guardrail for large calls.
 
 import { Card, Hand } from "./pokersolver.js";
 

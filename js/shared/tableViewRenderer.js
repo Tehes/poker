@@ -1,10 +1,14 @@
-/* --------------------------------------------------------------------------------------------------
-Table View Renderer Helpers
----------------------------------------------------------------------------------------------------*/
+/* ==================================================================================================
+MODULE BOUNDARY: Shared Table View Renderer
+================================================================================================== */
 
-// Shared DOM renderer for synced table views, including seat state and transient table animations.
-// Put code here when a caller already decided the display state and only the DOM update is missing.
-// Do not decide poker rules, sync payload shape, polling behavior, or visibility policy here.
+// CURRENT STATE: Shared DOM renderer for host and synced table views, including transient seat and
+// chip-transfer visuals.
+// TARGET STATE: Stay render-only. Callers should decide poker rules, visibility policy, and flow
+// timing before passing display state in.
+// PUT HERE: DOM updates for seat state, table state, and transient visual effects once the caller
+// already decided what should be shown.
+// DO NOT PUT HERE: Poker rules, sync payload shape, polling behavior, or visibility policy.
 
 const MAX_VISUAL_STACK_CHIPS = 10;
 
