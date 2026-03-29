@@ -52,6 +52,7 @@ import {
 	renderSeatResolvedAction,
 } from "./shared/tableViewRenderer.js";
 import { initServiceWorker } from "./serviceWorkerRegistration.js";
+import { APP_VERSION, VERSION_LOG } from "./version.js";
 
 /* --------------------------------------------------------------------------------------------------
 Configuration And DOM References
@@ -84,6 +85,10 @@ const statsCloseButton = document.querySelector("#stats-close-button");
 const statsTableBody = document.querySelector("#stats-table-body");
 const logOverlay = document.querySelector("#log-overlay");
 const logCloseButton = document.querySelector("#log-close-button");
+const versionButton = document.querySelector("#version-button");
+const versionOverlay = document.querySelector("#version-overlay");
+const versionCloseButton = document.querySelector("#version-close-button");
+const versionList = document.querySelector("#version-list");
 const instructionsOverlay = document.querySelector("#instructions-overlay");
 const instructionsCloseButton = document.querySelector("#instructions-close-button");
 const logList = document.querySelector("#log-list");
@@ -120,6 +125,10 @@ const overlays = {
 	log: {
 		el: logOverlay,
 		canOpen: () => !!logList && logList.childElementCount > 0,
+	},
+	version: {
+		el: versionOverlay,
+		beforeOpen: () => renderVersionOverlay(),
 	},
 	instructions: {
 		el: instructionsOverlay,
@@ -631,6 +640,48 @@ function renderStatsOverlay() {
 		row.appendChild(createStatsCell("td", player.stats.foldsPostflop));
 		row.appendChild(createStatsCell("td", player.stats.allins));
 		statsTableBody.appendChild(row);
+	});
+}
+
+function renderVersionOverlay() {
+	if (!versionList) {
+		return;
+	}
+
+	versionList.replaceChildren();
+	VERSION_LOG.forEach((entry) => {
+		const versionEntry = document.createElement("article");
+		versionEntry.className = "version-entry";
+
+		const heading = document.createElement("div");
+		heading.className = "version-entry-heading";
+
+		const versionLabel = document.createElement("h3");
+		versionLabel.className = "version-entry-version";
+		versionLabel.textContent = `v${entry.version}`;
+		heading.appendChild(versionLabel);
+
+		const title = document.createElement("p");
+		title.className = "version-entry-title";
+		title.textContent = entry.title;
+		heading.appendChild(title);
+
+		const meta = document.createElement("span");
+		meta.className = "version-entry-meta";
+		meta.textContent = entry.date;
+
+		const notes = document.createElement("ul");
+		notes.className = "version-entry-notes";
+		entry.notes.forEach((note) => {
+			const noteItem = document.createElement("li");
+			noteItem.textContent = note;
+			notes.appendChild(noteItem);
+		});
+
+		heading.appendChild(meta);
+		versionEntry.appendChild(heading);
+		versionEntry.appendChild(notes);
+		versionList.appendChild(versionEntry);
 	});
 }
 
@@ -2395,6 +2446,10 @@ function init() {
 		}
 	}
 
+	if (versionButton) {
+		versionButton.textContent = `v${APP_VERSION}`;
+	}
+
 	document.addEventListener("touchstart", function () {}, false);
 	document.addEventListener("keydown", (ev) => {
 		if (ev.key === "Escape") {
@@ -2403,12 +2458,14 @@ function init() {
 	}, false);
 	startButton.addEventListener("click", startGame, false);
 	instructionsButton.addEventListener("click", () => openOverlay("instructions"), false);
+	versionButton.addEventListener("click", () => openOverlay("version"), false);
 	notification.addEventListener("click", () => openOverlay("log"), false);
 	statsButton.addEventListener("click", () => openOverlay("stats"), false);
 	logButton.addEventListener("click", () => openOverlay("log"), false);
 	fastForwardButton.addEventListener("click", activateFastForward, false);
 	statsCloseButton.addEventListener("click", () => closeOverlay("stats"), false);
 	logCloseButton.addEventListener("click", () => closeOverlay("log"), false);
+	versionCloseButton.addEventListener("click", () => closeOverlay("version"), false);
 	instructionsCloseButton.addEventListener("click", () => closeOverlay("instructions"), false);
 	overlayBackdrop.addEventListener("click", closeAllOverlays, false);
 	globalThis.addEventListener("pagehide", () => trackUnfinishedExit(), false);
@@ -2447,7 +2504,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-29-v2";
+const SERVICE_WORKER_VERSION = "2026-03-29-v3";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
