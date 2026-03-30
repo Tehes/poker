@@ -58,6 +58,8 @@ const AGG_FACTOR = 0.1; // Aggressiveness increase per missing opponent
 const THRESHOLD_FACTOR = 0.3;
 // Minimum average hands before opponent stats influence the bot
 const MIN_HANDS_FOR_WEIGHT = 10;
+// Maximum influence allowed before the normal confidence curve takes over
+const EARLY_STATS_WEIGHT_MAX = 0.2;
 // Controls how quickly stat influence grows as more hands are played
 const WEIGHT_GROWTH = 10;
 // Detect opponents that shove frequently
@@ -466,10 +468,18 @@ function getActionOrder(players, currentPhaseIndex) {
 }
 
 function getStatsWeight(avgHands) {
-	if (avgHands < MIN_HANDS_FOR_WEIGHT) {
+	if (avgHands <= 0) {
 		return 0;
 	}
-	return 1 - Math.exp(-(avgHands - MIN_HANDS_FOR_WEIGHT) / WEIGHT_GROWTH);
+	const earlyWeight = Math.min(
+		EARLY_STATS_WEIGHT_MAX,
+		(avgHands / MIN_HANDS_FOR_WEIGHT) * EARLY_STATS_WEIGHT_MAX,
+	);
+	if (avgHands < MIN_HANDS_FOR_WEIGHT) {
+		return earlyWeight;
+	}
+	const standardWeight = 1 - Math.exp(-(avgHands - MIN_HANDS_FOR_WEIGHT) / WEIGHT_GROWTH);
+	return Math.max(earlyWeight, standardWeight);
 }
 
 function aggregateOpponentStats(opponents) {
