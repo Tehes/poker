@@ -1943,7 +1943,10 @@ function applyTurnAction(player, actionRequest) {
 			}
 			const actual = placePlayerBet(player, callAmount);
 			addToPot(actual);
-			notifyPlayerAction(player, "call", actual, { aggressive: false, voluntary: actual > 0 });
+			notifyPlayerAction(player, "call", actual, {
+				aggressive: false,
+				voluntary: actual > 0,
+			});
 			return { action: "call", amount: actual };
 		}
 		case "allin": {
@@ -2377,7 +2380,9 @@ function doShowdown() {
 			applyBotReveal(uncontestedWinner, revealDecision);
 			registerBotReveal(uncontestedWinner);
 			enqueueNotification(
-				`${uncontestedWinner.name} reveals ${revealDecision.codes.map(formatCardLabel).join(" ")}`,
+				`${uncontestedWinner.name} reveals ${
+					revealDecision.codes.map(formatCardLabel).join(" ")
+				}`,
 			);
 		} else {
 			hidePlayerQr(uncontestedWinner);
@@ -2537,7 +2542,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-30-v6";
+const SERVICE_WORKER_VERSION = "2026-03-30-v7";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

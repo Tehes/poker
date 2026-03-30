@@ -1,16 +1,20 @@
 {
-    "fmt": {
-        "useTabs": true,
-        "indentWidth": 4,
-        "lineWidth": 100,
-        "singleQuote": false,
-        "semiColons": true
-    },
-    "lint": {
-        "rules": {
-            "tags": [
-                "recommended"
-            ]
-        }
-    }
+	"fmt": {
+		"useTabs": true,
+		"indentWidth": 4,
+		"lineWidth": 100,
+		"singleQuote": false,
+		"semiColons": true
+	},
+	"tasks": {
+		"speedmode": "deno run --allow-env=CHROME_BIN --allow-net=127.0.0.1,localhost --allow-read=. --allow-write=.,/tmp --allow-run ./scripts/speedmodeBatch.js",
+		"speedmode:10": "deno run --allow-env=CHROME_BIN --allow-net=127.0.0.1,localhost --allow-read=. --allow-write=.,/tmp --allow-run ./scripts/speedmodeBatch.js --runs=10"
+	},
+	"lint": {
+		"rules": {
+			"tags": [
+				"recommended"
+			]
+		}
+	}
 }
