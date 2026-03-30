@@ -144,7 +144,8 @@ Their decisions consider:
 - **Board context**: recognizes top pair/overpair, straight/flush draws (outs to equity), and board
   texture (dry vs wet) to adjust strength.
 - **Tournament zones (M-ratio)**: dead/red/orange/yellow/green zones guide preflop Harrington-style
-  push/call/raise logic; green zone plays chip-EV.
+  push/call/raise logic; green zone plays chip-EV and unopened pots default to small raise-or-fold
+  opens instead of limping.
 - **Stack pressure and risk**: pot odds, stack ratio, and SPR; shallow SPR or <=10bb can trigger
   shove thresholds; large all-in calls are tightened by an elimination-risk guardrail.
 - **Commitment control**: invested-stack and remaining-street pressure add a call penalty to reduce
@@ -186,7 +187,8 @@ flow. Enable this flag when investigating hangs or unexpected behavior.
 
 ### Automated Speedmode Runs
 
-For repeatable bot-vs-bot runs with detailed postflop logs, use the repo-local Deno runner:
+For repeatable bot-vs-bot runs with detailed decision logs and aggregate bot-behavior metrics, use
+the repo-local Deno runner:
 
 ```sh
 deno task speedmode
