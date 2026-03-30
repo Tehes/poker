@@ -1,6 +1,17 @@
-export const APP_VERSION = "1.0.2";
+export const APP_VERSION = "1.0.3";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.3",
+		date: "2026-03-30",
+		title: "Tournament unopened raise-or-fold",
+		notes: [
+			"Removed open-limp calls from green-zone unopened preflop spots and switched them to raise-or-fold.",
+			"Standardized unopened tournament open raises to a fixed 2.5bb size rounded to the existing chip grid.",
+			"Kept Harrington push-or-fold handling and non-unopened preflop branches unchanged.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.2",
 		date: "2026-03-30",

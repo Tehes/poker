@@ -10,11 +10,43 @@ const PAGE_READY_TIMEOUT_MS = 15000;
 const POLL_INTERVAL_MS = 500;
 const HAND_LABEL_PATTERN =
 	"Straight Flush|Four of a Kind|Full House|Three of a Kind|Two Pair|High Card|Straight|Flush|Pair|-";
-const PUBLIC_HAND_REGEX = new RegExp(`\\bPH:(${HAND_LABEL_PATTERN})\\b`);
+const PUBLIC_HAND_REGEX = new RegExp(`\\bPH:(${HAND_LABEL_PATTERN})(?=\\s|\\|)`);
+const RAW_HAND_REGEX = new RegExp(`\\bRH:(${HAND_LABEL_PATTERN})(?=\\s|\\|)`);
+const DECISION_ACTION_REGEX = /→ (check|call|fold|raise)\b/;
+const HAND_SECTION_REGEX = /\bH:(.+?) Amt:(\d+)\b/;
+const STRENGTH_SECTION_REGEX = /\bPA:(\d+\.\d+) PS:(\d+\.\d+) M:(\d+\.\d+) Z:([a-z]+)\b/i;
+const PRESSURE_SECTION_REGEX = /\bPO:(\d+\.\d+) CB:(\d+\.\d+) SR:(\d+\.\d+)\b/;
+const COMMIT_SECTION_REGEX = /\bCP:(\d+\.\d+) CPen:(\d+\.\d+)\b/;
+const ELIMINATION_SECTION_REGEX = /\bER:(\d+\.\d+) EP:(\d+\.\d+)\b/;
+const POSITION_SECTION_REGEX = /\bPos:(\d+\.\d+) Opp:(\d+) Eff:(\d+)\b/;
+const RAISE_SECTION_REGEX = /\bRT10:(\d+\.\d+) Agg:(\d+\.\d+) RL:(\d+) RAdj:(\d+\.\d+)\b/;
+const SPOT_SECTION_REGEX = /\bSpot:([^/\s|]+)\/([^/\s|]+)\/([^ \|]+)\b/;
+const CONTEXT_SECTION_REGEX = /\bCtx:([^ \|]+) Draw:([^ \|]+) Tex:(\d+\.\d+) LT:([^ \|]+)\b/;
+const FLAG_SECTION_REGEX = /\bCL:(Y|N) SS:(Y|N) Prem:(Y|N)\b/;
+const LINE_SECTION_REGEX =
+	/\bLine:([^ \|]+) CP:([YN-]) BP:([YN-]) CM:([YN-]) BM:([YN-]) LA:([YN-])(?=\s|\|)/;
+const STAB_BLUFF_SECTION_REGEX = /\bStab:(Y|N) Bluff:(Y|N)\b/;
+const NON_VALUE_BLOCK_REGEX = /\bNVB:(Y|N)\b/;
 const PUBLIC_MADE_HANDS = new Set([
 	"Pair",
 	"Two Pair",
 	"Three of a Kind",
+	"Straight",
+	"Flush",
+	"Full House",
+	"Four of a Kind",
+	"Straight Flush",
+]);
+const STRONG_POSTFLOP_HANDS = new Set([
+	"Two Pair",
+	"Three of a Kind",
+	"Straight",
+	"Flush",
+	"Full House",
+	"Four of a Kind",
+	"Straight Flush",
+]);
+const TOP_TIER_POSTFLOP_HANDS = new Set([
 	"Straight",
 	"Flush",
 	"Full House",
@@ -114,6 +146,246 @@ function deepMergeCounts(target, source) {
 			target[key] = (target[key] || 0) + value;
 		}
 	}
+}
+
+function flagToState(flag) {
+	if (flag === "Y") {
+		return "yes";
+	}
+	if (flag === "N") {
+		return "no";
+	}
+	return "unknown";
+}
+
+function bucketPositionFactor(positionFactor) {
+	if (positionFactor <= 0.2) {
+		return "very-early";
+	}
+	if (positionFactor <= 0.4) {
+		return "early";
+	}
+	if (positionFactor <= 0.6) {
+		return "middle";
+	}
+	if (positionFactor <= 0.8) {
+		return "late";
+	}
+	return "last";
+}
+
+function bucketEliminationRisk(eliminationRisk) {
+	if (eliminationRisk <= 0) {
+		return "none";
+	}
+	if (eliminationRisk >= 1) {
+		return "max";
+	}
+	if (eliminationRisk >= 0.66) {
+		return "high";
+	}
+	if (eliminationRisk >= 0.33) {
+		return "medium";
+	}
+	return "low";
+}
+
+function bucketStackRatio(stackRatio) {
+	if (stackRatio <= 0.1) {
+		return "tiny";
+	}
+	if (stackRatio <= 0.25) {
+		return "small";
+	}
+	if (stackRatio <= 0.5) {
+		return "medium";
+	}
+	if (stackRatio <= 0.75) {
+		return "large";
+	}
+	return "all-in";
+}
+
+function bucketCommitmentPressure(commitmentPressure) {
+	if (commitmentPressure <= 0) {
+		return "none";
+	}
+	if (commitmentPressure <= 0.25) {
+		return "low";
+	}
+	if (commitmentPressure <= 0.5) {
+		return "medium";
+	}
+	if (commitmentPressure <= 0.75) {
+		return "high";
+	}
+	return "max";
+}
+
+function bucketRaiseLevel(raiseLevel) {
+	return raiseLevel >= 3 ? "3+" : String(raiseLevel);
+}
+
+function pushExample(target, line, limit = 10) {
+	if (target.length < limit) {
+		target.push(line);
+	}
+}
+
+function classifyMadeHandFold(decision) {
+	if (decision.action !== "fold" || !STRONG_POSTFLOP_HANDS.has(decision.rawHand)) {
+		return null;
+	}
+
+	const hasPublicMadeHand = PUBLIC_MADE_HANDS.has(decision.publicHand);
+	const isPublicMadeHand = hasPublicMadeHand && decision.publicHand === decision.rawHand;
+	const isBoardMadeLift = hasPublicMadeHand && decision.publicHand !== decision.rawHand;
+	const isPrivateMadeHand = !hasPublicMadeHand;
+
+	return {
+		isPublicMadeHand,
+		isBoardMadeLift,
+		isPrivateMadeHand,
+		isTopTier: TOP_TIER_POSTFLOP_HANDS.has(decision.rawHand),
+		isHighRisk: decision.eliminationRisk >= 0.8,
+	};
+}
+
+function classifyBluffRaise(decision) {
+	if (decision.action !== "raise" || !decision.bluff) {
+		return null;
+	}
+	if (PUBLIC_MADE_HANDS.has(decision.rawHand)) {
+		return "made-hand";
+	}
+	if (decision.drawFlag !== "-") {
+		return "draw";
+	}
+	return "air";
+}
+
+function parseDecisionLogLine(line) {
+	const actionMatch = line.match(DECISION_ACTION_REGEX);
+	const handMatch = line.match(HAND_SECTION_REGEX);
+	const strengthMatch = line.match(STRENGTH_SECTION_REGEX);
+	const pressureMatch = line.match(PRESSURE_SECTION_REGEX);
+	const commitMatch = line.match(COMMIT_SECTION_REGEX);
+	const eliminationMatch = line.match(ELIMINATION_SECTION_REGEX);
+	const positionMatch = line.match(POSITION_SECTION_REGEX);
+	const raiseMatch = line.match(RAISE_SECTION_REGEX);
+	const spotMatch = line.match(SPOT_SECTION_REGEX);
+	const contextMatch = line.match(CONTEXT_SECTION_REGEX);
+	const publicMatch = line.match(PUBLIC_HAND_REGEX);
+	const rawMatch = line.match(RAW_HAND_REGEX);
+	const flagMatch = line.match(FLAG_SECTION_REGEX);
+	const lineMatch = line.match(LINE_SECTION_REGEX);
+	const stabBluffMatch = line.match(STAB_BLUFF_SECTION_REGEX);
+	const nonValueBlockMatch = line.match(NON_VALUE_BLOCK_REGEX);
+
+	if (
+		!actionMatch || !handMatch || !strengthMatch || !pressureMatch || !commitMatch ||
+		!eliminationMatch || !positionMatch || !raiseMatch || !spotMatch || !contextMatch ||
+		!publicMatch || !rawMatch || !flagMatch || !lineMatch || !stabBluffMatch ||
+		!nonValueBlockMatch
+	) {
+		return null;
+	}
+
+	const handName = handMatch[1].trim();
+	const phase = handName === "preflop" ? "preflop" : "postflop";
+	const amount = Number.parseInt(handMatch[2], 10);
+	const aggressionStrength = Number.parseFloat(strengthMatch[1]);
+	const passiveStrength = Number.parseFloat(strengthMatch[2]);
+	const mRatio = Number.parseFloat(strengthMatch[3]);
+	const mZone = strengthMatch[4];
+	const potOdds = Number.parseFloat(pressureMatch[1]);
+	const callBarrier = Number.parseFloat(pressureMatch[2]);
+	const stackRatio = Number.parseFloat(pressureMatch[3]);
+	const commitmentPressure = Number.parseFloat(commitMatch[1]);
+	const commitmentPenalty = Number.parseFloat(commitMatch[2]);
+	const eliminationRisk = Number.parseFloat(eliminationMatch[1]);
+	const eliminationPenalty = Number.parseFloat(eliminationMatch[2]);
+	const positionFactor = Number.parseFloat(positionMatch[1]);
+	const activeOpponents = Number.parseInt(positionMatch[2], 10);
+	const effectiveStack = Number.parseInt(positionMatch[3], 10);
+	const raiseThreshold = Number.parseFloat(raiseMatch[1]);
+	const aggressiveness = Number.parseFloat(raiseMatch[2]);
+	const raiseLevel = Number.parseInt(raiseMatch[3], 10);
+	const raiseAdjustment = Number.parseFloat(raiseMatch[4]);
+	const spotType = spotMatch[1];
+	const structureTag = spotMatch[2];
+	const pressureTag = spotMatch[3];
+	const boardContext = contextMatch[1];
+	const drawFlag = contextMatch[2];
+	const textureRisk = Number.parseFloat(contextMatch[3]);
+	const liftType = contextMatch[4];
+	const publicHand = publicMatch[1];
+	const rawHand = rawMatch[1];
+	const chipLeader = flagMatch[1] === "Y";
+	const shortStack = flagMatch[2] === "Y";
+	const premium = flagMatch[3] === "Y";
+	const lineTag = lineMatch[1];
+	const cbetPlan = flagToState(lineMatch[2]);
+	const barrelPlan = flagToState(lineMatch[3]);
+	const cbetMade = flagToState(lineMatch[4]);
+	const barrelMade = flagToState(lineMatch[5]);
+	const lineAbort = flagToState(lineMatch[6]);
+	const stab = stabBluffMatch[1] === "Y";
+	const bluff = stabBluffMatch[2] === "Y";
+	const nonValueBlocked = nonValueBlockMatch[1] === "Y";
+
+	return {
+		line,
+		action: actionMatch[1],
+		phase,
+		handName,
+		amount,
+		aggressionStrength,
+		passiveStrength,
+		mRatio,
+		mZone,
+		potOdds,
+		callBarrier,
+		stackRatio,
+		commitmentPressure,
+		commitmentPenalty,
+		eliminationRisk,
+		eliminationPenalty,
+		positionFactor,
+		activeOpponents,
+		effectiveStack,
+		raiseThreshold,
+		aggressiveness,
+		raiseLevel,
+		raiseAdjustment,
+		spotType,
+		structureTag,
+		pressureTag,
+		spotKey: `${spotType}/${structureTag}/${pressureTag}`,
+		boardContext,
+		drawFlag,
+		textureRisk,
+		liftType,
+		publicHand,
+		rawHand,
+		chipLeader,
+		shortStack,
+		premium,
+		lineTag,
+		cbetPlan,
+		barrelPlan,
+		cbetMade,
+		barrelMade,
+		lineAbort,
+		stab,
+		bluff,
+		nonValueBlocked,
+		positionBucket: bucketPositionFactor(positionFactor),
+		eliminationRiskBucket: bucketEliminationRisk(eliminationRisk),
+		stackRatioBucket: bucketStackRatio(stackRatio),
+		commitmentBucket: bucketCommitmentPressure(commitmentPressure),
+		raiseLevelBucket: bucketRaiseLevel(raiseLevel),
+	};
 }
 
 function formatTimestamp(date = new Date()) {
@@ -419,8 +691,100 @@ async function waitForPageReady(page) {
 	throw new Error("Timed out waiting for page bootstrap");
 }
 
+function createEmptyPreflopMetrics() {
+	return {
+		decisions: 0,
+		actions: {},
+		actionsBySpotType: {},
+		actionsByStructure: {},
+		actionsByPressure: {},
+		actionsByZone: {},
+		actionsByPositionBucket: {},
+		actionsByRaiseLevel: {},
+		actionsByPremium: {},
+		actionsByChipLeader: {},
+		actionsByShortStack: {},
+	};
+}
+
+function createEmptyPostflopMetrics() {
+	return {
+		decisions: 0,
+		actions: {},
+		liftCounts: {},
+		actionByLift: {},
+		publicHandCounts: {},
+		publicHandActions: {},
+		rawHandCounts: {},
+		rawHandActions: {},
+		boardContextCounts: {},
+		boardContextActions: {},
+		drawCounts: {},
+		drawActions: {},
+		pairKickerActions: {},
+		pfaDecisionCount: 0,
+		lineActions: {},
+		lineStates: {
+			cbetPlan: {},
+			cbetMade: {},
+			barrelPlan: {},
+			barrelMade: {},
+			lineAbort: {},
+		},
+		stabCount: 0,
+		bluffCount: 0,
+		stabActions: {},
+		bluffActions: {},
+		bluffRaiseClassCounts: {},
+		nonValueBlockedActions: {},
+		madeHandFoldCount: 0,
+		publicMadeHandFoldCount: 0,
+		boardMadeLiftFoldCount: 0,
+		privateMadeHandFoldCount: 0,
+		privateTopTierMadeHandFoldCount: 0,
+		highRiskPrivateMadeHandFoldCount: 0,
+		highRiskPrivateTopTierMadeHandFoldCount: 0,
+	};
+}
+
 function createEmptyMetrics() {
 	return {
+		decisionCount: 0,
+		actionCounts: {},
+		phaseCounts: {},
+		actionsByPhase: {},
+		actionsBySpotType: {},
+		actionsBySpot: {},
+		actionsByStructure: {},
+		actionsByPressure: {},
+		actionsByZone: {},
+		actionsByPositionBucket: {},
+		actionsByRiskBucket: {},
+		actionsByStackRatioBucket: {},
+		actionsByCommitmentBucket: {},
+		actionsByRaiseLevel: {},
+		actionsByPremium: {},
+		actionsByChipLeader: {},
+		actionsByShortStack: {},
+		actionsByNonValueBlock: {},
+		preflop: createEmptyPreflopMetrics(),
+		postflop: createEmptyPostflopMetrics(),
+		examples: {
+			preflopPremiumFold: [],
+			preflopUnopenedCall: [],
+			postflopPublicMadeHandFold: [],
+			postflopBoardMadeLiftFold: [],
+			postflopPrivateMadeHandFold: [],
+			postflopPrivateTopTierMadeHandFold: [],
+			postflopHighRiskPrivateMadeHandFold: [],
+			bluffRaiseAir: [],
+			bluffRaiseDraw: [],
+			bluffRaiseMadeHand: [],
+			stabRaise: [],
+			lineAbort: [],
+			kickerRaise: [],
+			structural: [],
+		},
 		postflopSpots: 0,
 		kickerRaiseCount: 0,
 		publicMadeKickerRaiseCount: 0,
@@ -438,44 +802,257 @@ function analyzeRunLogs(logs) {
 	const metrics = createEmptyMetrics();
 
 	for (const line of logs) {
-		const actionMatch = line.match(/→ (check|call|fold|raise)\b/);
-		const liftMatch = line.match(/\bLT:(none|kicker|structural|category)\b/);
-		const publicMatch = line.match(PUBLIC_HAND_REGEX);
-		if (!actionMatch || !liftMatch || !publicMatch) {
+		const decision = parseDecisionLogLine(line);
+		if (!decision) {
 			continue;
 		}
 
-		const action = actionMatch[1];
-		const liftType = liftMatch[1];
-		const publicHand = publicMatch[1];
-		if (publicHand === "-") {
+		metrics.decisionCount += 1;
+		incrementCount(metrics.actionCounts, decision.action);
+		incrementCount(metrics.phaseCounts, decision.phase);
+		incrementNestedCount(metrics.actionsByPhase, decision.phase, decision.action);
+		incrementNestedCount(metrics.actionsBySpotType, decision.spotType, decision.action);
+		incrementNestedCount(metrics.actionsBySpot, decision.spotKey, decision.action);
+		incrementNestedCount(metrics.actionsByStructure, decision.structureTag, decision.action);
+		incrementNestedCount(metrics.actionsByPressure, decision.pressureTag, decision.action);
+		incrementNestedCount(metrics.actionsByZone, decision.mZone, decision.action);
+		incrementNestedCount(
+			metrics.actionsByPositionBucket,
+			decision.positionBucket,
+			decision.action,
+		);
+		incrementNestedCount(
+			metrics.actionsByRiskBucket,
+			decision.eliminationRiskBucket,
+			decision.action,
+		);
+		incrementNestedCount(
+			metrics.actionsByStackRatioBucket,
+			decision.stackRatioBucket,
+			decision.action,
+		);
+		incrementNestedCount(
+			metrics.actionsByCommitmentBucket,
+			decision.commitmentBucket,
+			decision.action,
+		);
+		incrementNestedCount(
+			metrics.actionsByRaiseLevel,
+			decision.raiseLevelBucket,
+			decision.action,
+		);
+		incrementNestedCount(
+			metrics.actionsByPremium,
+			decision.premium ? "yes" : "no",
+			decision.action,
+		);
+		incrementNestedCount(
+			metrics.actionsByChipLeader,
+			decision.chipLeader ? "yes" : "no",
+			decision.action,
+		);
+		incrementNestedCount(
+			metrics.actionsByShortStack,
+			decision.shortStack ? "yes" : "no",
+			decision.action,
+		);
+		incrementNestedCount(
+			metrics.actionsByNonValueBlock,
+			decision.nonValueBlocked ? "yes" : "no",
+			decision.action,
+		);
+
+		if (decision.phase === "preflop") {
+			metrics.preflop.decisions += 1;
+			incrementCount(metrics.preflop.actions, decision.action);
+			incrementNestedCount(
+				metrics.preflop.actionsBySpotType,
+				decision.spotType,
+				decision.action,
+			);
+			incrementNestedCount(
+				metrics.preflop.actionsByStructure,
+				decision.structureTag,
+				decision.action,
+			);
+			incrementNestedCount(
+				metrics.preflop.actionsByPressure,
+				decision.pressureTag,
+				decision.action,
+			);
+			incrementNestedCount(metrics.preflop.actionsByZone, decision.mZone, decision.action);
+			incrementNestedCount(
+				metrics.preflop.actionsByPositionBucket,
+				decision.positionBucket,
+				decision.action,
+			);
+			incrementNestedCount(
+				metrics.preflop.actionsByRaiseLevel,
+				decision.raiseLevelBucket,
+				decision.action,
+			);
+			incrementNestedCount(
+				metrics.preflop.actionsByPremium,
+				decision.premium ? "yes" : "no",
+				decision.action,
+			);
+			incrementNestedCount(
+				metrics.preflop.actionsByChipLeader,
+				decision.chipLeader ? "yes" : "no",
+				decision.action,
+			);
+			incrementNestedCount(
+				metrics.preflop.actionsByShortStack,
+				decision.shortStack ? "yes" : "no",
+				decision.action,
+			);
+
+			if (decision.premium && decision.action === "fold") {
+				pushExample(metrics.examples.preflopPremiumFold, line);
+			}
+			if (decision.spotType === "UO" && decision.action === "call") {
+				pushExample(metrics.examples.preflopUnopenedCall, line);
+			}
 			continue;
 		}
 
 		metrics.postflopSpots += 1;
-		incrementCount(metrics.liftCounts, liftType);
-		incrementCount(metrics.publicHandCounts, publicHand);
-		incrementNestedCount(metrics.actionByLift, liftType, action);
-		incrementNestedCount(metrics.publicHandActions, publicHand, action);
+		metrics.postflop.decisions += 1;
+		incrementCount(metrics.postflop.actions, decision.action);
+		incrementCount(metrics.liftCounts, decision.liftType);
+		incrementCount(metrics.postflop.liftCounts, decision.liftType);
+		incrementNestedCount(metrics.actionByLift, decision.liftType, decision.action);
+		incrementNestedCount(metrics.postflop.actionByLift, decision.liftType, decision.action);
 
-		if (liftType === "kicker" && publicHand === "Pair") {
-			incrementCount(metrics.pairKickerActions, action);
+		if (decision.publicHand !== "-") {
+			incrementCount(metrics.publicHandCounts, decision.publicHand);
+			incrementCount(metrics.postflop.publicHandCounts, decision.publicHand);
+			incrementNestedCount(metrics.publicHandActions, decision.publicHand, decision.action);
+			incrementNestedCount(
+				metrics.postflop.publicHandActions,
+				decision.publicHand,
+				decision.action,
+			);
 		}
-		if (action === "raise" && liftType === "kicker") {
-			metrics.kickerRaiseCount += 1;
-			if (metrics.kickerRaiseExamples.length < 10) {
-				metrics.kickerRaiseExamples.push(line);
+		if (decision.rawHand !== "-") {
+			incrementCount(metrics.postflop.rawHandCounts, decision.rawHand);
+			incrementNestedCount(
+				metrics.postflop.rawHandActions,
+				decision.rawHand,
+				decision.action,
+			);
+		}
+
+		incrementCount(metrics.postflop.boardContextCounts, decision.boardContext);
+		incrementNestedCount(
+			metrics.postflop.boardContextActions,
+			decision.boardContext,
+			decision.action,
+		);
+		incrementCount(metrics.postflop.drawCounts, decision.drawFlag);
+		incrementNestedCount(metrics.postflop.drawActions, decision.drawFlag, decision.action);
+		incrementNestedCount(
+			metrics.postflop.nonValueBlockedActions,
+			decision.nonValueBlocked ? "yes" : "no",
+			decision.action,
+		);
+
+		if (decision.lineTag === "PFA") {
+			metrics.postflop.pfaDecisionCount += 1;
+		}
+		incrementNestedCount(
+			metrics.postflop.lineActions,
+			decision.lineTag === "PFA" ? "pfa" : "other",
+			decision.action,
+		);
+		if (decision.cbetPlan !== "unknown") {
+			incrementCount(metrics.postflop.lineStates.cbetPlan, decision.cbetPlan);
+		}
+		if (decision.cbetMade !== "unknown") {
+			incrementCount(metrics.postflop.lineStates.cbetMade, decision.cbetMade);
+		}
+		if (decision.barrelPlan !== "unknown") {
+			incrementCount(metrics.postflop.lineStates.barrelPlan, decision.barrelPlan);
+		}
+		if (decision.barrelMade !== "unknown") {
+			incrementCount(metrics.postflop.lineStates.barrelMade, decision.barrelMade);
+		}
+		if (decision.lineAbort !== "unknown") {
+			incrementCount(metrics.postflop.lineStates.lineAbort, decision.lineAbort);
+		}
+		if (decision.lineAbort === "yes") {
+			pushExample(metrics.examples.lineAbort, line);
+		}
+
+		if (decision.stab) {
+			metrics.postflop.stabCount += 1;
+			incrementCount(metrics.postflop.stabActions, decision.action);
+			if (decision.action === "raise") {
+				pushExample(metrics.examples.stabRaise, line);
 			}
 		}
+		if (decision.bluff) {
+			metrics.postflop.bluffCount += 1;
+			incrementCount(metrics.postflop.bluffActions, decision.action);
+		}
+
+		const bluffRaiseClass = classifyBluffRaise(decision);
+		if (bluffRaiseClass) {
+			incrementCount(metrics.postflop.bluffRaiseClassCounts, bluffRaiseClass);
+			if (bluffRaiseClass === "air") {
+				pushExample(metrics.examples.bluffRaiseAir, line);
+			} else if (bluffRaiseClass === "draw") {
+				pushExample(metrics.examples.bluffRaiseDraw, line);
+			} else {
+				pushExample(metrics.examples.bluffRaiseMadeHand, line);
+			}
+		}
+
+		if (decision.liftType === "kicker" && decision.publicHand === "Pair") {
+			incrementCount(metrics.pairKickerActions, decision.action);
+			incrementCount(metrics.postflop.pairKickerActions, decision.action);
+		}
+		if (decision.action === "raise" && decision.liftType === "kicker") {
+			metrics.kickerRaiseCount += 1;
+			pushExample(metrics.kickerRaiseExamples, line);
+			pushExample(metrics.examples.kickerRaise, line);
+		}
 		if (
-			action === "raise" &&
-			(liftType === "none" || liftType === "kicker") &&
-			PUBLIC_MADE_HANDS.has(publicHand)
+			decision.action === "raise" &&
+			(decision.liftType === "none" || decision.liftType === "kicker") &&
+			PUBLIC_MADE_HANDS.has(decision.publicHand)
 		) {
 			metrics.publicMadeKickerRaiseCount += 1;
 		}
-		if (liftType === "structural" && metrics.structuralExamples.length < 10) {
-			metrics.structuralExamples.push(line);
+		if (decision.liftType === "structural") {
+			pushExample(metrics.structuralExamples, line);
+			pushExample(metrics.examples.structural, line);
+		}
+
+		const madeHandFold = classifyMadeHandFold(decision);
+		if (madeHandFold) {
+			metrics.postflop.madeHandFoldCount += 1;
+			if (madeHandFold.isPublicMadeHand) {
+				metrics.postflop.publicMadeHandFoldCount += 1;
+				pushExample(metrics.examples.postflopPublicMadeHandFold, line);
+			} else if (madeHandFold.isBoardMadeLift) {
+				metrics.postflop.boardMadeLiftFoldCount += 1;
+				pushExample(metrics.examples.postflopBoardMadeLiftFold, line);
+			} else {
+				metrics.postflop.privateMadeHandFoldCount += 1;
+				pushExample(metrics.examples.postflopPrivateMadeHandFold, line);
+				if (madeHandFold.isHighRisk) {
+					metrics.postflop.highRiskPrivateMadeHandFoldCount += 1;
+					pushExample(metrics.examples.postflopHighRiskPrivateMadeHandFold, line);
+				}
+			}
+			if (madeHandFold.isPrivateMadeHand && madeHandFold.isTopTier) {
+				metrics.postflop.privateTopTierMadeHandFoldCount += 1;
+				pushExample(metrics.examples.postflopPrivateTopTierMadeHandFold, line);
+				if (madeHandFold.isHighRisk) {
+					metrics.postflop.highRiskPrivateTopTierMadeHandFoldCount += 1;
+				}
+			}
 		}
 	}
 
@@ -483,16 +1060,70 @@ function analyzeRunLogs(logs) {
 }
 
 function mergeRunMetrics(target, source) {
+	target.decisionCount += source.decisionCount;
 	target.postflopSpots += source.postflopSpots;
 	target.kickerRaiseCount += source.kickerRaiseCount;
 	target.publicMadeKickerRaiseCount += source.publicMadeKickerRaiseCount;
+	deepMergeCounts(target.actionCounts, source.actionCounts);
+	deepMergeCounts(target.phaseCounts, source.phaseCounts);
+	deepMergeCounts(target.actionsByPhase, source.actionsByPhase);
+	deepMergeCounts(target.actionsBySpotType, source.actionsBySpotType);
+	deepMergeCounts(target.actionsBySpot, source.actionsBySpot);
+	deepMergeCounts(target.actionsByStructure, source.actionsByStructure);
+	deepMergeCounts(target.actionsByPressure, source.actionsByPressure);
+	deepMergeCounts(target.actionsByZone, source.actionsByZone);
+	deepMergeCounts(target.actionsByPositionBucket, source.actionsByPositionBucket);
+	deepMergeCounts(target.actionsByRiskBucket, source.actionsByRiskBucket);
+	deepMergeCounts(target.actionsByStackRatioBucket, source.actionsByStackRatioBucket);
+	deepMergeCounts(target.actionsByCommitmentBucket, source.actionsByCommitmentBucket);
+	deepMergeCounts(target.actionsByRaiseLevel, source.actionsByRaiseLevel);
+	deepMergeCounts(target.actionsByPremium, source.actionsByPremium);
+	deepMergeCounts(target.actionsByChipLeader, source.actionsByChipLeader);
+	deepMergeCounts(target.actionsByShortStack, source.actionsByShortStack);
+	deepMergeCounts(target.actionsByNonValueBlock, source.actionsByNonValueBlock);
+	deepMergeCounts(target.preflop, source.preflop);
+	deepMergeCounts(target.postflop, source.postflop);
 	deepMergeCounts(target.liftCounts, source.liftCounts);
 	deepMergeCounts(target.publicHandCounts, source.publicHandCounts);
 	deepMergeCounts(target.actionByLift, source.actionByLift);
 	deepMergeCounts(target.publicHandActions, source.publicHandActions);
 	deepMergeCounts(target.pairKickerActions, source.pairKickerActions);
-	target.kickerRaiseExamples.push(...source.kickerRaiseExamples);
-	target.structuralExamples.push(...source.structuralExamples);
+	source.kickerRaiseExamples.forEach((line) => pushExample(target.kickerRaiseExamples, line));
+	source.structuralExamples.forEach((line) => pushExample(target.structuralExamples, line));
+	source.examples.preflopPremiumFold.forEach((line) =>
+		pushExample(target.examples.preflopPremiumFold, line)
+	);
+	source.examples.preflopUnopenedCall.forEach((line) =>
+		pushExample(target.examples.preflopUnopenedCall, line)
+	);
+	source.examples.postflopPublicMadeHandFold.forEach((line) =>
+		pushExample(target.examples.postflopPublicMadeHandFold, line)
+	);
+	source.examples.postflopBoardMadeLiftFold.forEach((line) =>
+		pushExample(target.examples.postflopBoardMadeLiftFold, line)
+	);
+	source.examples.postflopPrivateMadeHandFold.forEach((line) =>
+		pushExample(target.examples.postflopPrivateMadeHandFold, line)
+	);
+	source.examples.postflopPrivateTopTierMadeHandFold.forEach((line) =>
+		pushExample(target.examples.postflopPrivateTopTierMadeHandFold, line)
+	);
+	source.examples.postflopHighRiskPrivateMadeHandFold.forEach((line) =>
+		pushExample(target.examples.postflopHighRiskPrivateMadeHandFold, line)
+	);
+	source.examples.bluffRaiseAir.forEach((line) =>
+		pushExample(target.examples.bluffRaiseAir, line)
+	);
+	source.examples.bluffRaiseDraw.forEach((line) =>
+		pushExample(target.examples.bluffRaiseDraw, line)
+	);
+	source.examples.bluffRaiseMadeHand.forEach((line) =>
+		pushExample(target.examples.bluffRaiseMadeHand, line)
+	);
+	source.examples.stabRaise.forEach((line) => pushExample(target.examples.stabRaise, line));
+	source.examples.lineAbort.forEach((line) => pushExample(target.examples.lineAbort, line));
+	source.examples.kickerRaise.forEach((line) => pushExample(target.examples.kickerRaise, line));
+	source.examples.structural.forEach((line) => pushExample(target.examples.structural, line));
 }
 
 async function runSingleTournament(page, config, runIndex, aggregateMetrics, champions) {
@@ -642,7 +1273,34 @@ async function main() {
 		await Deno.writeTextFile(`${outputDir}/summary.json`, JSON.stringify(summary, null, 2));
 
 		console.log(`runs=${args.runCount}`);
+		console.log(`decisions=${aggregateMetrics.decisionCount}`);
+		console.log(`preflop_spots=${aggregateMetrics.preflop.decisions}`);
 		console.log(`postflop_spots=${aggregateMetrics.postflopSpots}`);
+		console.log(`postflop_made_hand_folds=${aggregateMetrics.postflop.madeHandFoldCount}`);
+		console.log(
+			`postflop_public_made_hand_folds=${aggregateMetrics.postflop.publicMadeHandFoldCount}`,
+		);
+		console.log(
+			`postflop_board_made_lift_folds=${aggregateMetrics.postflop.boardMadeLiftFoldCount}`,
+		);
+		console.log(
+			`postflop_private_made_hand_folds=${aggregateMetrics.postflop.privateMadeHandFoldCount}`,
+		);
+		console.log(
+			`postflop_private_top_tier_made_hand_folds=${aggregateMetrics.postflop.privateTopTierMadeHandFoldCount}`,
+		);
+		console.log(
+			`postflop_high_risk_private_made_hand_folds=${aggregateMetrics.postflop.highRiskPrivateMadeHandFoldCount}`,
+		);
+		console.log(`preflop_premium_folds=${aggregateMetrics.examples.preflopPremiumFold.length}`);
+		console.log(
+			`preflop_unopened_calls=${aggregateMetrics.examples.preflopUnopenedCall.length}`,
+		);
+		console.log(
+			`bluff_raises_with_made_hand=${
+				aggregateMetrics.postflop.bluffRaiseClassCounts["made-hand"] || 0
+			}`,
+		);
 		console.log(`kicker_raises=${aggregateMetrics.kickerRaiseCount}`);
 		console.log(`public_made_kicker_raises=${aggregateMetrics.publicMadeKickerRaiseCount}`);
 		console.log(`output_dir=${outputDir}`);

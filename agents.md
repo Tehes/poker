@@ -249,9 +249,11 @@ Accessibility should be **pragmatic, not performative**.
   - Keep event name and payload shape consistent with existing calls
 - Keep `umami.track` calls consistent with existing usage.
 - Defensive usage only:
+
   ```js
   globalThis.umami?.track("EventName", { ... });
   ```
+
 - Do not add analytics unless the project already uses them.
 
 ---

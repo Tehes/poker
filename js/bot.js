@@ -355,7 +355,9 @@ function getPublicDefenseFloor(publicHand, boardLength) {
 		case 4:
 			return boardLength === 3 ? 0.14 : boardLength === 4 ? 0.16 : 0.18;
 		default:
-			return publicHand.rank >= 5 ? (boardLength === 3 ? 0.16 : boardLength === 4 ? 0.18 : 0.20) : 0;
+			return publicHand.rank >= 5
+				? (boardLength === 3 ? 0.16 : boardLength === 4 ? 0.18 : 0.20)
+				: 0;
 	}
 }
 
@@ -398,7 +400,10 @@ function buildPostflopStrengthProfile(solvedHand, communityCards) {
 		: 0;
 	const publicDefenseFloor = getPublicDefenseFloor(publicHand, communityCards.length);
 	const passiveBonus = getPassiveBonus(liftType);
-	const passiveStrengthRatio = Math.max(privateAggressionRatio, publicDefenseFloor + passiveBonus);
+	const passiveStrengthRatio = Math.max(
+		privateAggressionRatio,
+		publicDefenseFloor + passiveBonus,
+	);
 
 	return {
 		publicHand,
@@ -705,11 +710,18 @@ function aggregateOpponentStats(opponents) {
 	return {
 		opponents,
 		count: opponents.length,
-		vpip: opponents.reduce((sum, currentPlayer) =>
-			sum + (currentPlayer.stats.vpip + 1) / (currentPlayer.stats.hands + 2), 0) /
+		vpip: opponents.reduce(
+			(sum, currentPlayer) =>
+				sum + (currentPlayer.stats.vpip + 1) / (currentPlayer.stats.hands + 2),
+			0,
+		) /
 			opponents.length,
-		aggression: opponents.reduce((sum, currentPlayer) =>
-			sum + (currentPlayer.stats.aggressiveActs + 1) / (currentPlayer.stats.calls + 1), 0) /
+		aggression: opponents.reduce(
+			(sum, currentPlayer) =>
+				sum +
+				(currentPlayer.stats.aggressiveActs + 1) / (currentPlayer.stats.calls + 1),
+			0,
+		) /
 			opponents.length,
 		foldRate: avgFoldRate(opponents),
 		avgHands,
@@ -733,9 +745,9 @@ function selectProfileEntry(...profileEntries) {
 }
 
 function formatProfileForDebug(profile) {
-	return `${profile.vpip.toFixed(2)}/${profile.aggression.toFixed(2)}/${profile.foldRate.toFixed(2)}/${
-		profile.weight.toFixed(2)
-	}`;
+	return `${profile.vpip.toFixed(2)}/${profile.aggression.toFixed(2)}/${
+		profile.foldRate.toFixed(2)
+	}/${profile.weight.toFixed(2)}`;
 }
 
 function getPlayerBySeatIndex(players, seatIndex) {
@@ -757,7 +769,9 @@ function buildSpotContext({
 	raisesThisRound,
 	handContext,
 }) {
-	const liveOpponents = players.filter((currentPlayer) => currentPlayer !== player && !currentPlayer.folded);
+	const liveOpponents = players.filter((currentPlayer) =>
+		currentPlayer !== player && !currentPlayer.folded
+	);
 	const actionOrder = getActionOrder(players, currentPhaseIndex);
 	const heroIndex = actionOrder.indexOf(player);
 	const remainingBehind = heroIndex === -1
@@ -771,9 +785,12 @@ function buildSpotContext({
 			? spotState.enteredPreflop
 			: spotState.voluntaryThisStreet || spotState.enteredPreflop;
 	});
-	const primaryAggressorCandidate = getPlayerBySeatIndex(players, handContext?.streetAggressorSeatIndex);
+	const primaryAggressorCandidate = getPlayerBySeatIndex(
+		players,
+		handContext?.streetAggressorSeatIndex,
+	);
 	const primaryAggressor = primaryAggressorCandidate && !primaryAggressorCandidate.folded &&
-		primaryAggressorCandidate !== player
+			primaryAggressorCandidate !== player
 		? primaryAggressorCandidate
 		: null;
 	const preflopAggressor = getPlayerBySeatIndex(players, handContext?.preflopAggressorSeatIndex);
@@ -1073,40 +1090,40 @@ export function chooseBotAction(player, gameState) {
 	const drawEquity = postflopContext.drawEquity;
 	const textureRisk = postflopContext.textureRisk;
 	const isMadeHand = !preflop && solvedHand && solvedHand.rank >= 2;
-		const isDraw = drawOuts >= 8;
-		const isWeakDraw = drawOuts > 0 && drawOuts < 8;
-		const isDeadHand = !preflop && !isMadeHand && !isDraw && !isWeakDraw;
+	const isDraw = drawOuts >= 8;
+	const isWeakDraw = drawOuts > 0 && drawOuts < 8;
+	const isDeadHand = !preflop && !isMadeHand && !isDraw && !isWeakDraw;
 
-		const aggressionStrengthRatio = privateAggressionRatio;
-		const mZone = getMZone(mRatio);
-		const isGreenZone = mZone === "green";
-		const isFlop = communityCards.length === 3;
-		const isTurn = communityCards.length === 4;
-		const hasStrongComboDraw = drawOuts >= 12;
-		const allowPublicDrawSemibluffRaise = !preflop &&
-			(liftType === "none" || liftType === "kicker") &&
+	const aggressionStrengthRatio = privateAggressionRatio;
+	const mZone = getMZone(mRatio);
+	const isGreenZone = mZone === "green";
+	const isFlop = communityCards.length === 3;
+	const isTurn = communityCards.length === 4;
+	const hasStrongComboDraw = drawOuts >= 12;
+	const allowPublicDrawSemibluffRaise = !preflop &&
+		(liftType === "none" || liftType === "kicker") &&
+		(
 			(
-				(
-					publicHand?.rank === 1 &&
-					isFlop &&
-					activeOpponents <= 1 &&
-					!facingRaise &&
-					hasStrongComboDraw &&
-					isGreenZone
-				) ||
-				(
-					publicHand?.rank === 1 &&
-					isTurn &&
-					activeOpponents <= 1 &&
-					!facingRaise &&
-					hasStrongComboDraw &&
-					spr <= 1.2 &&
-					canShove
-				)
-			);
-		const premiumHand = preflop
-			? aggressionStrengthRatio >= PREMIUM_PREFLOP_RATIO
-			: aggressionStrengthRatio >= PREMIUM_POSTFLOP_RATIO;
+				publicHand?.rank === 1 &&
+				isFlop &&
+				activeOpponents <= 1 &&
+				!facingRaise &&
+				hasStrongComboDraw &&
+				isGreenZone
+			) ||
+			(
+				publicHand?.rank === 1 &&
+				isTurn &&
+				activeOpponents <= 1 &&
+				!facingRaise &&
+				hasStrongComboDraw &&
+				spr <= 1.2 &&
+				canShove
+			)
+		);
+	const premiumHand = preflop
+		? aggressionStrengthRatio >= PREMIUM_PREFLOP_RATIO
+		: aggressionStrengthRatio >= PREMIUM_POSTFLOP_RATIO;
 	const raiseAggAdj = amChipleader ? -CHIP_LEADER_RAISE_DELTA : 0;
 	const callTightAdj = shortstackRelative && stackRatio < ELIMINATION_RISK_START
 		? -SHORTSTACK_CALL_DELTA
@@ -1200,11 +1217,7 @@ export function chooseBotAction(player, gameState) {
 		callBarrier = callBarrierBase + callBarrierAdj + potOddsShift + commitmentShift;
 		callBarrier += streetPressure + weakDrawPressure + deadHandPressure + barrelPressure;
 		if (needsToCall && isDeadHand) {
-			const deadHandFloor = streetIndex === 1
-				? 0.2
-				: streetIndex === 2
-				? 0.22
-				: 0.24;
+			const deadHandFloor = streetIndex === 1 ? 0.2 : streetIndex === 2 ? 0.22 : 0.24;
 			callBarrier = Math.max(callBarrier, deadHandFloor);
 		}
 		if (needsToCall && isWeakDraw) {
@@ -1236,6 +1249,7 @@ export function chooseBotAction(player, gameState) {
 		raiseThreshold = Math.max(1, raiseThreshold - CHIP_LEADER_RAISE_DELTA * 10);
 	}
 	const decisionStrength = preflop ? strength : aggressionStrengthRatio * 10;
+	const openRaiseThreshold = Math.max(6, Math.min(8, 8 - 2 * positionFactor));
 
 	let bluffChance = 0;
 	let foldRate = 0;
@@ -1309,9 +1323,8 @@ export function chooseBotAction(player, gameState) {
 		return capGreenNonPremium(sized);
 	}
 
-	function yellowRaiseSize() {
-		const base = bigBlind * (2.5 + Math.random() * 0.5);
-		const sized = floorTo10(base * betAggFactor);
+	function tournamentOpenRaiseSize() {
+		const sized = floorTo10(bigBlind * 2.5);
 		const normalizedMinRaise = ceilTo10(minRaiseAmount);
 		return Math.min(player.chips, Math.max(normalizedMinRaise, sized));
 	}
@@ -1564,7 +1577,7 @@ export function chooseBotAction(player, gameState) {
 			canRaise,
 			needToCall,
 			playerChips: player.chips,
-			yellowRaiseSize,
+			yellowRaiseSize: tournamentOpenRaiseSize,
 		});
 	}
 
@@ -1579,6 +1592,14 @@ export function chooseBotAction(player, gameState) {
 			aggressionStrengthRatio >= shortstackShoveThreshold
 		) {
 			decision = { action: "raise", amount: player.chips };
+		}
+	}
+
+	if (!decision && preflop && spotContext.unopened && !useHarringtonStrategy) {
+		if (canRaise && decisionStrength >= openRaiseThreshold) {
+			decision = { action: "raise", amount: tournamentOpenRaiseSize() };
+		} else {
+			decision = { action: "fold" };
 		}
 	}
 
@@ -1690,14 +1711,16 @@ export function chooseBotAction(player, gameState) {
 		}
 
 		if (
-			!preflop && decision.action === "raise" && aggressionStrengthRatio >= 0.95 && spr <= 2 &&
+			!preflop && decision.action === "raise" && aggressionStrengthRatio >= 0.95 &&
+			spr <= 2 &&
 			Math.random() < 0.3
 		) {
 			decision.amount = Math.max(decision.amount, overBetSize());
 		}
 
 		if (
-			!preflop && !needsToCall && aggressionStrengthRatio >= 0.9 && decision.action === "raise" &&
+			!preflop && !needsToCall && aggressionStrengthRatio >= 0.9 &&
+			decision.action === "raise" &&
 			Math.random() < 0.3
 		) {
 			decision = { action: "check" };
@@ -1719,7 +1742,9 @@ export function chooseBotAction(player, gameState) {
 	const reraiseValueRatio = hasPrivateValue && (topPair || overPair)
 		? RERAISE_TOP_PAIR_RATIO
 		: RERAISE_VALUE_RATIO;
-	if (decision.action === "raise" && raiseLevel > 0 && aggressionStrengthRatio < reraiseValueRatio) {
+	if (
+		decision.action === "raise" && raiseLevel > 0 && aggressionStrengthRatio < reraiseValueRatio
+	) {
 		decision = needToCall > 0
 			? { action: "call", amount: Math.min(player.chips, needToCall) }
 			: { action: "check" };
@@ -1727,21 +1752,25 @@ export function chooseBotAction(player, gameState) {
 		isStab = false;
 	}
 
-	if (!preflop && decision.action === "raise" && (liftType === "none" || liftType === "kicker") &&
-		!allowPublicDrawSemibluffRaise) {
+	if (
+		!preflop && decision.action === "raise" && (liftType === "none" || liftType === "kicker") &&
+		!allowPublicDrawSemibluffRaise
+	) {
 		decision = needToCall > 0
 			? { action: "call", amount: Math.min(player.chips, needToCall) }
 			: { action: "check" };
 		isBluff = false;
 		isStab = false;
 	}
-	if (!preflop && isTurn && decision.action === "raise" && allowPublicDrawSemibluffRaise &&
-		(liftType === "none" || liftType === "kicker")) {
+	if (
+		!preflop && isTurn && decision.action === "raise" && allowPublicDrawSemibluffRaise &&
+		(liftType === "none" || liftType === "kicker")
+	) {
 		decision.amount = player.chips;
 	}
 
-		const h1 = formatCard(player.holeCards[0]);
-		const h2 = formatCard(player.holeCards[1]);
+	const h1 = formatCard(player.holeCards[0]);
+	const h2 = formatCard(player.holeCards[1]);
 	const handName = !preflop ? solvedHand.name : "preflop";
 
 	// --- Ensure raises meet the minimum requirements ---
@@ -1801,10 +1830,11 @@ export function chooseBotAction(player, gameState) {
 			: "L";
 		const structureTag = spotContext.headsUp ? "HU" : "MW";
 		const pressureTag = spotContext.facingAggression ? "FR" : "NF";
-		const primaryAggressorName = spotContext.primaryAggressor ? spotContext.primaryAggressor.name : "-";
-		const groupTag = `L${spotContext.liveOpponents.length} B${spotContext.remainingBehind.length} V${
-			spotContext.voluntaryOpponents.length
-		} S${spotContext.shownStrengthOpponents.length}`;
+		const primaryAggressorName = spotContext.primaryAggressor
+			? spotContext.primaryAggressor.name
+			: "-";
+		const groupTag =
+			`L${spotContext.liveOpponents.length} B${spotContext.remainingBehind.length} V${spotContext.voluntaryOpponents.length} S${spotContext.shownStrengthOpponents.length}`;
 		const pressureProfileTag = `${pressureProfileEntry.source}:${
 			formatProfileForDebug(pressureProfile)
 		}`;
@@ -1821,6 +1851,9 @@ export function chooseBotAction(player, gameState) {
 			? (botLine.barrelMade ? "Y" : "N")
 			: "-";
 		const lineAbortFlag = botLine && botLine.preflopAggressor ? (lineAbort ? "Y" : "N") : "-";
+		const loggedRaiseThreshold = preflop && spotContext.unopened && !useHarringtonStrategy
+			? openRaiseThreshold
+			: raiseThreshold;
 
 		console.log(
 			`${player.name} ${h1} ${h2} → ${decision.action} | ` +
@@ -1834,7 +1867,7 @@ export function chooseBotAction(player, gameState) {
 				`CP:${commitmentPressure.toFixed(2)} CPen:${commitmentPenalty.toFixed(2)} | ` +
 				`ER:${eliminationRisk.toFixed(2)} EP:${eliminationPenalty.toFixed(2)} | ` +
 				`Pos:${positionFactor.toFixed(2)} Opp:${activeOpponents} Eff:${effectiveStack} | ` +
-				`RT10:${(raiseThreshold / 10).toFixed(2)} Agg:${
+				`RT10:${(loggedRaiseThreshold / 10).toFixed(2)} Agg:${
 					aggressiveness.toFixed(2)
 				} RL:${raiseLevel} RAdj:${(raiseLevel * RERAISE_RATIO_STEP).toFixed(2)} | ` +
 				`Spot:${spotType}/${structureTag}/${pressureTag} Grp:${groupTag} Aggr:${primaryAggressorName} | ` +
@@ -1842,7 +1875,9 @@ export function chooseBotAction(player, gameState) {
 					nonValueAggressionBlocked ? "Y" : "N"
 				} | ` +
 				`Ctx:${boardCtx} Draw:${drawFlag} Tex:${textureRisk.toFixed(2)} LT:${liftType} | ` +
-				`PH:${publicHand?.name ?? "-"} RH:${solvedHand?.name ?? "-"} PF:${publicDefenseFloor.toFixed(2)} PB:${passiveBonus.toFixed(2)} | ` +
+				`PH:${publicHand?.name ?? "-"} RH:${solvedHand?.name ?? "-"} PF:${
+					publicDefenseFloor.toFixed(2)
+				} PB:${passiveBonus.toFixed(2)} | ` +
 				`Pub:${publicScore.toFixed(2)} Raw:${rawScore.toFixed(2)} | ` +
 				`CL:${amChipleader ? "Y" : "N"} SS:${shortstackRelative ? "Y" : "N"} Prem:${
 					premiumHand ? "Y" : "N"
