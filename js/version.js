@@ -1,6 +1,17 @@
-export const APP_VERSION = "1.0.0";
+export const APP_VERSION = "1.0.1";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.1",
+		date: "2026-03-30",
+		title: "Spot-aware bot reads",
+		notes: [
+			"Replaced table-average opponent reads with spot-based aggregation for players behind, live opponents, and aggressors.",
+			"Added minimal hand and street state so multiway, limped, raised, and multi-raised spots influence bot decisions directly.",
+			"Kept the existing tournament-pressure and sizing framework while reducing non-value aggression in crowded or strength-shown spots.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.0",
 		date: "2026-03-29",

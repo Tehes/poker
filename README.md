@@ -115,7 +115,7 @@ Bots play tournament-style poker and follow consistent rules without hidden info
 - **Stack pressure and risk**: pot odds, stack ratio, and SPR; shallow SPR or <=10bb can trigger shove thresholds; large all-in calls are tightened by an elimination-risk guardrail.
 - **Commitment control**: invested-stack and remaining-street pressure add a call penalty to reduce multi-street bleeding while still calling when committed.
 - **Position and table**: position factor and active opponents shift aggression and raise thresholds; chip leaders open wider, short stacks call tighter and cap non-premium bet sizes.
-- **Opponent tendencies**: VPIP, aggression, and fold rate are weighted only after enough hands; fold-heavy tables increase bluff frequency.
+- **Opponent tendencies**: uses spot-based opponent aggregation, prioritizing players behind, live opponents, and the current aggressor; fold-heavy defenders increase bluff frequency while multiway and strength-shown spots suppress non-value aggression.
 - **Bet sizing**: value/protection/bluff/overbet sizes scale with pot, texture, SPR, position, and opponent count, with small randomness and rounding.
 - **Line memory and tie-breakers**: tracks the preflop aggressor for c-bet/barrel plans (aborts on very wet boards); near-threshold decisions randomize between close actions and avoid bluffing into all-ins.
 - **Raise constraints**: respects per-round raise limits and minimum-legal raises, and can downgrade a raise to a call/check if the minimum is not met.

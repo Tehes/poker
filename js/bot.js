@@ -27,8 +27,9 @@ const FAST_FORWARD_BOT_ACTION_DELAY = 140;
 let DEBUG_DECISIONS = false;
 let DEBUG_DECISIONS_DETAIL = false;
 
-const speedModeParam = new URLSearchParams(globalThis.location.search).get("speedmode");
-const debugBotParam = new URLSearchParams(globalThis.location.search).get("botdebug");
+const locationSearch = globalThis.location?.search ?? "";
+const speedModeParam = new URLSearchParams(locationSearch).get("speedmode");
+const debugBotParam = new URLSearchParams(locationSearch).get("botdebug");
 DEBUG_DECISIONS_DETAIL = debugBotParam === "1" || debugBotParam === "true" ||
 	debugBotParam === "detail";
 if (DEBUG_DECISIONS_DETAIL) {
@@ -452,6 +453,142 @@ function computePositionFactor(players, active, player, currentPhaseIndex) {
 	return active.length > 1 ? pos / (active.length - 1) : 0;
 }
 
+function getActionOrder(players, currentPhaseIndex) {
+	const active = players.filter((p) => !p.folded);
+	if (active.length === 0) {
+		return [];
+	}
+	const firstToAct = currentPhaseIndex === 0
+		? findNextActivePlayer(players, players.findIndex((p) => p.bigBlind))
+		: findNextActivePlayer(players, players.findIndex((p) => p.dealer));
+	const startIdx = active.indexOf(firstToAct);
+	return startIdx === -1 ? active : active.slice(startIdx).concat(active.slice(0, startIdx));
+}
+
+function getStatsWeight(avgHands) {
+	if (avgHands < MIN_HANDS_FOR_WEIGHT) {
+		return 0;
+	}
+	return 1 - Math.exp(-(avgHands - MIN_HANDS_FOR_WEIGHT) / WEIGHT_GROWTH);
+}
+
+function aggregateOpponentStats(opponents) {
+	if (opponents.length === 0) {
+		return {
+			opponents,
+			count: 0,
+			vpip: 0,
+			aggression: 1,
+			foldRate: 0,
+			avgHands: 0,
+			weight: 0,
+		};
+	}
+	const avgHands = opponents.reduce((sum, currentPlayer) => sum + currentPlayer.stats.hands, 0) /
+		opponents.length;
+	return {
+		opponents,
+		count: opponents.length,
+		vpip: opponents.reduce((sum, currentPlayer) =>
+			sum + (currentPlayer.stats.vpip + 1) / (currentPlayer.stats.hands + 2), 0) /
+			opponents.length,
+		aggression: opponents.reduce((sum, currentPlayer) =>
+			sum + (currentPlayer.stats.aggressiveActs + 1) / (currentPlayer.stats.calls + 1), 0) /
+			opponents.length,
+		foldRate: avgFoldRate(opponents),
+		avgHands,
+		weight: getStatsWeight(avgHands),
+	};
+}
+
+function createProfileEntry(source, profile) {
+	return { source, profile };
+}
+
+function selectProfileEntry(...profileEntries) {
+	const reliableEntry = profileEntries.find((entry) =>
+		entry.profile.count > 0 && entry.profile.weight > 0
+	);
+	if (reliableEntry) {
+		return reliableEntry;
+	}
+	return profileEntries.find((entry) => entry.profile.count > 0) ??
+		createProfileEntry("none", aggregateOpponentStats([]));
+}
+
+function formatProfileForDebug(profile) {
+	return `${profile.vpip.toFixed(2)}/${profile.aggression.toFixed(2)}/${profile.foldRate.toFixed(2)}/${
+		profile.weight.toFixed(2)
+	}`;
+}
+
+function getPlayerBySeatIndex(players, seatIndex) {
+	return seatIndex === null
+		? null
+		: players.find((currentPlayer) => currentPlayer.seatIndex === seatIndex) ?? null;
+}
+
+function uniquePlayers(players) {
+	return Array.from(new Set(players.filter(Boolean)));
+}
+
+function buildSpotContext({
+	players,
+	player,
+	currentPhaseIndex,
+	preflop,
+	facingRaise,
+	raisesThisRound,
+	handContext,
+}) {
+	const liveOpponents = players.filter((currentPlayer) => currentPlayer !== player && !currentPlayer.folded);
+	const actionOrder = getActionOrder(players, currentPhaseIndex);
+	const heroIndex = actionOrder.indexOf(player);
+	const remainingBehind = heroIndex === -1
+		? []
+		: actionOrder.slice(heroIndex + 1).filter((currentPlayer) =>
+			currentPlayer !== player && !currentPlayer.folded && !currentPlayer.allIn
+		);
+	const voluntaryOpponents = liveOpponents.filter((currentPlayer) => {
+		const spotState = currentPlayer.spotState || {};
+		return preflop
+			? spotState.enteredPreflop
+			: spotState.voluntaryThisStreet || spotState.enteredPreflop;
+	});
+	const primaryAggressorCandidate = getPlayerBySeatIndex(players, handContext?.streetAggressorSeatIndex);
+	const primaryAggressor = primaryAggressorCandidate && !primaryAggressorCandidate.folded &&
+		primaryAggressorCandidate !== player
+		? primaryAggressorCandidate
+		: null;
+	const preflopAggressor = getPlayerBySeatIndex(players, handContext?.preflopAggressorSeatIndex);
+	const shownStrengthOpponents = uniquePlayers([
+		...liveOpponents.filter((currentPlayer) => currentPlayer.spotState?.aggressiveThisStreet),
+		!preflop && preflopAggressor && !preflopAggressor.folded && preflopAggressor !== player
+			? preflopAggressor
+			: null,
+	]);
+	const raiseCountForSpot = facingRaise
+		? (preflop ? handContext?.preflopRaiseCount ?? 0 : raisesThisRound)
+		: (preflop ? handContext?.preflopRaiseCount ?? 0 : handContext?.preflopRaiseCount ?? 0);
+	const limped = preflop && !facingRaise && (handContext?.preflopRaiseCount ?? 0) === 0 &&
+		voluntaryOpponents.length > 0;
+	const unopened = !facingRaise && !limped;
+	return {
+		liveOpponents,
+		remainingBehind,
+		voluntaryOpponents,
+		shownStrengthOpponents,
+		primaryAggressor,
+		unopened,
+		limped,
+		singleRaised: raiseCountForSpot === 1,
+		multiRaised: raiseCountForSpot > 1,
+		headsUp: liveOpponents.length <= 1,
+		multiway: liveOpponents.length > 1,
+		facingAggression: facingRaise,
+	};
+}
+
 function evaluateHandStrength(player, communityCards, preflop) {
 	if (preflop) {
 		return {
@@ -642,6 +779,7 @@ export function chooseBotAction(player, gameState) {
 		players,
 		lastRaise,
 		communityCards,
+		handContext,
 	} = gameState;
 	// Determine amount needed to call the current bet
 	const needToCall = currentBet - player.roundBet;
@@ -663,6 +801,7 @@ export function chooseBotAction(player, gameState) {
 
 	// Compute positional factor dynamically based on active players
 	const active = players.filter((p) => !p.folded);
+	const allOpponents = players.filter((p) => p !== player);
 	const opponents = players.filter((p) => !p.folded && p !== player);
 	const activeOpponents = opponents.length;
 	const opponentStacks = opponents.map((p) => p.chips);
@@ -680,6 +819,15 @@ export function chooseBotAction(player, gameState) {
 
 	// Determine if we are in pre-flop stage
 	const preflop = communityCards.length === 0;
+	const spotContext = buildSpotContext({
+		players,
+		player,
+		currentPhaseIndex,
+		preflop,
+		facingRaise,
+		raisesThisRound,
+		handContext,
+	});
 
 	// Evaluate hand strength
 	const { strength, solvedHand } = evaluateHandStrength(player, communityCards, preflop);
@@ -834,7 +982,7 @@ export function chooseBotAction(player, gameState) {
 		}
 		callBarrier = Math.min(1, Math.max(0.10, callBarrier));
 	}
-	const eliminationBarrier = needsToCall
+	let eliminationBarrier = needsToCall
 		? Math.min(1, callBarrier + eliminationPenalty)
 		: callBarrier;
 
@@ -858,9 +1006,6 @@ export function chooseBotAction(player, gameState) {
 	let bluffChance = 0;
 	let foldRate = 0;
 	let statsWeight = 0;
-	let avgVPIP = 0;
-	let avgAgg = 0;
-	let avgHands = 0;
 
 	function capGreenNonPremium(amount) {
 		if (!isGreenZone || premiumHand) return amount;
@@ -969,43 +1114,141 @@ export function chooseBotAction(player, gameState) {
 		return Math.random() < chance;
 	}
 
-	// Adjust based on observed opponent tendencies
-	const statOpponents = players.filter((p) => p !== player);
-	if (statOpponents.length > 0) {
-		avgVPIP = statOpponents.reduce((s, p) => s + (p.stats.vpip + 1) / (p.stats.hands + 2), 0) /
-			statOpponents.length;
-		avgAgg = statOpponents.reduce((s, p) =>
-			s + (p.stats.aggressiveActs + 1) / (p.stats.calls + 1), 0) /
-			statOpponents.length;
-		foldRate = avgFoldRate(statOpponents);
+	const tableProfile = aggregateOpponentStats(allOpponents);
+	const liveProfile = aggregateOpponentStats(spotContext.liveOpponents);
+	const behindProfile = aggregateOpponentStats(spotContext.remainingBehind);
+	const voluntaryProfile = aggregateOpponentStats(spotContext.voluntaryOpponents);
+	const shownStrengthProfile = aggregateOpponentStats(spotContext.shownStrengthOpponents);
+	const aggressorProfile = spotContext.primaryAggressor
+		? aggregateOpponentStats([spotContext.primaryAggressor])
+		: aggregateOpponentStats([]);
+	const tableProfileEntry = createProfileEntry("table", tableProfile);
+	const liveProfileEntry = createProfileEntry("live", liveProfile);
+	const behindProfileEntry = createProfileEntry("behind", behindProfile);
+	const voluntaryProfileEntry = createProfileEntry("voluntary", voluntaryProfile);
+	const shownStrengthProfileEntry = createProfileEntry("shown", shownStrengthProfile);
+	const aggressorProfileEntry = createProfileEntry("aggr", aggressorProfile);
+	const pressureProfileEntry = facingRaise
+		? selectProfileEntry(
+			aggressorProfileEntry,
+			shownStrengthProfileEntry,
+			liveProfileEntry,
+			tableProfileEntry,
+		)
+		: preflop && spotContext.unopened
+		? selectProfileEntry(behindProfileEntry, liveProfileEntry, tableProfileEntry)
+		: preflop && spotContext.limped
+		? selectProfileEntry(
+			voluntaryProfileEntry,
+			behindProfileEntry,
+			liveProfileEntry,
+			tableProfileEntry,
+		)
+		: selectProfileEntry(liveProfileEntry, behindProfileEntry, tableProfileEntry);
+	const foldProfileEntry = preflop
+		? spotContext.limped
+			? selectProfileEntry(
+				voluntaryProfileEntry,
+				behindProfileEntry,
+				liveProfileEntry,
+				tableProfileEntry,
+			)
+			: selectProfileEntry(behindProfileEntry, liveProfileEntry, tableProfileEntry)
+		: selectProfileEntry(liveProfileEntry, behindProfileEntry, tableProfileEntry);
+	const pressureProfile = pressureProfileEntry.profile;
+	const foldProfile = foldProfileEntry.profile;
 
-		// Weight adjustments by average hands played to avoid overreacting in early rounds
-		avgHands = statOpponents.reduce((s, p) =>
-			s + p.stats.hands, 0) /
-			statOpponents.length;
-		const weight = avgHands < MIN_HANDS_FOR_WEIGHT
-			? 0
-			: 1 - Math.exp(-(avgHands - MIN_HANDS_FOR_WEIGHT) / WEIGHT_GROWTH);
-		statsWeight = weight;
-		bluffChance = Math.min(0.3, foldRate) * weight;
-		bluffChance *= 1 - textureRisk * 0.5;
-		const bluffAggFactor = Math.max(0.8, Math.min(1.2, aggressiveness));
-		bluffChance = Math.min(0.3, bluffChance * bluffAggFactor);
+	foldRate = foldProfile.foldRate;
+	statsWeight = foldProfile.weight;
+	bluffChance = Math.min(0.3, foldRate) * statsWeight;
+	bluffChance *= 1 - textureRisk * 0.5;
 
-		if (avgVPIP < 0.25) {
-			raiseThreshold -= 0.5 * weight;
-			aggressiveness += 0.1 * weight;
-		} else if (avgVPIP > 0.5) {
-			raiseThreshold += 0.5 * weight;
-			aggressiveness -= 0.1 * weight;
-		}
+	if (pressureProfile.count > 0) {
+		const weight = pressureProfile.weight;
+		if (facingRaise) {
+			if (pressureProfile.vpip < 0.25) {
+				raiseThreshold += 0.75 * weight;
+				aggressiveness -= 0.08 * weight;
+			} else if (pressureProfile.vpip > 0.5) {
+				raiseThreshold -= 0.35 * weight;
+				aggressiveness += 0.04 * weight;
+			}
 
-		if (avgAgg > 1.5) {
-			aggressiveness -= 0.1 * weight;
-		} else if (avgAgg < 0.7) {
-			aggressiveness += 0.1 * weight;
+			if (pressureProfile.aggression > 1.5) {
+				raiseThreshold -= 0.2 * weight;
+			} else if (pressureProfile.aggression < 0.7) {
+				raiseThreshold += 0.25 * weight;
+				aggressiveness -= 0.06 * weight;
+			}
+
+			let callBarrierAdj = 0;
+			if (pressureProfile.vpip < 0.25) {
+				callBarrierAdj += 0.03 * weight;
+			} else if (pressureProfile.vpip > 0.5) {
+				callBarrierAdj -= 0.02 * weight;
+			}
+			if (pressureProfile.aggression > 1.5) {
+				callBarrierAdj -= 0.02 * weight;
+			} else if (pressureProfile.aggression < 0.7) {
+				callBarrierAdj += 0.02 * weight;
+			}
+			callBarrier = Math.min(1, Math.max(preflop ? 0 : 0.10, callBarrier + callBarrierAdj));
+			eliminationBarrier = needsToCall
+				? Math.min(1, callBarrier + eliminationPenalty)
+				: callBarrier;
+		} else {
+			if (pressureProfile.vpip < 0.25) {
+				raiseThreshold -= 0.45 * weight;
+				aggressiveness += 0.12 * weight;
+			} else if (pressureProfile.vpip > 0.5) {
+				raiseThreshold += 0.4 * weight;
+				aggressiveness -= 0.1 * weight;
+			}
+
+			if (pressureProfile.aggression > 1.5) {
+				aggressiveness -= 0.08 * weight;
+			} else if (pressureProfile.aggression < 0.7) {
+				aggressiveness += 0.08 * weight;
+			}
 		}
 	}
+
+	if (spotContext.limped) {
+		const limpWeight = Math.max(voluntaryProfile.weight, behindProfile.weight);
+		if (voluntaryProfile.count > 0 && voluntaryProfile.vpip > 0.45) {
+			raiseThreshold += 0.2 * limpWeight;
+		}
+		bluffChance *= 0.75;
+	}
+
+	if (!preflop && !facingRaise && spotContext.singleRaised && spotContext.headsUp) {
+		foldRate = Math.min(1, foldRate + 0.05 * foldProfile.weight);
+		aggressiveness += 0.05;
+		bluffChance *= 1.1;
+	}
+
+	if (spotContext.multiway) {
+		const extraOpponents = Math.max(0, activeOpponents - 1);
+		raiseThreshold += Math.min(0.9, extraOpponents * 0.22);
+		aggressiveness -= Math.min(0.18, extraOpponents * 0.05);
+		foldRate *= Math.max(0.35, 1 - extraOpponents * 0.2);
+		bluffChance *= Math.max(0.2, 1 - extraOpponents * 0.25);
+	}
+
+	if (spotContext.shownStrengthOpponents.length > 1) {
+		raiseThreshold += 0.35;
+		aggressiveness -= 0.08;
+		bluffChance *= 0.3;
+	}
+
+	if (spotContext.multiRaised) {
+		raiseThreshold += facingRaise ? 0.8 : 0.3;
+		aggressiveness -= 0.12;
+		bluffChance = 0;
+	}
+
+	const bluffAggFactor = Math.max(0.8, Math.min(1.2, aggressiveness));
+	bluffChance = Math.min(0.3, bluffChance * bluffAggFactor);
 
 	raiseThreshold = Math.max(1, raiseThreshold - (aggressiveness - 1) * 0.8);
 	if (!preflop) {
@@ -1043,6 +1286,7 @@ export function chooseBotAction(player, gameState) {
 	raiseThreshold += raiseLevel * RERAISE_RATIO_STEP * 10;
 	const betAggFactor = Math.max(0.9, Math.min(1.1, aggressiveness));
 	const shoveAggAdj = Math.max(-0.08, Math.min(0.08, (aggressiveness - 1) * 0.12));
+	const nonValueAggressionBlocked = spotContext.multiRaised;
 
 	// Keep a simple betting-line memory for the preflop aggressor.
 	let lineAbort = false;
@@ -1152,7 +1396,7 @@ export function chooseBotAction(player, gameState) {
 	let isStab = false;
 	if (!useHarringtonStrategy) {
 		// If facing any all-in, do not fold always
-		const facingAllIn = statOpponents.some((p) => p.allIn);
+		const facingAllIn = allOpponents.some((p) => p.allIn);
 		if (decision.action === "fold" && facingAllIn) {
 			const goodThreshold = preflop ? ALLIN_HAND_PREFLOP : ALLIN_HAND_POSTFLOP;
 			const riskAdjustedThreshold = Math.min(1, goodThreshold + eliminationPenalty);
@@ -1165,7 +1409,7 @@ export function chooseBotAction(player, gameState) {
 			bluffChance > 0 && canRaise && !facingRaise &&
 			(!preflop || strengthRatio >= MIN_PREFLOP_BLUFF_RATIO) &&
 			(decision.action === "check" || decision.action === "fold") && !facingAllIn &&
-			!nonValueAggressionMade
+			!nonValueAggressionMade && !nonValueAggressionBlocked
 		) {
 			if (Math.random() < bluffChance) {
 				const bluffAmt = Math.max(ceilTo10(minRaiseAmount), bluffBetSize());
@@ -1181,7 +1425,7 @@ export function chooseBotAction(player, gameState) {
 		) {
 			if (currentPhaseIndex === 1 && botLine.cbetIntent) {
 				const wantsBluff = strengthRatio < 0.6 && drawEquity === 0;
-				if (!wantsBluff || !nonValueAggressionMade) {
+				if (!wantsBluff || (!nonValueAggressionMade && !nonValueAggressionBlocked)) {
 					const bet = strengthRatio >= 0.6 || drawEquity > 0
 						? protectionBetSize()
 						: bluffBetSize();
@@ -1195,7 +1439,7 @@ export function chooseBotAction(player, gameState) {
 				}
 			} else if (currentPhaseIndex === 2 && botLine.barrelIntent) {
 				const wantsBluff = strengthRatio < 0.6 && drawEquity === 0;
-				if (!wantsBluff || !nonValueAggressionMade) {
+				if (!wantsBluff || (!nonValueAggressionMade && !nonValueAggressionBlocked)) {
 					const bet = strengthRatio >= 0.65 || drawEquity > 0
 						? protectionBetSize()
 						: bluffBetSize();
@@ -1229,7 +1473,7 @@ export function chooseBotAction(player, gameState) {
 			!facingRaise &&
 			textureRisk < 0.4 && (foldRate > 0.25 || drawEquity > 0) &&
 			Math.random() < Math.max(0.05, Math.min(0.35, 0.05 + positionFactor * 0.3)) &&
-			!nonValueAggressionMade
+			!nonValueAggressionMade && !nonValueAggressionBlocked
 		) {
 			const betAmt = protectionBetSize();
 			decision = { action: "raise", amount: Math.max(ceilTo10(lastRaise), betAmt) };
@@ -1289,6 +1533,32 @@ export function chooseBotAction(player, gameState) {
 	if (DEBUG_DECISIONS) {
 		const boardCtx = overPair ? "OP" : (topPair ? "TP" : (drawChance ? "DR" : "-"));
 		const drawFlag = isDraw ? "S" : (isWeakDraw ? "W" : "-");
+		const preflopRaiseCount = handContext?.preflopRaiseCount ?? 0;
+		const spotType = preflop
+			? spotContext.unopened
+				? "UO"
+				: spotContext.limped
+				? "L"
+				: spotContext.multiRaised
+				? "MR"
+				: spotContext.singleRaised
+				? "SR"
+				: "-"
+			: preflopRaiseCount > 1
+			? "MR"
+			: preflopRaiseCount === 1
+			? "SR"
+			: "L";
+		const structureTag = spotContext.headsUp ? "HU" : "MW";
+		const pressureTag = spotContext.facingAggression ? "FR" : "NF";
+		const primaryAggressorName = spotContext.primaryAggressor ? spotContext.primaryAggressor.name : "-";
+		const groupTag = `L${spotContext.liveOpponents.length} B${spotContext.remainingBehind.length} V${
+			spotContext.voluntaryOpponents.length
+		} S${spotContext.shownStrengthOpponents.length}`;
+		const pressureProfileTag = `${pressureProfileEntry.source}:${
+			formatProfileForDebug(pressureProfile)
+		}`;
+		const foldProfileTag = `${foldProfileEntry.source}:${formatProfileForDebug(foldProfile)}`;
 		const lineTag = botLine && botLine.preflopAggressor ? "PFA" : "-";
 		const cbetPlan = botLine && botLine.preflopAggressor
 			? (botLine.cbetIntent === null ? "-" : (botLine.cbetIntent ? "Y" : "N"))
@@ -1315,6 +1585,10 @@ export function chooseBotAction(player, gameState) {
 				`RT10:${(raiseThreshold / 10).toFixed(2)} Agg:${
 					aggressiveness.toFixed(2)
 				} RL:${raiseLevel} RAdj:${(raiseLevel * RERAISE_RATIO_STEP).toFixed(2)} | ` +
+				`Spot:${spotType}/${structureTag}/${pressureTag} Grp:${groupTag} Aggr:${primaryAggressorName} | ` +
+				`ProfP:${pressureProfileTag} ProfF:${foldProfileTag} NVB:${
+					nonValueAggressionBlocked ? "Y" : "N"
+				} | ` +
 				`Ctx:${boardCtx} Draw:${drawFlag} Tex:${textureRisk.toFixed(2)} | ` +
 				`CL:${amChipleader ? "Y" : "N"} SS:${shortstackRelative ? "Y" : "N"} Prem:${
 					premiumHand ? "Y" : "N"

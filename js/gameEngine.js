@@ -302,20 +302,72 @@ export function isAllInRunout(players, currentBet) {
 	return actionablePlayers[0].roundBet === currentBet;
 }
 
-export function recordPlayerActionStats(gameState, player, actionName) {
+export function createHandContextState() {
+	return {
+		preflopRaiseCount: 0,
+		preflopAggressorSeatIndex: null,
+		streetAggressorSeatIndex: null,
+	};
+}
+
+export function createPlayerSpotState() {
+	return {
+		actedThisStreet: false,
+		voluntaryThisStreet: false,
+		aggressiveThisStreet: false,
+		enteredPreflop: false,
+	};
+}
+
+function ensureHandContext(gameState) {
+	if (!gameState.handContext) {
+		gameState.handContext = createHandContextState();
+	}
+	return gameState.handContext;
+}
+
+function ensurePlayerSpotState(player) {
+	if (!player.spotState) {
+		player.spotState = createPlayerSpotState();
+	}
+	return player.spotState;
+}
+
+export function recordPlayerActionStats(gameState, player, actionName, actionMeta = {}) {
 	if (!gameState || !player) {
 		return;
 	}
 
+	const handContext = ensureHandContext(gameState);
+	const spotState = ensurePlayerSpotState(player);
+	const isVoluntaryAction = actionMeta.voluntary ??
+		(actionName === "call" || actionName === "raise" || actionName === "allin");
+	const isAggressiveAction = actionMeta.aggressive ??
+		(actionName === "raise" || actionName === "allin");
+
+	spotState.actedThisStreet = true;
+	if (isVoluntaryAction) {
+		spotState.voluntaryThisStreet = true;
+	}
+	if (isAggressiveAction) {
+		spotState.aggressiveThisStreet = true;
+		handContext.streetAggressorSeatIndex = player.seatIndex;
+	}
+	if (gameState.currentPhaseIndex === 0 && isVoluntaryAction) {
+		spotState.enteredPreflop = true;
+	}
+
 	if (gameState.currentPhaseIndex === 0) {
-		if (actionName === "call" || actionName === "raise" || actionName === "allin") {
+		if (isVoluntaryAction) {
 			player.stats.vpip++;
 		}
-		if (actionName === "raise" || actionName === "allin") {
+		if (isAggressiveAction) {
 			player.stats.pfr++;
+			handContext.preflopRaiseCount++;
+			handContext.preflopAggressorSeatIndex = player.seatIndex;
 		}
 	} else {
-		if (actionName === "raise" || actionName === "allin") {
+		if (isAggressiveAction) {
 			player.stats.aggressiveActs++;
 		}
 		if (actionName === "call") {
@@ -323,7 +375,7 @@ export function recordPlayerActionStats(gameState, player, actionName) {
 		}
 	}
 
-	if (gameState.currentPhaseIndex === 0 && (actionName === "raise" || actionName === "allin")) {
+	if (gameState.currentPhaseIndex === 0 && isAggressiveAction) {
 		gameState.players.forEach((currentPlayer) => {
 			if (currentPlayer.botLine) {
 				currentPlayer.botLine.preflopAggressor = false;

@@ -21,6 +21,8 @@ Imports
 import { chooseBotAction, enqueueBotAction, setBotPlaybackFast } from "./bot.js";
 import {
 	calculateWinProbabilities,
+	createHandContextState,
+	createPlayerSpotState,
 	getBettingRoundStartIndex,
 	getBlindSeatIndexes,
 	getBotRevealDecision,
@@ -236,6 +238,7 @@ const gameState = {
 	smallBlind: INITIAL_SMALL_BLIND,
 	bigBlind: INITIAL_BIG_BLIND,
 	lastRaise: INITIAL_BIG_BLIND,
+	handContext: createHandContextState(),
 };
 
 gameState.toJSON = function () {
@@ -248,12 +251,27 @@ gameState.toJSON = function () {
 		bigBlind: this.bigBlind,
 		raisesThisRound: this.raisesThisRound,
 		dealerOrbitCount: this.dealerOrbitCount,
+		handContext: this.handContext ? { ...this.handContext } : null,
 		communityCards: this.communityCards.slice(),
 		pendingAction: this.pendingAction ? { ...this.pendingAction } : null,
 		players: this.players,
 		timestamp: Date.now(),
 	};
 };
+
+function resetPlayerSpotStateForHand(player) {
+	player.spotState = createPlayerSpotState();
+}
+
+function resetPlayerSpotStateForStreet(player) {
+	if (!player.spotState) {
+		resetPlayerSpotStateForHand(player);
+		return;
+	}
+	player.spotState.actedThisStreet = false;
+	player.spotState.voluntaryThisStreet = false;
+	player.spotState.aggressiveThisStreet = false;
+}
 
 /* --------------------------------------------------------------------------------------------------
 Low-Level Utilities And Formatting Helpers
@@ -1489,6 +1507,7 @@ function createPlayers() {
 				barrelMade: false,
 				nonValueAggressionMade: false,
 			},
+			spotState: createPlayerSpotState(),
 		};
 		bindSeatRefPlayer(playerState);
 		gameState.players.push(playerState);
@@ -1651,6 +1670,7 @@ function preFlop() {
 
 	// --- Per-Hand Stats Reset ----------------------------------------------------
 	// Start statistics for a new hand
+	gameState.handContext = createHandContextState();
 	gameState.players.forEach((p) => {
 		p.stats.hands++;
 		p.botLine = {
@@ -1661,6 +1681,7 @@ function preFlop() {
 			barrelMade: false,
 			nonValueAggressionMade: false,
 		};
+		resetPlayerSpotStateForHand(p);
 	});
 
 	// If the original dealer is eliminated, update initialDealerName and reset dealerOrbitCount
@@ -1804,8 +1825,8 @@ function queueRunoutPhaseAdvance(reason = "") {
 Turn Handling And Betting Round Flow
 ---------------------------------------------------------------------------------------------------*/
 
-function notifyPlayerAction(player, action = "", amount = 0) {
-	recordPlayerActionStats(gameState, player, action);
+function notifyPlayerAction(player, action = "", amount = 0, actionMeta = {}) {
+	recordPlayerActionStats(gameState, player, action, actionMeta);
 
 	const msg = getPlayerActionNotificationText(player.name, action, amount);
 	if (action) {
@@ -1905,11 +1926,11 @@ function applyTurnAction(player, actionRequest) {
 	switch (actionRequest.action) {
 		case "fold":
 			player.folded = true;
-			notifyPlayerAction(player, "fold", 0);
+			notifyPlayerAction(player, "fold", 0, { aggressive: false, voluntary: false });
 			hidePlayerQr(player);
 			return { action: "fold", amount: 0 };
 		case "check":
-			notifyPlayerAction(player, "check", 0);
+			notifyPlayerAction(player, "check", 0, { aggressive: false, voluntary: false });
 			return { action: "check", amount: 0 };
 		case "call": {
 			const callAmount = Math.min(player.chips, currentActionState.needToCall);
@@ -1922,11 +1943,12 @@ function applyTurnAction(player, actionRequest) {
 			}
 			const actual = placePlayerBet(player, callAmount);
 			addToPot(actual);
-			notifyPlayerAction(player, "call", actual);
+			notifyPlayerAction(player, "call", actual, { aggressive: false, voluntary: actual > 0 });
 			return { action: "call", amount: actual };
 		}
 		case "allin": {
 			const actual = placePlayerBet(player, player.chips);
+			const isAggressiveAllIn = actual > currentActionState.needToCall;
 			addToPot(actual);
 			if (actual >= currentActionState.minRaise) {
 				gameState.currentBet = player.roundBet;
@@ -1935,7 +1957,10 @@ function applyTurnAction(player, actionRequest) {
 			} else if (actual >= currentActionState.needToCall) {
 				gameState.currentBet = Math.max(gameState.currentBet, player.roundBet);
 			}
-			notifyPlayerAction(player, "allin", actual);
+			notifyPlayerAction(player, "allin", actual, {
+				aggressive: isAggressiveAllIn,
+				voluntary: actual > 0,
+			});
 			return { action: "allin", amount: actual };
 		}
 		case "raise": {
@@ -1956,7 +1981,10 @@ function applyTurnAction(player, actionRequest) {
 				gameState.raisesThisRound++;
 			}
 			addToPot(actual);
-			notifyPlayerAction(player, "raise", actual);
+			notifyPlayerAction(player, "raise", actual, {
+				aggressive: actual > currentActionState.needToCall,
+				voluntary: actual > 0,
+			});
 			return { action: "raise", amount: actual };
 		}
 		default:
@@ -2033,6 +2061,11 @@ function startBettingRound() {
 		gameState.lastRaise = gameState.bigBlind;
 		gameState.players.forEach((p) => resetPlayerRoundBet(p));
 	}
+	if (!gameState.handContext) {
+		gameState.handContext = createHandContextState();
+	}
+	gameState.handContext.streetAggressorSeatIndex = null;
+	gameState.players.forEach((p) => resetPlayerSpotStateForStreet(p));
 	logFlow("startBettingRound", {
 		phase: getCurrentPhase(gameState.currentPhaseIndex),
 		currentBet: gameState.currentBet,
@@ -2504,7 +2537,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-29-v3";
+const SERVICE_WORKER_VERSION = "2026-03-30-v4";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
