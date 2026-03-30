@@ -196,14 +196,220 @@ function getSolvedHandScore(handObj) {
 	return handObj ? handObj.rank + handTiebreaker(handObj) : 0;
 }
 
-function solvedHandUsesHoleCards(hole, handObj) {
-	if (!handObj) {
-		return false;
+function compareRankArrays(left, right) {
+	const maxLength = Math.max(left.length, right.length);
+	for (let i = 0; i < maxLength; i++) {
+		const leftRank = left[i] ?? -1;
+		const rightRank = right[i] ?? -1;
+		if (leftRank > rightRank) {
+			return 1;
+		}
+		if (leftRank < rightRank) {
+			return -1;
+		}
 	}
-	const holeCards = hole.map((c) => new Card(c));
-	return handObj.cards.some((card) =>
-		holeCards.some((holeCard) => holeCard.rank === card.rank && holeCard.suit === card.suit)
-	);
+	return 0;
+}
+
+function getRankGroups(cards) {
+	const counts = new Map();
+	cards.forEach((card) => {
+		counts.set(card.rank, (counts.get(card.rank) || 0) + 1);
+	});
+	return Array.from(counts.entries()).sort((left, right) => {
+		if (right[1] !== left[1]) {
+			return right[1] - left[1];
+		}
+		return right[0] - left[0];
+	});
+}
+
+function getSortedRanks(cards) {
+	return cards.map((card) => card.rank).sort((left, right) => right - left);
+}
+
+function getStraightHighRank(cards) {
+	const ranks = [...new Set(cards.map((card) => card.rank))].sort((left, right) => right - left);
+	const isWheel = ranks.includes(13) && ranks.includes(4) && ranks.includes(3) &&
+		ranks.includes(2) && ranks.includes(1);
+	return isWheel ? 4 : (ranks[0] ?? -1);
+}
+
+function describeSolvedHand(handObj) {
+	if (!handObj) {
+		return { primary: [], kickers: [] };
+	}
+
+	const groups = getRankGroups(handObj.cards);
+	switch (handObj.name) {
+		case "Pair": {
+			const pairRank = groups.find(([, count]) => count === 2)?.[0] ?? -1;
+			const kickers = groups
+				.filter(([, count]) => count === 1)
+				.map(([rank]) => rank)
+				.sort((left, right) => right - left);
+			return { primary: [pairRank], kickers };
+		}
+		case "Two Pair": {
+			const pairRanks = groups
+				.filter(([, count]) => count === 2)
+				.map(([rank]) => rank)
+				.sort((left, right) => right - left);
+			const kickerRank = groups.find(([, count]) => count === 1)?.[0];
+			return {
+				primary: pairRanks,
+				kickers: kickerRank === undefined ? [] : [kickerRank],
+			};
+		}
+		case "Three of a Kind": {
+			const tripRank = groups.find(([, count]) => count === 3)?.[0] ?? -1;
+			const kickers = groups
+				.filter(([, count]) => count === 1)
+				.map(([rank]) => rank)
+				.sort((left, right) => right - left);
+			return { primary: [tripRank], kickers };
+		}
+		case "Straight":
+		case "Straight Flush":
+			return { primary: [getStraightHighRank(handObj.cards)], kickers: [] };
+		case "Flush":
+			return { primary: getSortedRanks(handObj.cards), kickers: [] };
+		case "Full House": {
+			const tripRank = groups.find(([, count]) => count === 3)?.[0] ?? -1;
+			const pairRank = groups.find(([, count]) => count === 2)?.[0] ?? -1;
+			return { primary: [tripRank, pairRank], kickers: [] };
+		}
+		case "Four of a Kind": {
+			const quadRank = groups.find(([, count]) => count === 4)?.[0] ?? -1;
+			const kickerRank = groups.find(([, count]) => count === 1)?.[0];
+			return {
+				primary: [quadRank],
+				kickers: kickerRank === undefined ? [] : [kickerRank],
+			};
+		}
+		case "High Card":
+		default:
+			return { primary: [], kickers: getSortedRanks(handObj.cards) };
+	}
+}
+
+function classifyPrivateLift(rawHand, publicHand) {
+	if (!rawHand || !publicHand) {
+		return "none";
+	}
+	if (rawHand.rank > publicHand.rank) {
+		return "category";
+	}
+	if (rawHand.rank < publicHand.rank) {
+		return "none";
+	}
+
+	const rawDescriptor = describeSolvedHand(rawHand);
+	const publicDescriptor = describeSolvedHand(publicHand);
+	const primaryCompare = compareRankArrays(rawDescriptor.primary, publicDescriptor.primary);
+	if (primaryCompare > 0) {
+		return "structural";
+	}
+	if (primaryCompare < 0) {
+		return "none";
+	}
+
+	return compareRankArrays(rawDescriptor.kickers, publicDescriptor.kickers) > 0
+		? "kicker"
+		: "none";
+}
+
+function getPrivateAggressionBase(handObj) {
+	switch (handObj?.rank ?? 0) {
+		case 2:
+			return 0.16;
+		case 3:
+			return 0.28;
+		case 4:
+			return 0.42;
+		case 5:
+			return 0.58;
+		case 6:
+			return 0.60;
+		case 7:
+			return 0.74;
+		case 8:
+			return 0.88;
+		case 9:
+			return 0.95;
+		default:
+			return 0;
+	}
+}
+
+function getPublicDefenseFloor(publicHand, boardLength) {
+	if (!publicHand || boardLength < 3) {
+		return 0;
+	}
+
+	switch (publicHand.rank) {
+		case 2:
+			return boardLength === 3 ? 0.10 : boardLength === 4 ? 0.12 : 0.14;
+		case 3:
+			return boardLength === 3 ? 0.12 : boardLength === 4 ? 0.14 : 0.16;
+		case 4:
+			return boardLength === 3 ? 0.14 : boardLength === 4 ? 0.16 : 0.18;
+		default:
+			return publicHand.rank >= 5 ? (boardLength === 3 ? 0.16 : boardLength === 4 ? 0.18 : 0.20) : 0;
+	}
+}
+
+function getPassiveBonus(liftType) {
+	switch (liftType) {
+		case "kicker":
+			return 0.02;
+		case "structural":
+			return 0.04;
+		case "category":
+			return 0.06;
+		default:
+			return 0;
+	}
+}
+
+function buildPostflopStrengthProfile(solvedHand, communityCards) {
+	const rawScore = getSolvedHandScore(solvedHand);
+	if (!solvedHand || communityCards.length < 3) {
+		return {
+			publicHand: null,
+			publicScore: 0,
+			rawScore,
+			liftType: "none",
+			publicDefenseFloor: 0,
+			privateAggressionRatio: 0,
+			passiveBonus: 0,
+			passiveStrengthRatio: 0,
+		};
+	}
+
+	const publicHand = Hand.solve(communityCards);
+	const publicScore = getSolvedHandScore(publicHand);
+	const liftType = classifyPrivateLift(solvedHand, publicHand);
+	const classBase = getPrivateAggressionBase(solvedHand);
+	const privateAggressionRatio = liftType === "category"
+		? classBase
+		: liftType === "structural"
+		? classBase * 0.85
+		: 0;
+	const publicDefenseFloor = getPublicDefenseFloor(publicHand, communityCards.length);
+	const passiveBonus = getPassiveBonus(liftType);
+	const passiveStrengthRatio = Math.max(privateAggressionRatio, publicDefenseFloor + passiveBonus);
+
+	return {
+		publicHand,
+		publicScore,
+		rawScore,
+		liftType,
+		publicDefenseFloor,
+		privateAggressionRatio,
+		passiveBonus,
+		passiveStrengthRatio,
+	};
 }
 
 // Calculate how often a player folds
@@ -841,24 +1047,22 @@ export function chooseBotAction(player, gameState) {
 
 	// Evaluate hand strength
 	const { strength, solvedHand } = evaluateHandStrength(player, communityCards, preflop);
-	const holeCards = player.holeCards.slice();
-	let holeImprovesHand = false;
-
-	/* Hybrid check: Do hole cards improve the hand?
-   - River: Delta-score (7-card vs 5-card board). Pokersolver may include hole
-     cards in tie best-5 even when they don't improve (Board AA KK Q, Hole Q♦ 2♣
-     → solver picks Q♦, but delta = 0).
-   - Flop/Turn: No reliable board-vs-full test (board < 5 cards). Uses-hole-cards
-     is a conservative gate to prevent obvious plays-the-board cases.
-	*/
-	if (!preflop && solvedHand) {
-		if (communityCards.length < 5) {
-			holeImprovesHand = solvedHandUsesHoleCards(holeCards, solvedHand);
-		} else if (communityCards.length === 5) {
-			const boardHand = Hand.solve(communityCards);
-			holeImprovesHand = getSolvedHandScore(solvedHand) > getSolvedHandScore(boardHand);
-		}
-	}
+	const postflopStrengthProfile = preflop
+		? null
+		: buildPostflopStrengthProfile(solvedHand, communityCards);
+	const publicHand = postflopStrengthProfile?.publicHand ?? null;
+	const publicScore = postflopStrengthProfile?.publicScore ?? 0;
+	const rawScore = postflopStrengthProfile?.rawScore ?? strength;
+	const liftType = postflopStrengthProfile?.liftType ?? "none";
+	const publicDefenseFloor = postflopStrengthProfile?.publicDefenseFloor ?? 0;
+	const passiveBonus = postflopStrengthProfile?.passiveBonus ?? 0;
+	const privateAggressionRatio = preflop
+		? strength / 10
+		: postflopStrengthProfile?.privateAggressionRatio ?? 0;
+	const passiveStrengthRatio = preflop
+		? strength / 10
+		: postflopStrengthProfile?.passiveStrengthRatio ?? 0;
+	const hasPrivateValue = !preflop && (liftType === "structural" || liftType === "category");
 
 	// Post-flop board context
 	const postflopContext = computePostflopContext(player, communityCards, preflop);
@@ -869,20 +1073,40 @@ export function chooseBotAction(player, gameState) {
 	const drawEquity = postflopContext.drawEquity;
 	const textureRisk = postflopContext.textureRisk;
 	const isMadeHand = !preflop && solvedHand && solvedHand.rank >= 2;
-	const isDraw = drawOuts >= 8;
-	const isWeakDraw = drawOuts > 0 && drawOuts < 8;
-	const isDeadHand = !preflop && !isMadeHand && !isDraw && !isWeakDraw;
+		const isDraw = drawOuts >= 8;
+		const isWeakDraw = drawOuts > 0 && drawOuts < 8;
+		const isDeadHand = !preflop && !isMadeHand && !isDraw && !isWeakDraw;
 
-	// Normalize strength to [0,1]
-	// preflop score and postflop rank both live roughly in 0..10, so /10 is intentional
-	const strengthBase = strength / 10;
-	const strengthRatio = strengthBase;
-	const mZone = getMZone(mRatio);
-	const isGreenZone = mZone === "green";
-	const strengthRatioBase = strengthRatio;
-	const premiumHand = preflop
-		? strengthRatioBase >= PREMIUM_PREFLOP_RATIO
-		: strengthRatioBase >= PREMIUM_POSTFLOP_RATIO;
+		const aggressionStrengthRatio = privateAggressionRatio;
+		const mZone = getMZone(mRatio);
+		const isGreenZone = mZone === "green";
+		const isFlop = communityCards.length === 3;
+		const isTurn = communityCards.length === 4;
+		const hasStrongComboDraw = drawOuts >= 12;
+		const allowPublicDrawSemibluffRaise = !preflop &&
+			(liftType === "none" || liftType === "kicker") &&
+			(
+				(
+					publicHand?.rank === 1 &&
+					isFlop &&
+					activeOpponents <= 1 &&
+					!facingRaise &&
+					hasStrongComboDraw &&
+					isGreenZone
+				) ||
+				(
+					publicHand?.rank === 1 &&
+					isTurn &&
+					activeOpponents <= 1 &&
+					!facingRaise &&
+					hasStrongComboDraw &&
+					spr <= 1.2 &&
+					canShove
+				)
+			);
+		const premiumHand = preflop
+			? aggressionStrengthRatio >= PREMIUM_PREFLOP_RATIO
+			: aggressionStrengthRatio >= PREMIUM_POSTFLOP_RATIO;
 	const raiseAggAdj = amChipleader ? -CHIP_LEADER_RAISE_DELTA : 0;
 	const callTightAdj = shortstackRelative && stackRatio < ELIMINATION_RISK_START
 		? -SHORTSTACK_CALL_DELTA
@@ -922,7 +1146,7 @@ export function chooseBotAction(player, gameState) {
 	let callBarrier = preflop ? Math.min(1, callBarrierBase + commitmentPenalty) : callBarrierBase;
 	if (!preflop) {
 		let callBarrierAdj = 0;
-		if (holeImprovesHand) {
+		if (hasPrivateValue) {
 			if (overPair) {
 				callBarrierAdj -= 0.03;
 			} else if (topPair) {
@@ -1011,7 +1235,7 @@ export function chooseBotAction(player, gameState) {
 	if (amChipleader) {
 		raiseThreshold = Math.max(1, raiseThreshold - CHIP_LEADER_RAISE_DELTA * 10);
 	}
-	const decisionStrength = preflop ? strength : strengthRatio * 10;
+	const decisionStrength = preflop ? strength : aggressionStrengthRatio * 10;
 
 	let bluffChance = 0;
 	let foldRate = 0;
@@ -1030,15 +1254,15 @@ export function chooseBotAction(player, gameState) {
 		let base;
 		if (preflop) {
 			base = 0.55;
-			if (strengthRatio >= 0.9) base += 0.15;
+			if (aggressionStrengthRatio >= 0.9) base += 0.15;
 			base += activeOpponents * 0.04;
 			base += (1 - positionFactor) * 0.05;
-			if (positionFactor < 0.3 && strengthRatio >= 0.8) {
+			if (positionFactor < 0.3 && aggressionStrengthRatio >= 0.8) {
 				base += 0.1; // bigger open from early position
 			}
 		} else {
 			base = textureRisk > 0.6 ? 0.7 : textureRisk > 0.3 ? 0.6 : 0.45;
-			if (strengthRatio > 0.95) base += 0.1; // polarise with very strong hands
+			if (aggressionStrengthRatio > 0.95) base += 0.1; // polarise with very strong hands
 			base += activeOpponents * 0.03;
 			base += (1 - positionFactor) * 0.05;
 		}
@@ -1100,7 +1324,7 @@ export function chooseBotAction(player, gameState) {
 		chance -= Math.max(0, activeOpponents - 1) * 0.06;
 		chance += positionFactor * 0.08;
 		chance += Math.min(0.2, foldRate * 0.25);
-		if (strengthRatio >= 0.7) chance += 0.15;
+		if (aggressionStrengthRatio >= 0.7) chance += 0.15;
 		if (drawEquity > 0) chance += 0.08;
 		const weightScale = 0.6 + 0.4 * statsWeight;
 		chance *= weightScale;
@@ -1116,7 +1340,7 @@ export function chooseBotAction(player, gameState) {
 		chance -= Math.max(0, activeOpponents - 1) * 0.05;
 		chance += positionFactor * 0.06;
 		chance += Math.min(0.15, foldRate * 0.2);
-		if (strengthRatio >= 0.75) chance += 0.1;
+		if (aggressionStrengthRatio >= 0.75) chance += 0.1;
 		if (drawEquity > 0) chance += 0.06;
 		const weightScale = 0.6 + 0.4 * statsWeight;
 		chance *= weightScale;
@@ -1263,7 +1487,7 @@ export function chooseBotAction(player, gameState) {
 	raiseThreshold = Math.max(1, raiseThreshold - (aggressiveness - 1) * 0.8);
 	if (!preflop) {
 		let raiseAdj = 0;
-		if (holeImprovesHand) {
+		if (hasPrivateValue) {
 			if (overPair) {
 				raiseAdj -= 0.35;
 			} else if (topPair) {
@@ -1301,7 +1525,7 @@ export function chooseBotAction(player, gameState) {
 	// Keep a simple betting-line memory for the preflop aggressor.
 	let lineAbort = false;
 	if (!preflop && botLine && botLine.preflopAggressor) {
-		lineAbort = textureRisk > 0.7 && strengthRatio < 0.45 && drawEquity === 0;
+		lineAbort = textureRisk > 0.7 && aggressionStrengthRatio < 0.45 && drawEquity === 0;
 		if (currentPhaseIndex === 1 && botLine.cbetIntent === null) {
 			botLine.cbetIntent = decideCbetIntent(lineAbort);
 		}
@@ -1316,7 +1540,8 @@ export function chooseBotAction(player, gameState) {
 	/* Tie-breaker explanation:
        - When the difference between hand strength and the raise threshold is within STRENGTH_TIE_DELTA,
          the bot randomly chooses between the two close options to introduce unpredictability.
-       - Similarly, when the difference between strengthRatio and callBarrier is within ODDS_TIE_DELTA,
+       - Similarly, when the difference between passiveStrengthRatio and callBarrier is within
+         ODDS_TIE_DELTA,
          the bot randomly resolves between call and fold to break ties.
      */
 	let decision;
@@ -1326,7 +1551,7 @@ export function chooseBotAction(player, gameState) {
 			mZone,
 			facingRaise,
 			needsToCall,
-			strengthRatio,
+			strengthRatio: aggressionStrengthRatio,
 			deadPushThreshold,
 			redPushThreshold,
 			orangePushThreshold,
@@ -1347,11 +1572,11 @@ export function chooseBotAction(player, gameState) {
 	if (!decision) {
 		const shallowShoveThreshold = Math.max(0, Math.min(1, 0.65 - shoveAggAdj));
 		const shortstackShoveThreshold = Math.max(0, Math.min(1, 0.75 - shoveAggAdj));
-		if (spr <= 1.2 && strengthRatio >= shallowShoveThreshold) {
+		if (spr <= 1.2 && aggressionStrengthRatio >= shallowShoveThreshold) {
 			decision = { action: "raise", amount: player.chips };
 		} else if (
 			preflop && player.chips <= blindLevel.big * 10 &&
-			strengthRatio >= shortstackShoveThreshold
+			aggressionStrengthRatio >= shortstackShoveThreshold
 		) {
 			decision = { action: "raise", amount: player.chips };
 		}
@@ -1377,7 +1602,7 @@ export function chooseBotAction(player, gameState) {
 			raiseAmt = Math.max(minRaiseAmount, raiseAmt);
 			if (Math.abs(decisionStrength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
 				const callAmt = Math.min(player.chips, needToCall);
-				const alt = (strengthRatio >= eliminationBarrier &&
+				const alt = (passiveStrengthRatio >= eliminationBarrier &&
 						stackRatio <= (preflop ? 0.5 : 0.7))
 					? { action: "call", amount: callAmt }
 					: { action: "fold" };
@@ -1386,11 +1611,11 @@ export function chooseBotAction(player, gameState) {
 				decision = { action: "raise", amount: raiseAmt };
 			}
 		} else if (
-			strengthRatio >= eliminationBarrier &&
+			passiveStrengthRatio >= eliminationBarrier &&
 			stackRatio <= (preflop ? 0.5 : 0.7)
 		) {
 			const callAmt = Math.min(player.chips, needToCall);
-			if (Math.abs(strengthRatio - eliminationBarrier) <= ODDS_TIE_DELTA) {
+			if (Math.abs(passiveStrengthRatio - eliminationBarrier) <= ODDS_TIE_DELTA) {
 				decision = Math.random() < 0.5
 					? { action: "call", amount: callAmt }
 					: { action: "fold" };
@@ -1410,14 +1635,14 @@ export function chooseBotAction(player, gameState) {
 		if (decision.action === "fold" && facingAllIn) {
 			const goodThreshold = preflop ? ALLIN_HAND_PREFLOP : ALLIN_HAND_POSTFLOP;
 			const riskAdjustedThreshold = Math.min(1, goodThreshold + eliminationPenalty);
-			if (strengthRatio >= riskAdjustedThreshold) {
+			if (passiveStrengthRatio >= riskAdjustedThreshold) {
 				decision = { action: "call", amount: Math.min(player.chips, needToCall) };
 			}
 		}
 
 		if (
 			bluffChance > 0 && canRaise && !facingRaise &&
-			(!preflop || strengthRatio >= MIN_PREFLOP_BLUFF_RATIO) &&
+			(!preflop || aggressionStrengthRatio >= MIN_PREFLOP_BLUFF_RATIO) &&
 			(decision.action === "check" || decision.action === "fold") && !facingAllIn &&
 			!nonValueAggressionMade && !nonValueAggressionBlocked
 		) {
@@ -1431,12 +1656,12 @@ export function chooseBotAction(player, gameState) {
 		if (
 			!preflop && currentBet === 0 && decision.action === "check" && canRaise &&
 			!facingRaise &&
-			botLine && botLine.preflopAggressor && !lineAbort && strengthRatio < 0.9
+			botLine && botLine.preflopAggressor && !lineAbort && aggressionStrengthRatio < 0.9
 		) {
 			if (currentPhaseIndex === 1 && botLine.cbetIntent) {
-				const wantsBluff = strengthRatio < 0.6 && drawEquity === 0;
+				const wantsBluff = aggressionStrengthRatio < 0.6 && drawEquity === 0;
 				if (!wantsBluff || (!nonValueAggressionMade && !nonValueAggressionBlocked)) {
-					const bet = strengthRatio >= 0.6 || drawEquity > 0
+					const bet = aggressionStrengthRatio >= 0.6 || drawEquity > 0
 						? protectionBetSize()
 						: bluffBetSize();
 					decision = {
@@ -1448,9 +1673,9 @@ export function chooseBotAction(player, gameState) {
 					}
 				}
 			} else if (currentPhaseIndex === 2 && botLine.barrelIntent) {
-				const wantsBluff = strengthRatio < 0.6 && drawEquity === 0;
+				const wantsBluff = aggressionStrengthRatio < 0.6 && drawEquity === 0;
 				if (!wantsBluff || (!nonValueAggressionMade && !nonValueAggressionBlocked)) {
-					const bet = strengthRatio >= 0.65 || drawEquity > 0
+					const bet = aggressionStrengthRatio >= 0.65 || drawEquity > 0
 						? protectionBetSize()
 						: bluffBetSize();
 					decision = {
@@ -1465,14 +1690,14 @@ export function chooseBotAction(player, gameState) {
 		}
 
 		if (
-			!preflop && decision.action === "raise" && strengthRatio >= 0.95 && spr <= 2 &&
+			!preflop && decision.action === "raise" && aggressionStrengthRatio >= 0.95 && spr <= 2 &&
 			Math.random() < 0.3
 		) {
 			decision.amount = Math.max(decision.amount, overBetSize());
 		}
 
 		if (
-			!preflop && !needsToCall && strengthRatio >= 0.9 && decision.action === "raise" &&
+			!preflop && !needsToCall && aggressionStrengthRatio >= 0.9 && decision.action === "raise" &&
 			Math.random() < 0.3
 		) {
 			decision = { action: "check" };
@@ -1491,8 +1716,10 @@ export function chooseBotAction(player, gameState) {
 		}
 	}
 
-	const reraiseValueRatio = (topPair || overPair) ? RERAISE_TOP_PAIR_RATIO : RERAISE_VALUE_RATIO;
-	if (decision.action === "raise" && raiseLevel > 0 && strengthRatio < reraiseValueRatio) {
+	const reraiseValueRatio = hasPrivateValue && (topPair || overPair)
+		? RERAISE_TOP_PAIR_RATIO
+		: RERAISE_VALUE_RATIO;
+	if (decision.action === "raise" && raiseLevel > 0 && aggressionStrengthRatio < reraiseValueRatio) {
 		decision = needToCall > 0
 			? { action: "call", amount: Math.min(player.chips, needToCall) }
 			: { action: "check" };
@@ -1500,8 +1727,21 @@ export function chooseBotAction(player, gameState) {
 		isStab = false;
 	}
 
-	const h1 = formatCard(player.holeCards[0]);
-	const h2 = formatCard(player.holeCards[1]);
+	if (!preflop && decision.action === "raise" && (liftType === "none" || liftType === "kicker") &&
+		!allowPublicDrawSemibluffRaise) {
+		decision = needToCall > 0
+			? { action: "call", amount: Math.min(player.chips, needToCall) }
+			: { action: "check" };
+		isBluff = false;
+		isStab = false;
+	}
+	if (!preflop && isTurn && decision.action === "raise" && allowPublicDrawSemibluffRaise &&
+		(liftType === "none" || liftType === "kicker")) {
+		decision.amount = player.chips;
+	}
+
+		const h1 = formatCard(player.holeCards[0]);
+		const h2 = formatCard(player.holeCards[1]);
 	const handName = !preflop ? solvedHand.name : "preflop";
 
 	// --- Ensure raises meet the minimum requirements ---
@@ -1585,7 +1825,9 @@ export function chooseBotAction(player, gameState) {
 		console.log(
 			`${player.name} ${h1} ${h2} → ${decision.action} | ` +
 				`H:${handName} Amt:${decision.amount ?? 0} | ` +
-				`S:${strengthRatio.toFixed(2)} M:${mRatio.toFixed(2)} Z:${mZone} | ` +
+				`PA:${aggressionStrengthRatio.toFixed(2)} PS:${passiveStrengthRatio.toFixed(2)} M:${
+					mRatio.toFixed(2)
+				} Z:${mZone} | ` +
 				`PO:${potOdds.toFixed(2)} CB:${eliminationBarrier.toFixed(2)} SR:${
 					stackRatio.toFixed(2)
 				} | ` +
@@ -1599,7 +1841,9 @@ export function chooseBotAction(player, gameState) {
 				`ProfP:${pressureProfileTag} ProfF:${foldProfileTag} NVB:${
 					nonValueAggressionBlocked ? "Y" : "N"
 				} | ` +
-				`Ctx:${boardCtx} Draw:${drawFlag} Tex:${textureRisk.toFixed(2)} | ` +
+				`Ctx:${boardCtx} Draw:${drawFlag} Tex:${textureRisk.toFixed(2)} LT:${liftType} | ` +
+				`PH:${publicHand?.name ?? "-"} RH:${solvedHand?.name ?? "-"} PF:${publicDefenseFloor.toFixed(2)} PB:${passiveBonus.toFixed(2)} | ` +
+				`Pub:${publicScore.toFixed(2)} Raw:${rawScore.toFixed(2)} | ` +
 				`CL:${amChipleader ? "Y" : "N"} SS:${shortstackRelative ? "Y" : "N"} Prem:${
 					premiumHand ? "Y" : "N"
 				} | ` +

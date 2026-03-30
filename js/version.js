@@ -1,6 +1,17 @@
-export const APP_VERSION = "1.0.1";
+export const APP_VERSION = "1.0.2";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.2",
+		date: "2026-03-30",
+		title: "Public-board postflop fix",
+		notes: [
+			"Split postflop bot strength into private aggression and passive public-board defense.",
+			"Stopped kicker-only public made hands from value-raising on paired and other board-driven runouts.",
+			"Kept narrow semibluff exceptions for strong heads-up combo draws while preserving real private upgrades.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.1",
 		date: "2026-03-30",

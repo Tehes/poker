@@ -109,7 +109,7 @@ Backend sync is used only in multiplayer games that start with at least 2 human 
 
 Bots play tournament-style poker and follow consistent rules without hidden information or "reads". Their decisions consider:
 
-- **Hand evaluation**: preflop strength uses a simplified Chen score; postflop uses pokersolver rank plus kicker tiebreakers and checks whether hole cards actually improve the hand.
+- **Hand evaluation**: preflop strength uses a simplified Chen score; postflop separates public board strength from private hand upgrades so board-driven made hands mostly support passive defense while real private lifts keep aggression.
 - **Board context**: recognizes top pair/overpair, straight/flush draws (outs to equity), and board texture (dry vs wet) to adjust strength.
 - **Tournament zones (M-ratio)**: dead/red/orange/yellow/green zones guide preflop Harrington-style push/call/raise logic; green zone plays chip-EV.
 - **Stack pressure and risk**: pot odds, stack ratio, and SPR; shallow SPR or <=10bb can trigger shove thresholds; large all-in calls are tightened by an elimination-risk guardrail.
@@ -120,7 +120,7 @@ Bots play tournament-style poker and follow consistent rules without hidden info
 - **Line memory and tie-breakers**: tracks the preflop aggressor for c-bet/barrel plans (aborts on very wet boards); near-threshold decisions randomize between close actions and avoid bluffing into all-ins.
 - **Raise constraints**: respects per-round raise limits and minimum-legal raises, and can downgrade a raise to a call/check if the minimum is not met.
 - **All-in response**: avoids automatic folds against all-ins by allowing risk-aware calls with sufficiently strong hands.
-- **Postflop pressure filters**: distinguishes made hands, strong draws, weak draws, and dead hands to tighten or loosen calling on later streets.
+- **Postflop pressure filters**: distinguishes public made hands, private upgrades, strong draws, weak draws, and dead hands to tighten or loosen calling on later streets.
 - **Occasional deception**: mixes in stabs, check-backs, and overbets to avoid being predictable.
 
 ---
