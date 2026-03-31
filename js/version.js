@@ -1,6 +1,18 @@
-export const APP_VERSION = "1.0.4";
+export const APP_VERSION = "1.0.5";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.5",
+		date: "2026-03-31",
+		title: "TAG bot tuning consolidation",
+		notes: [
+			"Replaced the old postflop aggression rank curve with TAG-style hand and spot tiers for air, showdown hands, top pair+, and strong draws.",
+			"Replaced the hard Chen-score open gate with chart-like unopened raise bands by handedness and real preflop seat class, including heads-up and big-blind defend fixes.",
+			"Retuned heads-up and short-handed play with balanced 5-handed unopened widening while keeping lower-light and trash ranges controlled.",
+			"Kept public-board kicker safety while allowing legitimate c-bets, protection bets, and strong-draw semibluffs to survive the old blanket downgrade.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.4",
 		date: "2026-03-31",
