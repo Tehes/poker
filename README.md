@@ -32,8 +32,9 @@ joins via QR code or link to use their own device, while the shared table handle
 - **Fast Forward for Bot-Only Hands**: When no human can act in the current hand, a Fast Forward
   button lets you speed through the remaining bot action. If no humans have chips left after that,
   the game keeps fast-forwarding until a winner remains.
-- **Smart Bot Play**: Bots play tournament-style poker with explicit preflop spot policies, tiered
-  postflop defense, and measured checked-to initiative.
+- **Smart Bot Play**: Bots play tournament-style poker with explicit unopened and raised-pot spot
+  policies, tiered postflop defense, and selective heads-up checked-to pressure after passive
+  streets.
 - **Postflop Hand Labels**: When hole cards are visible on the table, the shared screen shows short
   postflop hand categories.
 - **Bot Reveals**: After some uncontested postflop wins, bots may occasionally reveal one or both
@@ -170,8 +171,9 @@ Their decisions consider:
   sufficiently strong hands.
 - **Postflop pressure filters**: distinguishes public made hands, private upgrades, strong draws,
   weak draws, and dead hands to tighten or loosen calling on later streets.
-- **Checked-to initiative**: mixes in c-bets, selective last-to-act stabs, check-backs, and
-  occasional overbets to avoid becoming purely passive when everybody looks weak.
+- **Checked-to initiative**: mixes in c-bets, selective last-to-act stabs, delayed river probes,
+  and narrow heads-up first-to-act probes after passive prior streets, while still checking back
+  often enough to avoid spewing into ordinary weak-showdown spots.
 
 ---
 

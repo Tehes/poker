@@ -1,6 +1,18 @@
-export const APP_VERSION = "1.0.6";
+export const APP_VERSION = "1.0.8";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.7",
+		date: "2026-04-01",
+		title: "Short-handed opens and passive-street probes",
+		notes: [
+			"Tracked checked-through flop and turn streets in the hand context so bots can react specifically to passive heads-up runouts.",
+			"Widened unopened short-handed ranges specifically for 6-handed early, 5-handed early, 4-handed cutoff, 3-handed button, and heads-up small blind spots.",
+			"Raised heads-up weak no-bet stab floors and added narrow first-to-act and delayed-river heads-up probes after passive prior streets.",
+			"Kept the existing raised-pot, Harrington short-stack, multiway, and public-board safety logic intact while reducing full check-through lines in speedmode.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.6",
 		date: "2026-03-31",

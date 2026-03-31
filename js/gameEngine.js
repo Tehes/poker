@@ -377,6 +377,8 @@ export function createHandContextState() {
 		preflopRaiseCount: 0,
 		preflopAggressorSeatIndex: null,
 		streetAggressorSeatIndex: null,
+		flopCheckedThrough: false,
+		turnCheckedThrough: false,
 	};
 }
 
