@@ -24,6 +24,8 @@ import {
 	createHandContextState,
 	createPlayerSpotState,
 	getBettingRoundStartIndex,
+	getBigBlindForLevel,
+	getBlindLevelForHand,
 	getBlindSeatIndexes,
 	getBotRevealDecision,
 	getCurrentPhase,
@@ -220,8 +222,7 @@ const gameState = {
 	currentBet: 0,
 	pot: 0,
 	activeSeatIndex: null,
-	initialDealerName: null,
-	dealerOrbitCount: -1,
+	blindLevel: 0,
 	gameStarted: false,
 	gameFinished: false,
 	openCardsMode: false,
@@ -250,7 +251,7 @@ gameState.toJSON = function () {
 		smallBlind: this.smallBlind,
 		bigBlind: this.bigBlind,
 		raisesThisRound: this.raisesThisRound,
-		dealerOrbitCount: this.dealerOrbitCount,
+		blindLevel: this.blindLevel,
 		handContext: this.handContext ? { ...this.handContext } : null,
 		communityCards: this.communityCards.slice(),
 		pendingAction: this.pendingAction ? { ...this.pendingAction } : null,
@@ -1404,6 +1405,11 @@ Game Setup And Hand Lifecycle
 function startGame(event) {
 	if (!gameState.gameStarted) {
 		resetRuntimeFastForward();
+		totalHands = 0;
+		gameState.blindLevel = 0;
+		gameState.smallBlind = INITIAL_SMALL_BLIND;
+		gameState.bigBlind = INITIAL_BIG_BLIND;
+		gameState.lastRaise = INITIAL_BIG_BLIND;
 		gameState.handInProgress = false;
 		createPlayers();
 		hadHumansAtStart = gameState.players.some((p) => !p.isBot);
@@ -1533,9 +1539,6 @@ function setDealer() {
 	}
 	gameState.players[nextDealerIndex].dealer = true;
 	assignPlayerRole(gameState.players[nextDealerIndex], "dealer");
-	if (dealerIndex === -1) {
-		gameState.initialDealerName = gameState.players[nextDealerIndex].name;
-	}
 
 	while (gameState.players[0].dealer === false) {
 		gameState.players.unshift(gameState.players.pop());
@@ -1544,17 +1547,32 @@ function setDealer() {
 	enqueueNotification(`${gameState.players[0].name} is Dealer.`);
 }
 
-function setBlinds() {
-	// When the dealer is back at initialDealer â†’ increment orbit
-	if (gameState.players[0].name === gameState.initialDealerName) {
-		gameState.dealerOrbitCount++;
-		if (gameState.dealerOrbitCount > 0 && gameState.dealerOrbitCount % 2 === 0) {
-			// Increase blind level
-			gameState.smallBlind *= 2;
-			gameState.bigBlind *= 2;
-			enqueueNotification(`Blinds are now ${gameState.smallBlind}/${gameState.bigBlind}.`);
-		}
+function updateBlindLevelForCurrentHand() {
+	const nextBlindLevel = getBlindLevelForHand(totalHands);
+	if (nextBlindLevel <= gameState.blindLevel) {
+		return;
 	}
+
+	let nextBigBlind = gameState.bigBlind;
+	for (let level = gameState.blindLevel + 1; level <= nextBlindLevel; level++) {
+		nextBigBlind = getBigBlindForLevel(level, nextBigBlind);
+	}
+
+	const nextSmallBlind = nextBigBlind / 2;
+	const blindsChanged = nextBigBlind !== gameState.bigBlind ||
+		nextSmallBlind !== gameState.smallBlind;
+
+	gameState.blindLevel = nextBlindLevel;
+	gameState.bigBlind = nextBigBlind;
+	gameState.smallBlind = nextSmallBlind;
+
+	if (blindsChanged) {
+		enqueueNotification(`Blinds are now ${gameState.smallBlind}/${gameState.bigBlind}.`);
+	}
+}
+
+function setBlinds() {
+	updateBlindLevelForCurrentHand();
 
 	// Clear previous roles and icons
 	gameState.players.forEach((p) => {
@@ -1683,15 +1701,6 @@ function preFlop() {
 		};
 		resetPlayerSpotStateForHand(p);
 	});
-
-	// If the original dealer is eliminated, update initialDealerName and reset dealerOrbitCount
-	if (
-		!gameState.players.some((p) => p.name === gameState.initialDealerName) &&
-		gameState.players.length > 0
-	) {
-		gameState.initialDealerName = gameState.players[0].name;
-		gameState.dealerOrbitCount = -1;
-	}
 
 	// --- Game Over Check ---------------------------------------------------------
 	// GAME OVER: only one player left at the table
@@ -2542,7 +2551,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-03-30-v8";
+const SERVICE_WORKER_VERSION = "2026-03-31-v10";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

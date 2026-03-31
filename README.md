@@ -19,8 +19,8 @@ joins via QR code or link to use their own device, while the shared table handle
 - **Remote Player Actions**: In synced multiplayer games, the active player can act directly from
   their own device.
 - **Automatic Game Logic**: Handles blinds, bets, pots, side pots, and showdown evaluations.
-- **Progressive Blinds**: Blinds automatically double every 2 complete dealer orbits to keep the
-  action going.
+- **Progressive Blinds**: Blinds increase every 10 hands using a hand-based formula with safe
+  nice-step rounding, so the pace stays stable even short-handed or heads-up.
 - **Side Pot Support**: Accurately resolves complex all-in scenarios.
 - **Dynamic Positioning**: Turn order and bot strategy adapt as players fold.
 - **Supports All Table Sizes**: From heads-up to full-ring games.
@@ -127,7 +127,8 @@ Backend sync is used only in multiplayer games that start with at least 2 human 
 - Empty seats are filled with bots automatically.
 - The table manages:
   - **Dealer rotation** and automatic blind posting
-  - **Progressive blinds** that double every 2 complete dealer orbits (e.g., 10/20 → 20/40 → 40/80)
+  - **Progressive blinds** that increase every 10 hands with a formula-based, nice-step schedule
+    (e.g., 10/20 -> 20/40 -> 30/60 -> 40/80 -> 50/100 -> 60/120)
   - Side pots and all-ins
   - Automatic showdown resolution
 
@@ -219,7 +220,7 @@ deno task speedmode -- --out=/tmp/poker-speedmode-latest
 - No persistent chip stacks or session saving (yet).
 - Remote table links are lightweight and trust-based; there are no seat tokens or connection checks
   yet.
-- The blind progression (doubling every 2 dealer orbits) is not customizable.
+- The blind progression (formula-based increase every 10 hands) is not customizable.
 
 ---
 

@@ -39,11 +39,15 @@ export const INITIAL_DECK = [
 
 export const INITIAL_SMALL_BLIND = 10;
 export const INITIAL_BIG_BLIND = 20;
+export const BLIND_LEVEL_HAND_INTERVAL = 10;
+export const BLIND_GROWTH_FACTOR = 1.3;
+export const BLIND_BIG_BLIND_STEP = 20;
 
 const BOT_REVEAL_CHANCE = 0.3;
 const BOT_DOUBLE_REVEAL_HANDS = new Set(["Straight Flush", "Four of a Kind", "Full House"]);
 const CARD_RANK_ORDER = "23456789TJQKA";
 const MAX_WIN_PROBABILITY_BOARDS = 50000;
+const NICE_BIG_BLIND_FACTORS = [1, 1.2, 1.4, 1.5, 1.6, 1.8, 2, 2.4, 2.5, 3, 4, 5, 6, 8];
 
 export function shuffleArray(array) {
 	let i = array.length;
@@ -69,6 +73,72 @@ export function trackUsedCard(cardGraveyard, cardCode) {
 		cardGraveyard.push(cardCode);
 	}
 	return cardCode;
+}
+
+export function getBlindLevelForHand(totalHands, handsPerLevel = BLIND_LEVEL_HAND_INTERVAL) {
+	if (totalHands <= 0) {
+		return 0;
+	}
+	return Math.floor((totalHands - 1) / handsPerLevel);
+}
+
+export function getBigBlindForLevel(
+	level,
+	previousBigBlind = INITIAL_BIG_BLIND,
+	initialBigBlind = INITIAL_BIG_BLIND,
+	growthFactor = BLIND_GROWTH_FACTOR,
+	bigBlindStep = BLIND_BIG_BLIND_STEP,
+) {
+	if (level <= 0) {
+		return initialBigBlind;
+	}
+	const targetBigBlind = initialBigBlind * Math.pow(growthFactor, level);
+	const safeCandidates = getNiceBigBlindCandidates(
+		targetBigBlind,
+		previousBigBlind,
+		bigBlindStep,
+	);
+	const nextBigBlind = safeCandidates.reduce((closest, candidate) => {
+		if (candidate <= previousBigBlind) {
+			return closest;
+		}
+		if (closest === null) {
+			return candidate;
+		}
+		const candidateDistance = Math.abs(candidate - targetBigBlind);
+		const closestDistance = Math.abs(closest - targetBigBlind);
+		if (candidateDistance < closestDistance) {
+			return candidate;
+		}
+		if (candidateDistance === closestDistance && candidate < closest) {
+			return candidate;
+		}
+		return closest;
+	}, null);
+
+	if (nextBigBlind !== null) {
+		return nextBigBlind;
+	}
+
+	return previousBigBlind + bigBlindStep;
+}
+
+function getNiceBigBlindCandidates(targetBigBlind, previousBigBlind, bigBlindStep) {
+	const baseline = Math.max(targetBigBlind, previousBigBlind + bigBlindStep, INITIAL_BIG_BLIND);
+	const exponent = Math.floor(Math.log10(baseline));
+	const candidates = new Set([INITIAL_BIG_BLIND]);
+
+	for (let power = Math.max(1, exponent - 1); power <= exponent + 1; power++) {
+		const scale = Math.pow(10, power);
+		for (const factor of NICE_BIG_BLIND_FACTORS) {
+			const candidate = factor * scale;
+			if (Number.isInteger(candidate) && candidate % bigBlindStep === 0) {
+				candidates.add(candidate);
+			}
+		}
+	}
+
+	return Array.from(candidates).sort((a, b) => a - b);
 }
 
 export function getOddChipOrder(players, winners) {

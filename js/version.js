@@ -1,6 +1,17 @@
-export const APP_VERSION = "1.0.3";
+export const APP_VERSION = "1.0.4";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.4",
+		date: "2026-03-31",
+		title: "Hand-based blind progression",
+		notes: [
+			"Replaced orbit-based blind jumps with a fixed 10-hand level cadence that no longer accelerates short-handed or heads-up.",
+			"Switched blind growth to a monotonic formula with a nicer safe blind ladder, replacing awkward levels like 110/220 and 310/620 with more tournament-like values such as 100/200, 150/300, and 200/400.",
+			"Kept dealer rotation, blind posting, and chip safety for bots, action controls, and split-pot payouts unchanged.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.3",
 		date: "2026-03-30",
