@@ -1887,7 +1887,6 @@ export function chooseBotAction(player, gameState) {
 		raiseThreshold = Math.max(1, raiseThreshold - CHIP_LEADER_RAISE_DELTA * 10);
 	}
 	const decisionStrength = preflop ? strength : aggressionStrengthRatio * 10;
-	const openRaiseThreshold = Math.max(6, Math.min(8, 8 - 2 * positionFactor));
 
 	let bluffChance = 0;
 	let foldRate = 0;
