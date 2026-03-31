@@ -64,7 +64,6 @@ const EARLY_STATS_WEIGHT_MAX = 0.2;
 // Controls how quickly stat influence grows as more hands are played
 const WEIGHT_GROWTH = 10;
 // Detect opponents that shove frequently
-const ALLIN_HAND_PREFLOP = 0.85;
 const ALLIN_HAND_POSTFLOP = 0.38;
 // Harrington M-ratio zones and strength thresholds
 const M_RATIO_DEAD_MAX = 1;
@@ -76,10 +75,6 @@ const RED_PUSH_RATIO = 0.7;
 const RED_CALL_RATIO = 0.85;
 const ORANGE_PUSH_RATIO = 0.6;
 const ORANGE_CALL_RATIO = 0.8;
-const YELLOW_RAISE_RATIO = 0.6;
-const YELLOW_CALL_RATIO = 0.7;
-const YELLOW_SHOVE_RATIO = 0.85;
-const PREMIUM_PREFLOP_RATIO = 0.8;
 const PREMIUM_POSTFLOP_RATIO = 0.55;
 const GREEN_MAX_STACK_BET = 0.25;
 const CHIP_LEADER_RAISE_DELTA = 0.05;
@@ -1236,6 +1231,75 @@ function shouldFlatCallPreflopRaise({
 	return false;
 }
 
+function getPreflopSpotType(spotContext) {
+	if (spotContext.unopened) {
+		return "unopened";
+	}
+	if (spotContext.limped) {
+		return "limped";
+	}
+	if (spotContext.multiRaised) {
+		return "multiRaised";
+	}
+	if (spotContext.singleRaised) {
+		return "singleRaised";
+	}
+	return "other";
+}
+
+function shouldIsoRaisePreflop({ activePlayers, seatClass, band, detail }) {
+	if (band === "premium" || band === "strong") {
+		return true;
+	}
+	return detail === "upper-medium" &&
+		(isLatePreflopSeat(seatClass, activePlayers) || activePlayers <= 3);
+}
+
+function shouldCallMultiRaisedPreflop({
+	band,
+	seatClass,
+	activePlayers,
+	potOdds,
+	stackRatio,
+}) {
+	if (band !== "strong") {
+		return false;
+	}
+	const lateSpot = isLatePreflopSeat(seatClass, activePlayers);
+	return (seatClass === "bigBlind" || lateSpot || activePlayers <= 3) &&
+		potOdds <= 0.3 && stackRatio <= 0.22;
+}
+
+function shouldShoveShortStackPreflop({
+	spotType,
+	activePlayers,
+	seatClass,
+	band,
+	detail,
+	spr,
+	playerChips,
+	bigBlind,
+}) {
+	const veryShort = spr <= 1.2;
+	const shortStack = playerChips <= bigBlind * 10;
+
+	if (!veryShort && !shortStack) {
+		return false;
+	}
+	if (band === "premium" || band === "strong") {
+		return true;
+	}
+	if (detail !== "upper-medium") {
+		return false;
+	}
+	const lateSpot = isLatePreflopSeat(seatClass, activePlayers);
+	if (veryShort) {
+		return lateSpot || activePlayers <= 3;
+	}
+	return (spotType === "unopened" || spotType === "singleRaised") &&
+		(lateSpot || activePlayers <= 3);
+}
+
 /* ===========================
    Decision Helpers
 ========================== */
@@ -1533,16 +1597,11 @@ function decideHarringtonAction({
 	deadPushThreshold,
 	redPushThreshold,
 	orangePushThreshold,
-	yellowRaiseThreshold,
-	yellowShoveThreshold,
 	redCallThreshold,
 	orangeCallThreshold,
-	yellowCallThreshold,
 	canShove,
-	canRaise,
 	needToCall,
 	playerChips,
-	yellowRaiseSize,
 }) {
 	let decision = null;
 
@@ -1584,25 +1643,174 @@ function decideHarringtonAction({
 		} else {
 			decision = needsToCall ? { action: "fold" } : { action: "check" };
 		}
-	} else if (mZone === "yellow") {
-		if (facingRaise && needsToCall) {
-			if (canShove && strengthRatio >= yellowShoveThreshold) {
-				decision = { action: "raise", amount: playerChips };
-			} else if (strengthRatio >= yellowCallThreshold) {
-				decision = { action: "call", amount: Math.min(playerChips, needToCall) };
-			} else {
-				decision = { action: "fold" };
-			}
-		} else if (canShove && strengthRatio >= yellowShoveThreshold) {
-			decision = { action: "raise", amount: playerChips };
-		} else if (canRaise && strengthRatio >= yellowRaiseThreshold) {
-			decision = { action: "raise", amount: yellowRaiseSize() };
-		} else {
-			decision = needsToCall ? { action: "fold" } : { action: "check" };
-		}
 	}
 
 	return decision;
+}
+
+function choosePreflopAction({
+	spotType,
+	facingRaise,
+	activePlayers,
+	seatClass,
+	mZone,
+	potOdds,
+	stackRatio,
+	canRaise,
+	canShove,
+	needToCall,
+	playerChips,
+	bigBlind,
+	spr,
+	headsUp,
+	profile,
+	band,
+	detail,
+	strengthRatio,
+	deadPushThreshold,
+	redPushThreshold,
+	orangePushThreshold,
+	redCallThreshold,
+	orangeCallThreshold,
+	openRaiseSize,
+	reraiseSize,
+}) {
+	const needsToCall = needToCall > 0;
+	if (mZone === "dead" || mZone === "red" || mZone === "orange") {
+		const harringtonDecision = decideHarringtonAction({
+			mZone,
+			facingRaise,
+			needsToCall,
+			strengthRatio,
+			deadPushThreshold,
+			redPushThreshold,
+			orangePushThreshold,
+			redCallThreshold,
+			orangeCallThreshold,
+			canShove,
+			needToCall,
+			playerChips,
+		});
+		if (harringtonDecision) {
+			return harringtonDecision;
+		}
+	}
+
+	if (
+		canShove &&
+		shouldShoveShortStackPreflop({
+			spotType,
+			activePlayers,
+			seatClass,
+			band,
+			detail,
+			spr,
+			playerChips,
+			bigBlind,
+		})
+	) {
+		return { action: "raise", amount: playerChips };
+	}
+
+	if (spotType === "unopened") {
+		if (
+			canRaise &&
+			shouldOpenRaisePreflop({
+				activePlayers,
+				seatClass,
+				band,
+				detail,
+				profile,
+			})
+		) {
+			return { action: "raise", amount: openRaiseSize() };
+		}
+		return needsToCall ? { action: "fold" } : { action: "check" };
+	}
+
+	if (spotType === "singleRaised") {
+		const lateSeat = isLatePreflopSeat(seatClass, activePlayers);
+		const valueThreeBet = isValueThreeBetPreflop(profile, seatClass, activePlayers);
+		const lightThreeBet = isLightThreeBetPreflop(profile, seatClass, activePlayers, mZone);
+		const flatCall = shouldFlatCallPreflopRaise({
+			profile,
+			band,
+			detail,
+			seatClass,
+			activePlayers,
+			potOdds,
+			stackRatio,
+		});
+
+		if (canRaise && valueThreeBet) {
+			return { action: "raise", amount: reraiseSize() };
+		}
+		if (
+			canRaise &&
+			lightThreeBet &&
+			rollPreflopMix(profile, seatClass, activePlayers, 0.24)
+		) {
+			return { action: "raise", amount: reraiseSize() };
+		}
+		if (flatCall) {
+			return { action: "call", amount: Math.min(playerChips, needToCall) };
+		}
+		if (
+			canRaise &&
+			lateSeat &&
+			band === "strong" &&
+			profile.suited &&
+			profile.broadwayCount === 2 &&
+			mZone === "green" &&
+			headsUp &&
+			rollPreflopMix(profile, seatClass, activePlayers, 0.2)
+		) {
+			return { action: "raise", amount: reraiseSize() };
+		}
+		return needsToCall ? { action: "fold" } : { action: "check" };
+	}
+
+	if (spotType === "limped") {
+		if (
+			canRaise &&
+			shouldIsoRaisePreflop({
+				activePlayers,
+				seatClass,
+				band,
+				detail,
+			})
+		) {
+			return { action: "raise", amount: openRaiseSize() };
+		}
+		return needsToCall ? { action: "fold" } : { action: "check" };
+	}
+
+	if (spotType === "multiRaised") {
+		if (band === "premium") {
+			if (canRaise) {
+				return { action: "raise", amount: reraiseSize() };
+			}
+			if (needsToCall) {
+				return { action: "call", amount: Math.min(playerChips, needToCall) };
+			}
+			return { action: "check" };
+		}
+		if (
+			needsToCall &&
+			shouldCallMultiRaisedPreflop({
+				band,
+				seatClass,
+				activePlayers,
+				potOdds,
+				stackRatio,
+			})
+		) {
+			return { action: "call", amount: Math.min(playerChips, needToCall) };
+		}
+		return needsToCall ? { action: "fold" } : { action: "check" };
+	}
+
+	return needsToCall ? { action: "fold" } : { action: "check" };
 }
 
 /* ===========================
@@ -1677,6 +1885,7 @@ export function chooseBotAction(player, gameState) {
 	const preflopSeatClass = preflop ? getPreflopSeatClass(players, player) : null;
 	const preflopBand = preflop ? getPreflopHandBand(preflopHandProfile) : null;
 	const preflopDetail = preflop ? getPreflopHandDetail(preflopHandProfile, preflopBand) : null;
+	const preflopSpotType = preflop ? getPreflopSpotType(spotContext) : null;
 	const postflopStrengthProfile = preflop
 		? null
 		: buildPostflopStrengthProfile(solvedHand, communityCards);
@@ -1759,7 +1968,7 @@ export function chooseBotAction(player, gameState) {
 			)
 		);
 	const premiumHand = preflop
-		? aggressionStrengthRatio >= PREMIUM_PREFLOP_RATIO
+		? preflopBand === "premium"
 		: aggressionStrengthRatio >= PREMIUM_POSTFLOP_RATIO;
 	const raiseAggAdj = amChipleader ? -CHIP_LEADER_RAISE_DELTA : 0;
 	const callTightAdj = shortstackRelative && stackRatio < ELIMINATION_RISK_START
@@ -1768,13 +1977,8 @@ export function chooseBotAction(player, gameState) {
 	const deadPushThreshold = Math.max(0, DEAD_PUSH_RATIO + raiseAggAdj);
 	const redPushThreshold = Math.max(0, RED_PUSH_RATIO + raiseAggAdj);
 	const orangePushThreshold = Math.max(0, ORANGE_PUSH_RATIO + raiseAggAdj);
-	const yellowRaiseThreshold = Math.max(0, YELLOW_RAISE_RATIO + raiseAggAdj);
-	const yellowShoveThreshold = Math.max(0, YELLOW_SHOVE_RATIO + raiseAggAdj);
 	const redCallThreshold = Math.min(1, RED_CALL_RATIO + callTightAdj);
 	const orangeCallThreshold = Math.min(1, ORANGE_CALL_RATIO + callTightAdj);
-	const yellowCallThreshold = Math.min(1, YELLOW_CALL_RATIO + callTightAdj);
-	const useHarringtonStrategy = preflop &&
-		(mZone === "dead" || mZone === "red" || mZone === "orange");
 	const remainingStreets = preflop
 		? 3
 		: communityCards.length === 3
@@ -1793,7 +1997,6 @@ export function chooseBotAction(player, gameState) {
 		: { eliminationRisk: 0, eliminationPenalty: 0 };
 	const riskAdjustedRedCallThreshold = Math.min(1, redCallThreshold + eliminationPenalty);
 	const riskAdjustedOrangeCallThreshold = Math.min(1, orangeCallThreshold + eliminationPenalty);
-	const riskAdjustedYellowCallThreshold = Math.min(1, yellowCallThreshold + eliminationPenalty);
 
 	const callBarrierBase = preflop
 		? Math.min(1, Math.max(0, potOdds + callTightAdj))
@@ -1886,7 +2089,7 @@ export function chooseBotAction(player, gameState) {
 	if (amChipleader) {
 		raiseThreshold = Math.max(1, raiseThreshold - CHIP_LEADER_RAISE_DELTA * 10);
 	}
-	const decisionStrength = preflop ? strength : aggressionStrengthRatio * 10;
+	const decisionStrength = aggressionStrengthRatio * 10;
 
 	let bluffChance = 0;
 	let foldRate = 0;
@@ -2210,7 +2413,6 @@ export function chooseBotAction(player, gameState) {
 	const raiseLevel = (facingRaise && raisesThisRound > 0) ? Math.max(0, raisesThisRound) : 0;
 	raiseThreshold += raiseLevel * RERAISE_RATIO_STEP * 10;
 	const betAggFactor = Math.max(0.9, Math.min(1.1, aggressiveness));
-	const shoveAggAdj = Math.max(-0.08, Math.min(0.08, (aggressiveness - 1) * 0.12));
 	const nonValueAggressionBlocked = spotContext.multiRaised;
 
 	// Keep a simple betting-line memory for the preflop aggressor.
@@ -2235,129 +2437,37 @@ export function chooseBotAction(player, gameState) {
          ODDS_TIE_DELTA,
          the bot randomly resolves between call and fold to break ties.
      */
-	let decision;
-
-	if (useHarringtonStrategy) {
-		decision = decideHarringtonAction({
-			mZone,
+	let decision = preflop
+		? choosePreflopAction({
+			spotType: preflopSpotType,
 			facingRaise,
-			needsToCall,
+			activePlayers: active.length,
+			seatClass: preflopSeatClass,
+			mZone,
+			potOdds,
+			stackRatio,
+			canRaise,
+			canShove,
+			needToCall,
+			playerChips: player.chips,
+			bigBlind: blindLevel.big,
+			spr,
+			headsUp: spotContext.headsUp,
+			profile: preflopHandProfile,
+			band: preflopBand,
+			detail: preflopDetail,
 			strengthRatio: aggressionStrengthRatio,
 			deadPushThreshold,
 			redPushThreshold,
 			orangePushThreshold,
-			yellowRaiseThreshold,
-			yellowShoveThreshold,
 			redCallThreshold: riskAdjustedRedCallThreshold,
 			orangeCallThreshold: riskAdjustedOrangeCallThreshold,
-			yellowCallThreshold: riskAdjustedYellowCallThreshold,
-			canShove,
-			canRaise,
-			needToCall,
-			playerChips: player.chips,
-			yellowRaiseSize: tournamentOpenRaiseSize,
-		});
-	}
-
-	if (
-		decision && preflop && useHarringtonStrategy && spotContext.unopened &&
-		active.length <= 3 && preflopSeatClass !== "bigBlind" &&
-		decision.action !== "raise" &&
-		canShove &&
-		shouldOpenRaisePreflop({
-			activePlayers: active.length,
-			seatClass: preflopSeatClass,
-			band: preflopBand,
-			detail: preflopDetail,
-			profile: preflopHandProfile,
+			openRaiseSize: tournamentOpenRaiseSize,
+			reraiseSize: tournamentReraiseSize,
 		})
-	) {
-		decision = { action: "raise", amount: player.chips };
-	}
+		: null;
 
-	// Automatic shove logic when stacks are shallow
-	if (!decision) {
-		const shallowShoveThreshold = Math.max(0, Math.min(1, 0.65 - shoveAggAdj));
-		const shortstackShoveThreshold = Math.max(0, Math.min(1, 0.75 - shoveAggAdj));
-		if (spr <= 1.2 && aggressionStrengthRatio >= shallowShoveThreshold) {
-			decision = { action: "raise", amount: player.chips };
-		} else if (
-			preflop && player.chips <= blindLevel.big * 10 &&
-			aggressionStrengthRatio >= shortstackShoveThreshold
-		) {
-			decision = { action: "raise", amount: player.chips };
-		}
-	}
-
-	if (!decision && preflop && spotContext.unopened && !useHarringtonStrategy) {
-		if (
-			canRaise && shouldOpenRaisePreflop({
-				activePlayers: active.length,
-				seatClass: preflopSeatClass,
-				band: preflopBand,
-				detail: preflopDetail,
-				profile: preflopHandProfile,
-			})
-		) {
-			decision = { action: "raise", amount: tournamentOpenRaiseSize() };
-		} else {
-			decision = { action: "fold" };
-		}
-	}
-
-	if (
-		!decision && preflop && facingRaise && spotContext.singleRaised &&
-		!useHarringtonStrategy
-	) {
-		const activePlayers = active.length;
-		const lateSeat = isLatePreflopSeat(preflopSeatClass, activePlayers);
-		const valueThreeBet = isValueThreeBetPreflop(
-			preflopHandProfile,
-			preflopSeatClass,
-			activePlayers,
-		);
-		const lightThreeBet = isLightThreeBetPreflop(
-			preflopHandProfile,
-			preflopSeatClass,
-			activePlayers,
-			mZone,
-		);
-		const flatCall = shouldFlatCallPreflopRaise({
-			profile: preflopHandProfile,
-			band: preflopBand,
-			detail: preflopDetail,
-			seatClass: preflopSeatClass,
-			activePlayers,
-			potOdds,
-			stackRatio,
-		});
-
-		if (canRaise && valueThreeBet) {
-			decision = { action: "raise", amount: tournamentReraiseSize() };
-		} else if (
-			canRaise && lightThreeBet && rollPreflopMix(
-				preflopHandProfile,
-				preflopSeatClass,
-				activePlayers,
-				0.24,
-			)
-		) {
-			decision = { action: "raise", amount: tournamentReraiseSize() };
-		} else if (flatCall) {
-			decision = { action: "call", amount: Math.min(player.chips, needToCall) };
-		} else if (
-			canRaise && lateSeat && preflopBand === "strong" &&
-			preflopHandProfile.suited && preflopHandProfile.broadwayCount === 2 &&
-			isGreenZone && spotContext.headsUp &&
-			rollPreflopMix(preflopHandProfile, preflopSeatClass, activePlayers, 0.2)
-		) {
-			decision = { action: "raise", amount: tournamentReraiseSize() };
-		} else {
-			decision = { action: "fold" };
-		}
-	}
-
-	if (!decision) {
+	if (!decision && !preflop) {
 		if (needToCall <= 0) {
 			if (canRaise && decisionStrength >= raiseThreshold) {
 				let raiseAmt = valueBetSize();
@@ -2401,15 +2511,16 @@ export function chooseBotAction(player, gameState) {
 			decision = { action: "fold" };
 		}
 	}
+	if (!decision) {
+		decision = needToCall > 0 ? { action: "fold" } : { action: "check" };
+	}
 
 	let isBluff = false;
 	let isStab = false;
-	if (!useHarringtonStrategy) {
-		// If facing any all-in, do not fold always
+	if (!preflop) {
 		const facingAllIn = allOpponents.some((p) => p.allIn);
 		if (decision.action === "fold" && facingAllIn) {
-			const goodThreshold = preflop ? ALLIN_HAND_PREFLOP : ALLIN_HAND_POSTFLOP;
-			const riskAdjustedThreshold = Math.min(1, goodThreshold + eliminationPenalty);
+			const riskAdjustedThreshold = Math.min(1, ALLIN_HAND_POSTFLOP + eliminationPenalty);
 			if (passiveStrengthRatio >= riskAdjustedThreshold) {
 				decision = { action: "call", amount: Math.min(player.chips, needToCall) };
 			}
@@ -2609,9 +2720,7 @@ export function chooseBotAction(player, gameState) {
 		const preflopSeatTag = preflopSeatClass ?? "-";
 		const preflopBandTag = preflopBand ?? "-";
 		const preflopDetailTag = preflopDetail ?? "-";
-		const loggedRaiseThreshold = preflop && spotContext.unopened && !useHarringtonStrategy
-			? 0
-			: raiseThreshold;
+		const loggedRaiseThreshold = preflop ? 0 : raiseThreshold;
 
 		console.log(
 			`${player.name} ${h1} ${h2} → ${decision.action} | ` +
