@@ -19,7 +19,7 @@ joins via QR code or link to use their own device, while the shared table handle
 - **Remote Player Actions**: In synced multiplayer games, the active player can act directly from
   their own device.
 - **Automatic Game Logic**: Handles blinds, bets, pots, side pots, and showdown evaluations.
-- **Progressive Blinds**: Blinds increase every 10 hands using a hand-based formula with safe
+- **Progressive Blinds**: Blinds increase every 6 hands using a hand-based formula with safe
   nice-step rounding, so the pace stays stable even short-handed or heads-up.
 - **Side Pot Support**: Accurately resolves complex all-in scenarios.
 - **Dynamic Positioning**: Turn order and bot strategy adapt as players fold.
@@ -32,8 +32,8 @@ joins via QR code or link to use their own device, while the shared table handle
 - **Fast Forward for Bot-Only Hands**: When no human can act in the current hand, a Fast Forward
   button lets you speed through the remaining bot action. If no humans have chips left after that,
   the game keeps fast-forwarding until a winner remains.
-- **Smart Bot Play**: Bots play tournament-style poker with context-aware decisions and adaptive
-  behavior.
+- **Smart Bot Play**: Bots play tournament-style poker with explicit preflop spot policies, tiered
+  postflop defense, and measured checked-to initiative.
 - **Postflop Hand Labels**: When hole cards are visible on the table, the shared screen shows short
   postflop hand categories.
 - **Bot Reveals**: After some uncontested postflop wins, bots may occasionally reveal one or both
@@ -139,14 +139,14 @@ Backend sync is used only in multiplayer games that start with at least 2 human 
 Bots play tournament-style poker and follow consistent rules without hidden information or "reads".
 Their decisions consider:
 
-- **Hand evaluation**: preflop strength uses a simplified Chen score; postflop separates public
-  board strength from private hand upgrades so board-driven made hands mostly support passive
-  defense while real private lifts keep aggression.
+- **Hand evaluation**: preflop uses explicit hand bands and details instead of a Chen-score gate;
+  postflop separates public board strength from private upgrades so board-driven made hands mostly
+  support passive defense while real private lifts keep aggression.
 - **Board context**: recognizes top pair/overpair, straight/flush draws (outs to equity), and board
   texture (dry vs wet) to adjust strength.
-- **Tournament zones (M-ratio)**: dead/red/orange/yellow/green zones guide preflop Harrington-style
-  push/call/raise logic; green zone plays chip-EV and unopened pots default to small raise-or-fold
-  opens instead of limping.
+- **Tournament zones (M-ratio)**: dead/red/orange/yellow/green zones guide Harrington-style
+  short-stack decisions; deeper stacks use explicit spot policies for unopened, limped,
+  single-raised, and multi-raised preflop pots.
 - **Stack pressure and risk**: pot odds, stack ratio, and SPR; shallow SPR or <=10bb can trigger
   shove thresholds; large all-in calls are tightened by an elimination-risk guardrail.
 - **Commitment control**: invested-stack and remaining-street pressure add a call penalty to reduce
@@ -156,6 +156,9 @@ Their decisions consider:
 - **Opponent tendencies**: uses spot-based opponent aggregation, prioritizing players behind, live
   opponents, and the current aggressor; fold-heavy defenders increase bluff frequency while multiway
   and strength-shown spots suppress non-value aggression.
+- **Tiered postflop defense**: distinguishes weak showdown, promoted top-pair spots, overpairs,
+  two pair, and trips-plus so strong private made hands are not filtered by the same generic
+  call barrier as marginal bluff-catchers.
 - **Bet sizing**: value/protection/bluff/overbet sizes scale with pot, texture, SPR, position, and
   opponent count, with small randomness and rounding.
 - **Line memory and tie-breakers**: tracks the preflop aggressor for c-bet/barrel plans (aborts on
@@ -167,7 +170,8 @@ Their decisions consider:
   sufficiently strong hands.
 - **Postflop pressure filters**: distinguishes public made hands, private upgrades, strong draws,
   weak draws, and dead hands to tighten or loosen calling on later streets.
-- **Occasional deception**: mixes in stabs, check-backs, and overbets to avoid being predictable.
+- **Checked-to initiative**: mixes in c-bets, selective last-to-act stabs, check-backs, and
+  occasional overbets to avoid becoming purely passive when everybody looks weak.
 
 ---
 
@@ -220,7 +224,7 @@ deno task speedmode -- --out=/tmp/poker-speedmode-latest
 - No persistent chip stacks or session saving (yet).
 - Remote table links are lightweight and trust-based; there are no seat tokens or connection checks
   yet.
-- The blind progression (formula-based increase every 10 hands) is not customizable.
+- The blind progression (formula-based increase every 6 hands) is not customizable.
 
 ---
 

@@ -1,6 +1,18 @@
-export const APP_VERSION = "1.0.5";
+export const APP_VERSION = "1.0.6";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.6",
+		date: "2026-03-31",
+		title: "Spot-based bot baseline stabilization",
+		notes: [
+			"Finished the explicit preflop spot-policy transition with chart-like unopened, limped, single-raised, and multi-raised paths, while removing the old Chen-driven fallback from active bot play.",
+			"Stabilized short-stack and multi-raised behavior so non-premium hands no longer leak into the conservative multi-raised path through the old shove override.",
+			"Split postflop made-hand defense into real tiers so top pair, overpairs, two pair, and trips-plus no longer share the same passive call gate.",
+			"Extended speedmode reporting with exact acting-slot no-bet initiative slices and added a narrow last-to-act stab tune for checked-to weak spots outside preflop-aggressor lines.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.5",
 		date: "2026-03-31",

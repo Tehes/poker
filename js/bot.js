@@ -564,29 +564,109 @@ function getPostflopAggressionRatio({
 	return Math.max(0, Math.min(0.95, ratio));
 }
 
+function getPostflopDefenseStructure({ handContext, headsUp }) {
+	const preflopRaiseCount = handContext?.preflopRaiseCount ?? 0;
+	if (preflopRaiseCount <= 0) {
+		return headsUp ? "limped-hu" : "limped-mw";
+	}
+	if (preflopRaiseCount === 1) {
+		return headsUp ? "single-raised-hu" : "single-raised-mw";
+	}
+	return headsUp ? "multi-raised-hu" : "multi-raised-mw";
+}
+
+function getPostflopDefenseProfile({ handTier, solvedHand, liftType, defenseStructure }) {
+	let defenseClass = "none";
+
+	if (handTier === "weak-showdown") {
+		defenseClass = "weak-showdown";
+	} else if (handTier === "top-pair") {
+		const promotedTopPair = defenseStructure === "single-raised-hu" ||
+			liftType === "kicker" || liftType === "structural";
+		defenseClass = promotedTopPair ? "top-pair-plus" : "top-pair-marginal";
+	} else if (handTier === "overpair") {
+		defenseClass = "overpair";
+	} else if (handTier === "two-pair-plus") {
+		defenseClass = solvedHand?.rank >= 4 ? "trips-plus" : "two-pair";
+	}
+
+	switch (defenseClass) {
+		case "weak-showdown":
+			return {
+				defenseClass,
+				passiveFloor: 0.20,
+				barrierRelief: 0,
+				tighteningScale: 1,
+				stackRatioCap: 0.70,
+				eliminationScale: 1,
+			};
+		case "top-pair-marginal":
+			return {
+				defenseClass,
+				passiveFloor: 0.28,
+				barrierRelief: 0,
+				tighteningScale: 1,
+				stackRatioCap: 0.75,
+				eliminationScale: 1,
+			};
+		case "top-pair-plus":
+			return {
+				defenseClass,
+				passiveFloor: 0.36,
+				barrierRelief: -0.03,
+				tighteningScale: 0.5,
+				stackRatioCap: 0.90,
+				eliminationScale: 0.75,
+			};
+		case "overpair":
+			return {
+				defenseClass,
+				passiveFloor: 0.42,
+				barrierRelief: -0.04,
+				tighteningScale: 0.5,
+				stackRatioCap: 0.95,
+				eliminationScale: 0.70,
+			};
+		case "two-pair":
+			return {
+				defenseClass,
+				passiveFloor: 0.56,
+				barrierRelief: -0.06,
+				tighteningScale: 0.25,
+				stackRatioCap: 1,
+				eliminationScale: 0.50,
+			};
+		case "trips-plus":
+			return {
+				defenseClass,
+				passiveFloor: 0.72,
+				barrierRelief: -0.08,
+				tighteningScale: 0,
+				stackRatioCap: 1,
+				eliminationScale: 0.30,
+			};
+		default:
+			return {
+				defenseClass,
+				passiveFloor: 0,
+				barrierRelief: 0,
+				tighteningScale: 1,
+				stackRatioCap: 0.70,
+				eliminationScale: 1,
+			};
+	}
+}
+
 function getPostflopPassiveRatio({
-	handTier,
+	passiveFloor,
 	basePassiveStrengthRatio,
 	aggressionStrengthRatio,
 	isStrongDraw,
 	isWeakDraw,
 }) {
 	let ratio = Math.max(basePassiveStrengthRatio, aggressionStrengthRatio);
-	switch (handTier) {
-		case "weak-showdown":
-			ratio = Math.max(ratio, 0.20);
-			break;
-		case "top-pair":
-			ratio = Math.max(ratio, 0.26);
-			break;
-		case "overpair":
-			ratio = Math.max(ratio, 0.32);
-			break;
-		case "two-pair-plus":
-			ratio = Math.max(ratio, 0.44);
-			break;
-		default:
-			break;
+	if (passiveFloor > 0) {
+		ratio = Math.max(ratio, passiveFloor);
 	}
 
 	if (isStrongDraw) {
@@ -858,59 +938,7 @@ function isScareTurnCard(board, textureRisk) {
 /* ===========================
    Preflop Hand Evaluation
 ========================== */
-// Preflop hand evaluation using simplified Chen formula
-function preflopHandScore(cardA, cardB) {
-	const base = {
-		A: 10,
-		K: 8,
-		Q: 7,
-		J: 6,
-		T: 5,
-		"9": 4.5,
-		"8": 4,
-		"7": 3.5,
-		"6": 3,
-		"5": 2.5,
-		"4": 2,
-		"3": 1.5,
-		"2": 1,
-	};
-
-	let r1 = cardA[0];
-	let r2 = cardB[0];
-	let s1 = cardA[1];
-	let s2 = cardB[1];
-
-	let i1 = RANK_ORDER.indexOf(r1);
-	let i2 = RANK_ORDER.indexOf(r2);
-	if (i1 < i2) {
-		[r1, r2] = [r2, r1];
-		[s1, s2] = [s2, s1];
-		[i1, i2] = [i2, i1];
-	}
-
-	let score = base[r1];
-	if (r1 === r2) {
-		score *= 2;
-		if (score < 5) score = 5;
-	}
-
-	if (s1 === s2) score += 2;
-
-	const gap = i1 - i2 - 1;
-	if (gap === 1) score -= 1;
-	else if (gap === 2) score -= 2;
-	else if (gap === 3) score -= 4;
-	else if (gap >= 4) score -= 5;
-
-	if (gap <= 1 && i1 < RANK_ORDER.indexOf("Q")) score += 1;
-
-	if (score < 0) score = 0;
-
-	return Math.min(10, score);
-}
-
-function getPreflopHandProfile(cardA, cardB, chenScore = null) {
+function getPreflopHandProfile(cardA, cardB) {
 	const normalized = normalizePreflopCards(cardA, cardB);
 	const suited = normalized.highSuit === normalized.lowSuit;
 	const pair = normalized.highRank === normalized.lowRank;
@@ -939,7 +967,6 @@ function getPreflopHandProfile(cardA, cardB, chenScore = null) {
 		hasTen: normalized.highRank === "T" || normalized.lowRank === "T",
 		wheelAce: normalized.highRank === "A" && lowValue <= 5,
 		suitedConnector54Plus: suited && gap === 0 && lowValue >= 5,
-		chenScore: chenScore ?? preflopHandScore(cardA, cardB),
 	};
 }
 
@@ -967,6 +994,90 @@ function getPreflopHandDetail(profile, band) {
 		return PREFLOP_UPPER_LIGHT_KEYS.has(profile.key) ? "upper-light" : "lower-light";
 	}
 	return band;
+}
+
+function getPreflopStrengthScore(profile, band = null, detail = null) {
+	const resolvedBand = band ?? getPreflopHandBand(profile);
+	const resolvedDetail = detail ?? getPreflopHandDetail(profile, resolvedBand);
+
+	if (resolvedBand === "premium") {
+		return 10;
+	}
+
+	let score = 2.75;
+	if (resolvedBand === "strong") {
+		score = 8.75;
+	} else if (resolvedDetail === "upper-medium") {
+		score = 7.3;
+	} else if (resolvedDetail === "lower-medium") {
+		score = 6.35;
+	} else if (resolvedDetail === "upper-light") {
+		score = 5.4;
+	} else if (resolvedDetail === "lower-light") {
+		score = 4.75;
+	} else {
+		score = 3.2;
+	}
+
+	if (resolvedBand === "trash") {
+		if (profile.hasAce) {
+			score += profile.suited ? 2 : 1.7;
+		} else if (profile.bothBroadway) {
+			score += 1.7;
+		} else if (profile.hasKing && profile.lowValue >= 8) {
+			score += 1.3;
+		} else if (profile.suitedConnector54Plus) {
+			score += 1.15;
+		} else if (profile.suited && (profile.connected || profile.oneGap)) {
+			score += 0.9;
+		} else if (profile.suited && profile.highValue >= 9) {
+			score += 0.6;
+		}
+		if (profile.suited) {
+			score += 0.25;
+		}
+		if (profile.connected) {
+			score += 0.3;
+		} else if (profile.oneGap) {
+			score += 0.15;
+		}
+		if (profile.highValue <= 8 && !profile.suited) {
+			score -= 0.2;
+		}
+		return clamp(score, 2.3, 5.3);
+	}
+
+	if (profile.pair) {
+		score += 0.5;
+	}
+	if (profile.hasAce) {
+		score += resolvedBand === "strong" ? 0.2 : 0.4;
+	}
+	if (profile.suited && !profile.pair) {
+		score += 0.22;
+	}
+	if (profile.connected) {
+		score += 0.2;
+	} else if (profile.oneGap) {
+		score += 0.1;
+	}
+	if (profile.bothBroadway) {
+		score += 0.2;
+	}
+	if (profile.wheelAce) {
+		score += 0.1;
+	}
+
+	const maxScore = resolvedBand === "strong"
+		? 9.35
+		: resolvedDetail === "upper-medium"
+		? 7.95
+		: resolvedDetail === "lower-medium"
+		? 6.95
+		: resolvedDetail === "upper-light"
+		? 6.05
+		: 5.35;
+	return clamp(score, 0, maxScore);
 }
 
 function getPreflopSeatClass(players, player) {
@@ -999,10 +1110,16 @@ function getPreflopSeatClass(players, player) {
 }
 
 function getPreflopMixChance(profile, seatClass, activePlayers, baseChance) {
+	const band = getPreflopHandBand(profile);
+	const detail = getPreflopHandDetail(profile, band);
 	let chance = baseChance;
-	if (profile.chenScore >= 7) {
+	if (band === "premium" || band === "strong" || detail === "upper-medium") {
 		chance += 0.05;
-	} else if (profile.chenScore >= 6) {
+	} else if (
+		band === "medium" ||
+		detail === "upper-light" ||
+		(band === "trash" && (profile.hasAce || profile.bothBroadway))
+	) {
 		chance += 0.03;
 	}
 	if (profile.suited) {
@@ -1019,7 +1136,27 @@ function getPreflopMixChance(profile, seatClass, activePlayers, baseChance) {
 	if (seatClass === "button" || seatClass === "smallBlind" || activePlayers <= 3) {
 		chance += 0.02;
 	}
-	return clamp(chance, 0.2, 0.35);
+	if (detail === "upper-light") {
+		chance += 0.02;
+	}
+	if (
+		(seatClass === "button" || seatClass === "smallBlind") &&
+		(detail === "upper-light" || detail === "lower-light")
+	) {
+		chance += 0.02;
+	}
+	if (detail === "lower-light") {
+		if (seatClass === "cutoff" || seatClass === "button") {
+			chance += 0.02;
+		}
+		if (seatClass === "smallBlind" || activePlayers <= 3) {
+			chance += 0.03;
+		}
+	}
+	if (seatClass === "smallBlind") {
+		chance += 0.02;
+	}
+	return clamp(chance, 0.2, 0.4);
 }
 
 function rollPreflopMix(profile, seatClass, activePlayers, baseChance) {
@@ -1286,6 +1423,9 @@ function shouldShoveShortStackPreflop({
 	if (!veryShort && !shortStack) {
 		return false;
 	}
+	if (spotType === "multiRaised" && band !== "premium") {
+		return false;
+	}
 	if (band === "premium" || band === "strong") {
 		return true;
 	}
@@ -1445,6 +1585,8 @@ function buildSpotContext({
 	);
 	const actionOrder = getActionOrder(players, currentPhaseIndex);
 	const heroIndex = actionOrder.indexOf(player);
+	const actionableOrder = actionOrder.filter((currentPlayer) => !currentPlayer.allIn);
+	const actingSlotIndex = actionableOrder.indexOf(player);
 	const remainingBehind = heroIndex === -1
 		? []
 		: actionOrder.slice(heroIndex + 1).filter((currentPlayer) =>
@@ -1490,13 +1632,18 @@ function buildSpotContext({
 		headsUp: liveOpponents.length <= 1,
 		multiway: liveOpponents.length > 1,
 		facingAggression: facingRaise,
+		actingSlotIndex: actingSlotIndex === -1 ? 0 : actingSlotIndex,
+		actingSlotCount: Math.max(1, actionableOrder.length),
 	};
 }
 
 function evaluateHandStrength(player, communityCards, preflop) {
 	if (preflop) {
+		const profile = getPreflopHandProfile(player.holeCards[0], player.holeCards[1]);
+		const band = getPreflopHandBand(profile);
+		const detail = getPreflopHandDetail(profile, band);
 		return {
-			strength: preflopHandScore(player.holeCards[0], player.holeCards[1]),
+			strength: getPreflopStrengthScore(profile, band, detail),
 			solvedHand: null,
 		};
 	}
@@ -1676,7 +1823,10 @@ function choosePreflopAction({
 	reraiseSize,
 }) {
 	const needsToCall = needToCall > 0;
-	if (mZone === "dead" || mZone === "red" || mZone === "orange") {
+	if (
+		(mZone === "dead" || mZone === "red" || mZone === "orange") &&
+		!(spotType === "multiRaised" && band !== "premium")
+	) {
 		const harringtonDecision = decideHarringtonAction({
 			mZone,
 			facingRaise,
@@ -1751,6 +1901,9 @@ function choosePreflopAction({
 			rollPreflopMix(profile, seatClass, activePlayers, 0.24)
 		) {
 			return { action: "raise", amount: reraiseSize() };
+		}
+		if (band === "premium" && needsToCall) {
+			return { action: "call", amount: Math.min(playerChips, needToCall) };
 		}
 		if (flatCall) {
 			return { action: "call", amount: Math.min(playerChips, needToCall) };
@@ -1838,6 +1991,7 @@ export function chooseBotAction(player, gameState) {
 	const potOdds = needToCall / (pot + needToCall);
 	// Compute risk as fraction of stack required
 	const stackRatio = needToCall / player.chips;
+	const effectiveCallRatio = Math.min(1, stackRatio);
 	// Stack-to-pot ratio used for shove decisions
 	const spr = player.chips / Math.max(1, pot + needToCall);
 	const blindLevel = { small: smallBlind, big: bigBlind };
@@ -1880,7 +2034,7 @@ export function chooseBotAction(player, gameState) {
 	// Evaluate hand strength
 	const { strength, solvedHand } = evaluateHandStrength(player, communityCards, preflop);
 	const preflopHandProfile = preflop
-		? getPreflopHandProfile(player.holeCards[0], player.holeCards[1], strength)
+		? getPreflopHandProfile(player.holeCards[0], player.holeCards[1])
 		: null;
 	const preflopSeatClass = preflop ? getPreflopSeatClass(players, player) : null;
 	const preflopBand = preflop ? getPreflopHandBand(preflopHandProfile) : null;
@@ -1911,6 +2065,20 @@ export function chooseBotAction(player, gameState) {
 	const handTier = preflop
 		? null
 		: getPostflopHandTier({ solvedHand, publicHand, liftType, topPair, overPair });
+	const postflopDefenseStructure = preflop
+		? null
+		: getPostflopDefenseStructure({
+			handContext,
+			headsUp: spotContext.headsUp,
+		});
+	const postflopDefenseProfile = preflop
+		? null
+		: getPostflopDefenseProfile({
+			handTier,
+			solvedHand,
+			liftType,
+			defenseStructure: postflopDefenseStructure,
+		});
 	const privateAggressionRatio = preflop ? strength / 10 : getPostflopAggressionRatio({
 		handTier,
 		solvedHand,
@@ -1925,7 +2093,7 @@ export function chooseBotAction(player, gameState) {
 		isTurn: communityCards.length === 4,
 	});
 	const passiveStrengthRatio = preflop ? strength / 10 : getPostflopPassiveRatio({
-		handTier,
+		passiveFloor: postflopDefenseProfile?.passiveFloor ?? 0,
 		basePassiveStrengthRatio: postflopStrengthProfile?.passiveStrengthRatio ?? 0,
 		aggressionStrengthRatio: privateAggressionRatio,
 		isStrongDraw: isDraw,
@@ -1995,6 +2163,9 @@ export function chooseBotAction(player, gameState) {
 	const { eliminationRisk, eliminationPenalty } = needsToCall
 		? computeEliminationRisk(stackRatio)
 		: { eliminationRisk: 0, eliminationPenalty: 0 };
+	const effectiveEliminationPenalty = preflop
+		? eliminationPenalty
+		: eliminationPenalty * (postflopDefenseProfile?.eliminationScale ?? 1);
 	const riskAdjustedRedCallThreshold = Math.min(1, redCallThreshold + eliminationPenalty);
 	const riskAdjustedOrangeCallThreshold = Math.min(1, orangeCallThreshold + eliminationPenalty);
 
@@ -2040,7 +2211,7 @@ export function chooseBotAction(player, gameState) {
 			: 0;
 		const raiseLevelForCalls = facingRaise && raisesThisRound > 0 ? raisesThisRound : 0;
 		const streetPressure = needsToCall ? streetIndex * 0.01 : 0;
-		const weakDrawPressure = needsToCall && isWeakDraw ? streetIndex * 0.01 : 0;
+		const weakDrawPressure = needsToCall && isWeakDraw && !isMadeHand ? streetIndex * 0.01 : 0;
 		const deadHandPressure = needsToCall && isDeadHand ? streetIndex * 0.02 : 0;
 		const barrelPressure = needsToCall ? raiseLevelForCalls * 0.02 : 0;
 
@@ -2050,7 +2221,7 @@ export function chooseBotAction(player, gameState) {
 		let potOddsShift = -potOddsAdj;
 		if (needsToCall && isDeadHand) {
 			potOddsShift *= 0.35;
-		} else if (needsToCall && isWeakDraw) {
+		} else if (needsToCall && isWeakDraw && !isMadeHand) {
 			potOddsShift *= 0.5;
 		}
 		const commitmentShift = needsToCall ? commitmentPenalty * 0.8 : 0;
@@ -2061,7 +2232,7 @@ export function chooseBotAction(player, gameState) {
 			const deadHandFloor = streetIndex === 1 ? 0.2 : streetIndex === 2 ? 0.22 : 0.24;
 			callBarrier = Math.max(callBarrier, deadHandFloor);
 		}
-		if (needsToCall && isWeakDraw) {
+		if (needsToCall && isWeakDraw && !isMadeHand) {
 			if (streetIndex >= 2) {
 				callBarrier = 1;
 			} else if (streetIndex === 1 && (potOdds > 0.18 || raiseLevelForCalls > 0)) {
@@ -2069,10 +2240,17 @@ export function chooseBotAction(player, gameState) {
 			}
 		}
 		callBarrier = Math.min(1, Math.max(0.10, callBarrier));
+		callBarrier = Math.min(
+			1,
+			Math.max(0.10, callBarrier + (postflopDefenseProfile?.barrierRelief ?? 0)),
+		);
 	}
 	let eliminationBarrier = needsToCall
-		? Math.min(1, callBarrier + eliminationPenalty)
+		? Math.min(1, callBarrier + effectiveEliminationPenalty)
 		: callBarrier;
+	const postflopCallStackRatioCap = preflop
+		? 0.7
+		: postflopDefenseProfile?.stackRatioCap ?? 0.70;
 
 	// Base thresholds for raising depend on stage and pot size
 	// When only a few opponents remain, play slightly more aggressively
@@ -2232,6 +2410,54 @@ export function chooseBotAction(player, gameState) {
 		return Math.random() < chance;
 	}
 
+	function classifyWeakNoBetStabSpot() {
+		const actingLast = spotContext.actingSlotIndex === spotContext.actingSlotCount - 1 &&
+			(spotContext.actingSlotCount === 2 || spotContext.actingSlotCount === 3);
+		if (
+			preflop || currentBet !== 0 || !canRaise || facingRaise ||
+			(botLine && botLine.preflopAggressor) || !actingLast ||
+			topPair || overPair || isDraw || (publicHand?.rank ?? 0) >= 3
+		) {
+			return null;
+		}
+
+		if (solvedHand?.rank === 1) {
+			return isWeakDraw ? "weak-draw" : "air";
+		}
+
+		if (solvedHand?.rank === 2 && (publicHand?.rank ?? 0) <= 2) {
+			return "weak-pair";
+		}
+
+		return null;
+	}
+
+	function getWeakNoBetStabChanceFloor(weakNoBetClass) {
+		if (spotContext.headsUp) {
+			if (weakNoBetClass === "air") {
+				return 0.28;
+			}
+			if (weakNoBetClass === "weak-draw") {
+				return 0.24;
+			}
+			if (weakNoBetClass === "weak-pair") {
+				return 0.16;
+			}
+			return 0;
+		}
+
+		if (weakNoBetClass === "air") {
+			return 0.18;
+		}
+		if (weakNoBetClass === "weak-draw") {
+			return 0.16;
+		}
+		if (weakNoBetClass === "weak-pair") {
+			return 0.10;
+		}
+		return 0;
+	}
+
 	const tableProfile = aggregateOpponentStats(allOpponents);
 	const liveProfile = aggregateOpponentStats(spotContext.liveOpponents);
 	const behindProfile = aggregateOpponentStats(spotContext.remainingBehind);
@@ -2310,9 +2536,12 @@ export function chooseBotAction(player, gameState) {
 			} else if (pressureProfile.aggression < 0.7) {
 				callBarrierAdj += 0.02 * weight;
 			}
+			if (!preflop && callBarrierAdj > 0) {
+				callBarrierAdj *= postflopDefenseProfile?.tighteningScale ?? 1;
+			}
 			callBarrier = Math.min(1, Math.max(preflop ? 0 : 0.10, callBarrier + callBarrierAdj));
 			eliminationBarrier = needsToCall
-				? Math.min(1, callBarrier + eliminationPenalty)
+				? Math.min(1, callBarrier + effectiveEliminationPenalty)
 				: callBarrier;
 		} else {
 			if (pressureProfile.vpip < 0.25) {
@@ -2485,20 +2714,20 @@ export function chooseBotAction(player, gameState) {
 		} else if (canRaise && decisionStrength >= raiseThreshold && stackRatio <= 1 / 3) {
 			let raiseAmt = protectionBetSize();
 			raiseAmt = Math.max(minRaiseAmount, raiseAmt);
-			if (Math.abs(decisionStrength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
-				const callAmt = Math.min(player.chips, needToCall);
-				const alt = (passiveStrengthRatio >= eliminationBarrier &&
-						stackRatio <= (preflop ? 0.5 : 0.7))
-					? { action: "call", amount: callAmt }
-					: { action: "fold" };
-				decision = Math.random() < 0.5 ? { action: "raise", amount: raiseAmt } : alt;
+				if (Math.abs(decisionStrength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
+					const callAmt = Math.min(player.chips, needToCall);
+					const alt = (passiveStrengthRatio >= eliminationBarrier &&
+							effectiveCallRatio <= postflopCallStackRatioCap)
+						? { action: "call", amount: callAmt }
+						: { action: "fold" };
+					decision = Math.random() < 0.5 ? { action: "raise", amount: raiseAmt } : alt;
 			} else {
 				decision = { action: "raise", amount: raiseAmt };
 			}
-		} else if (
-			passiveStrengthRatio >= eliminationBarrier &&
-			stackRatio <= (preflop ? 0.5 : 0.7)
-		) {
+			} else if (
+				passiveStrengthRatio >= eliminationBarrier &&
+				effectiveCallRatio <= postflopCallStackRatioCap
+			) {
 			const callAmt = Math.min(player.chips, needToCall);
 			if (Math.abs(passiveStrengthRatio - eliminationBarrier) <= ODDS_TIE_DELTA) {
 				decision = Math.random() < 0.5
@@ -2595,12 +2824,18 @@ export function chooseBotAction(player, gameState) {
 			!preflop && currentBet === 0 && decision.action === "check" && canRaise &&
 			!facingRaise &&
 			textureRisk < 0.4 && (foldRate > 0.25 || drawEquity > 0) &&
-			Math.random() < Math.max(0.05, Math.min(0.35, 0.05 + positionFactor * 0.3)) &&
 			!nonValueAggressionMade && !nonValueAggressionBlocked
 		) {
-			const betAmt = protectionBetSize();
-			decision = { action: "raise", amount: Math.max(ceilTo10(lastRaise), betAmt) };
-			isStab = true;
+			const baseStabChance = Math.max(0.05, Math.min(0.35, 0.05 + positionFactor * 0.3));
+			const weakNoBetStabClass = classifyWeakNoBetStabSpot();
+			const stabChance = weakNoBetStabClass
+				? Math.max(baseStabChance, getWeakNoBetStabChanceFloor(weakNoBetStabClass))
+				: baseStabChance;
+			if (Math.random() < stabChance) {
+				const betAmt = protectionBetSize();
+				decision = { action: "raise", amount: Math.max(ceilTo10(lastRaise), betAmt) };
+				isStab = true;
+			}
 		}
 	}
 
@@ -2717,13 +2952,16 @@ export function chooseBotAction(player, gameState) {
 			? (botLine.barrelMade ? "Y" : "N")
 			: "-";
 		const lineAbortFlag = botLine && botLine.preflopAggressor ? (lineAbort ? "Y" : "N") : "-";
-		const preflopSeatTag = preflopSeatClass ?? "-";
-		const preflopBandTag = preflopBand ?? "-";
-		const preflopDetailTag = preflopDetail ?? "-";
-		const loggedRaiseThreshold = preflop ? 0 : raiseThreshold;
+			const preflopSeatTag = preflopSeatClass ?? "-";
+			const preflopBandTag = preflopBand ?? "-";
+			const preflopDetailTag = preflopDetail ?? "-";
+			const loggedRaiseThreshold = preflop ? 0 : raiseThreshold;
+			const noBetTag = currentBet === 0 ? "Y" : "N";
+			const canRaiseTag = canRaise ? "Y" : "N";
+			const actingSlotTag = `${spotContext.actingSlotIndex + 1}/${spotContext.actingSlotCount}`;
 
-		console.log(
-			`${player.name} ${h1} ${h2} → ${decision.action} | ` +
+			console.log(
+				`${player.name} ${h1} ${h2} → ${decision.action} | ` +
 				`H:${handName} Amt:${decision.amount ?? 0} | ` +
 				`PA:${aggressionStrengthRatio.toFixed(2)} PS:${passiveStrengthRatio.toFixed(2)} M:${
 					mRatio.toFixed(2)
@@ -2731,12 +2969,13 @@ export function chooseBotAction(player, gameState) {
 				`PO:${potOdds.toFixed(2)} CB:${eliminationBarrier.toFixed(2)} SR:${
 					stackRatio.toFixed(2)
 				} | ` +
-				`CP:${commitmentPressure.toFixed(2)} CPen:${commitmentPenalty.toFixed(2)} | ` +
-				`ER:${eliminationRisk.toFixed(2)} EP:${eliminationPenalty.toFixed(2)} | ` +
-				`Pos:${positionFactor.toFixed(2)} Opp:${activeOpponents} Eff:${effectiveStack} | ` +
-				`RT10:${(loggedRaiseThreshold / 10).toFixed(2)} Agg:${
-					aggressiveness.toFixed(2)
-				} RL:${raiseLevel} RAdj:${(raiseLevel * RERAISE_RATIO_STEP).toFixed(2)} | ` +
+					`CP:${commitmentPressure.toFixed(2)} CPen:${commitmentPenalty.toFixed(2)} | ` +
+					`ER:${eliminationRisk.toFixed(2)} EP:${eliminationPenalty.toFixed(2)} | ` +
+					`Pos:${positionFactor.toFixed(2)} Opp:${activeOpponents} Eff:${effectiveStack} | ` +
+					`NB:${noBetTag} CR:${canRaiseTag} Act:${actingSlotTag} | ` +
+					`RT10:${(loggedRaiseThreshold / 10).toFixed(2)} Agg:${
+						aggressiveness.toFixed(2)
+					} RL:${raiseLevel} RAdj:${(raiseLevel * RERAISE_RATIO_STEP).toFixed(2)} | ` +
 				`Spot:${spotType}/${structureTag}/${pressureTag} Grp:${groupTag} Aggr:${primaryAggressorName} | ` +
 				`ProfP:${pressureProfileTag} ProfF:${foldProfileTag} NVB:${
 					nonValueAggressionBlocked ? "Y" : "N"
