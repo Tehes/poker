@@ -39,7 +39,7 @@ export const INITIAL_DECK = [
 
 export const INITIAL_SMALL_BLIND = 10;
 export const INITIAL_BIG_BLIND = 20;
-export const BLIND_LEVEL_HAND_INTERVAL = 10;
+export const BLIND_LEVEL_HAND_INTERVAL = 6;
 export const BLIND_GROWTH_FACTOR = 1.3;
 export const BLIND_BIG_BLIND_STEP = 20;
 

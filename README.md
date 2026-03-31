@@ -127,7 +127,7 @@ Backend sync is used only in multiplayer games that start with at least 2 human 
 - Empty seats are filled with bots automatically.
 - The table manages:
   - **Dealer rotation** and automatic blind posting
-  - **Progressive blinds** that increase every 10 hands with a formula-based, nice-step schedule
+  - **Progressive blinds** that increase every 6 hands with a formula-based, nice-step schedule
     (e.g., 10/20 -> 20/40 -> 30/60 -> 40/80 -> 50/100 -> 60/120)
   - Side pots and all-ins
   - Automatic showdown resolution
