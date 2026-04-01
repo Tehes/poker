@@ -24,7 +24,9 @@ const RAISE_SECTION_REGEX = /\bRT10:(\d+\.\d+) Agg:(\d+\.\d+) RL:(\d+) RAdj:(\d+
 const SPOT_SECTION_REGEX = /\bSpot:([^/\s|]+)\/([^/\s|]+)\/([^ \|]+)\b/;
 const CONTEXT_SECTION_REGEX = /\bCtx:([^ \|]+) Draw:([^ \|]+) Tex:(\d+\.\d+) LT:([^ \|]+)\b/;
 const FLAG_SECTION_REGEX = /\bCL:(Y|N) SS:(Y|N) Prem:(Y|N)\b/;
-const PREFLOP_SECTION_REGEX = /\bPre:([^/\s|]+)\/([^/\s|]+)\/([^ \|]+)(?=\s|\|)/;
+const PREFLOP_SECTION_REGEX = /\bPre:([^/\s|]+)(?:\/([^ \|]+))?(?=\s|\|)/;
+const PREFLOP_SCORE_SECTION_REGEX =
+	/\bStr:(\d+\.\d+) Pla:(\d+\.\d+) Dom:(\d+\.\d+) \| OR:(\d+\.\d+) OL:(\d+\.\d+) FL:(\d+\.\d+) 3V:(\d+\.\d+) 3B:(\d+\.\d+) PS:(\d+\.\d+)\b/;
 const LINE_SECTION_REGEX =
 	/\bLine:([^ \|]+) CP:([YN-]) BP:([YN-]) CM:([YN-]) BM:([YN-]) LA:([YN-])(?=\s|\|)/;
 const STAB_BLUFF_SECTION_REGEX = /\bStab:(Y|N) Bluff:(Y|N)\b/;
@@ -239,9 +241,341 @@ function bucketRaiseLevel(raiseLevel) {
 	return raiseLevel >= 3 ? "3+" : String(raiseLevel);
 }
 
+function bucketDecisionScore(score) {
+	const clamped = Math.max(0, Math.min(10, score));
+	if (clamped >= 10) {
+		return "10.0";
+	}
+	const start = Math.floor(clamped);
+	return `${start}-${start + 1}`;
+}
+
+function bucketDominationPenalty(score) {
+	const clamped = Math.max(0, Math.min(1.5, score));
+	if (clamped >= 1.5) {
+		return "1.50";
+	}
+	const start = Math.floor(clamped * 4) / 4;
+	const end = Math.min(1.5, start + 0.25);
+	return `${start.toFixed(2)}-${end.toFixed(2)}`;
+}
+
 function pushExample(target, line, limit = 10) {
 	if (target.length < limit) {
 		target.push(line);
+	}
+}
+
+function parseJsonTail(line, marker) {
+	const markerIndex = line.indexOf(marker);
+	if (markerIndex === -1) {
+		return null;
+	}
+
+	const jsonText = line.slice(markerIndex + marker.length).trim();
+	if (!jsonText.startsWith("{")) {
+		return null;
+	}
+
+	try {
+		return JSON.parse(jsonText);
+	} catch {
+		return null;
+	}
+}
+
+function parseBettingRoundLine(line) {
+	const payload = parseJsonTail(line, "startBettingRound ");
+	return payload && typeof payload.phase === "string" ? payload : null;
+}
+
+function parseSetPhaseLine(line) {
+	const payload = parseJsonTail(line, "setPhase ");
+	return payload && typeof payload.phase === "string" ? payload : null;
+}
+
+function splitLogsIntoHands(logs) {
+	const hands = [];
+	let currentHand = null;
+
+	for (const line of logs) {
+		const bettingRound = parseBettingRoundLine(line);
+		if (bettingRound?.phase === "preflop") {
+			if (currentHand?.length) {
+				hands.push(currentHand);
+			}
+			currentHand = [line];
+			continue;
+		}
+		if (currentHand) {
+			currentHand.push(line);
+		}
+	}
+
+	if (currentHand?.length) {
+		hands.push(currentHand);
+	}
+	return hands;
+}
+
+function handSawFlop(handLines) {
+	return handLines.some((line) => {
+		const bettingRound = parseBettingRoundLine(line);
+		if (bettingRound?.phase === "flop") {
+			return true;
+		}
+		const phaseUpdate = parseSetPhaseLine(line);
+		return phaseUpdate?.phase === "flop";
+	});
+}
+
+function createEmptyPreflopTransitionMetrics() {
+	return {
+		unopenedRaiseAttemptsBySeatAndPlayers: {},
+		unopenedRaiseUncontestedBySeatAndPlayers: {},
+		unopenedRaiseFlopSeenBySeatAndPlayers: {},
+		unopenedCallAttemptsBySeatAndPlayers: {},
+		unopenedCallFlopSeenBySeatAndPlayers: {},
+		sbHuOpen: {
+			attempts: 0,
+			bigBlindFold: 0,
+			bigBlindCall: 0,
+			bigBlindRaise: 0,
+			bbDefend: 0,
+			uncontested: 0,
+			flopSeen: 0,
+		},
+		sbHuLimp: {
+			attempts: 0,
+			bigBlindCheck: 0,
+			bigBlindRaise: 0,
+			flopSeen: 0,
+		},
+		btn3Open: {
+			attempts: 0,
+			smallBlindFold: 0,
+			smallBlindCall: 0,
+			smallBlindRaise: 0,
+			bigBlindFold: 0,
+			bigBlindCall: 0,
+			bigBlindRaise: 0,
+			blindsDefend: 0,
+			blindsFoldedThrough: 0,
+			flopSeen: 0,
+		},
+		btn3Limp: {
+			attempts: 0,
+			smallBlindFold: 0,
+			smallBlindCall: 0,
+			smallBlindRaise: 0,
+			bigBlindCheck: 0,
+			bigBlindCall: 0,
+			bigBlindRaise: 0,
+			blindRaise: 0,
+			flopSeen: 0,
+		},
+	};
+}
+
+function incrementTrackedBlindResponse(target, seatClass, action) {
+	if (
+		(seatClass !== "smallBlind" && seatClass !== "bigBlind") ||
+		(action !== "fold" && action !== "call" && action !== "raise" && action !== "check")
+	) {
+		return;
+	}
+
+	const seatPrefix = seatClass === "smallBlind" ? "smallBlind" : "bigBlind";
+	const actionSuffix = action === "fold"
+		? "Fold"
+		: action === "call"
+		? "Call"
+		: action === "check"
+		? "Check"
+		: "Raise";
+	incrementCount(target, `${seatPrefix}${actionSuffix}`);
+}
+
+function analyzePreflopTransitions(logs, metrics) {
+	const hands = splitLogsIntoHands(logs);
+
+	for (const handLines of hands) {
+		const preflopDecisions = handLines
+			.map((line) => parseDecisionLogLine(line))
+			.filter((decision) => decision?.phase === "preflop");
+		if (!preflopDecisions.length) {
+			continue;
+		}
+		const sawFlop = handSawFlop(handLines);
+
+		const openRaiseIndex = preflopDecisions.findIndex((decision) =>
+			decision.spotType === "UO" && decision.action === "raise" && decision.preflopSeat !== "-"
+		);
+		if (openRaiseIndex !== -1) {
+			const openDecision = preflopDecisions[openRaiseIndex];
+			const remainingPreflopDecisions = preflopDecisions.slice(openRaiseIndex + 1);
+			const seatKey = openDecision.preflopSeat;
+			const playerKey = String(openDecision.activePlayers);
+			const uncontested = remainingPreflopDecisions.length > 0 &&
+				remainingPreflopDecisions.every((decision) => decision.action === "fold") &&
+				!sawFlop;
+
+			incrementNestedCount(
+				metrics.preflop.transitions.unopenedRaiseAttemptsBySeatAndPlayers,
+				seatKey,
+				playerKey,
+			);
+			if (uncontested) {
+				incrementNestedCount(
+					metrics.preflop.transitions.unopenedRaiseUncontestedBySeatAndPlayers,
+					seatKey,
+					playerKey,
+				);
+			}
+			if (sawFlop) {
+				incrementNestedCount(
+					metrics.preflop.transitions.unopenedRaiseFlopSeenBySeatAndPlayers,
+					seatKey,
+					playerKey,
+				);
+			}
+
+			if (seatKey === "smallBlind" && openDecision.activePlayers === 2) {
+				const bbResponse = remainingPreflopDecisions.find((decision) =>
+					decision.preflopSeat === "bigBlind"
+				);
+				metrics.preflop.transitions.sbHuOpen.attempts += 1;
+				if (bbResponse) {
+					incrementTrackedBlindResponse(
+						metrics.preflop.transitions.sbHuOpen,
+						"bigBlind",
+						bbResponse.action,
+					);
+					if (bbResponse.action === "call" || bbResponse.action === "raise") {
+						metrics.preflop.transitions.sbHuOpen.bbDefend += 1;
+					}
+				}
+				if (uncontested) {
+					metrics.preflop.transitions.sbHuOpen.uncontested += 1;
+				}
+				if (sawFlop) {
+					metrics.preflop.transitions.sbHuOpen.flopSeen += 1;
+				}
+			}
+
+			if (seatKey === "button" && openDecision.activePlayers === 3) {
+				const sbResponse = remainingPreflopDecisions.find((decision) =>
+					decision.preflopSeat === "smallBlind"
+				);
+				const bbResponse = remainingPreflopDecisions.find((decision) =>
+					decision.preflopSeat === "bigBlind"
+				);
+				const blindsDefended = [sbResponse, bbResponse].some((decision) =>
+					decision && (decision.action === "call" || decision.action === "raise")
+				);
+				const blindsFoldedThrough =
+					sbResponse?.action === "fold" && bbResponse?.action === "fold";
+
+				metrics.preflop.transitions.btn3Open.attempts += 1;
+				if (sbResponse) {
+					incrementTrackedBlindResponse(
+						metrics.preflop.transitions.btn3Open,
+						"smallBlind",
+						sbResponse.action,
+					);
+				}
+				if (bbResponse) {
+					incrementTrackedBlindResponse(
+						metrics.preflop.transitions.btn3Open,
+						"bigBlind",
+						bbResponse.action,
+					);
+				}
+				if (blindsDefended) {
+					metrics.preflop.transitions.btn3Open.blindsDefend += 1;
+				}
+				if (blindsFoldedThrough) {
+					metrics.preflop.transitions.btn3Open.blindsFoldedThrough += 1;
+				}
+				if (sawFlop) {
+					metrics.preflop.transitions.btn3Open.flopSeen += 1;
+				}
+			}
+		}
+
+		const openCallIndex = preflopDecisions.findIndex((decision) =>
+			decision.spotType === "UO" && decision.action === "call" && decision.preflopSeat !== "-"
+		);
+		if (openCallIndex === -1) {
+			continue;
+		}
+
+		const openCallDecision = preflopDecisions[openCallIndex];
+		const remainingAfterOpenCall = preflopDecisions.slice(openCallIndex + 1);
+		const callSeatKey = openCallDecision.preflopSeat;
+		const callPlayerKey = String(openCallDecision.activePlayers);
+
+		incrementNestedCount(
+			metrics.preflop.transitions.unopenedCallAttemptsBySeatAndPlayers,
+			callSeatKey,
+			callPlayerKey,
+		);
+		if (sawFlop) {
+			incrementNestedCount(
+				metrics.preflop.transitions.unopenedCallFlopSeenBySeatAndPlayers,
+				callSeatKey,
+				callPlayerKey,
+			);
+		}
+
+		if (callSeatKey === "smallBlind" && openCallDecision.activePlayers === 2) {
+			const bbResponse = remainingAfterOpenCall.find((decision) =>
+				decision.preflopSeat === "bigBlind"
+			);
+			metrics.preflop.transitions.sbHuLimp.attempts += 1;
+			if (bbResponse) {
+				incrementTrackedBlindResponse(
+					metrics.preflop.transitions.sbHuLimp,
+					"bigBlind",
+					bbResponse.action,
+				);
+			}
+			if (sawFlop) {
+				metrics.preflop.transitions.sbHuLimp.flopSeen += 1;
+			}
+		}
+
+		if (callSeatKey === "button" && openCallDecision.activePlayers === 3) {
+			const sbResponse = remainingAfterOpenCall.find((decision) =>
+				decision.preflopSeat === "smallBlind"
+			);
+			const bbResponse = remainingAfterOpenCall.find((decision) =>
+				decision.preflopSeat === "bigBlind"
+			);
+			const blindRaised = sbResponse?.action === "raise" || bbResponse?.action === "raise";
+
+			metrics.preflop.transitions.btn3Limp.attempts += 1;
+			if (sbResponse) {
+				incrementTrackedBlindResponse(
+					metrics.preflop.transitions.btn3Limp,
+					"smallBlind",
+					sbResponse.action,
+				);
+			}
+			if (bbResponse) {
+				incrementTrackedBlindResponse(
+					metrics.preflop.transitions.btn3Limp,
+					"bigBlind",
+					bbResponse.action,
+				);
+			}
+			if (blindRaised) {
+				metrics.preflop.transitions.btn3Limp.blindRaise += 1;
+			}
+			if (sawFlop) {
+				metrics.preflop.transitions.btn3Limp.flopSeen += 1;
+			}
+		}
 	}
 }
 
@@ -324,6 +658,7 @@ function parseDecisionLogLine(line) {
 	const rawMatch = line.match(RAW_HAND_REGEX);
 	const flagMatch = line.match(FLAG_SECTION_REGEX);
 	const preflopMatch = line.match(PREFLOP_SECTION_REGEX);
+	const preflopScoreMatch = line.match(PREFLOP_SCORE_SECTION_REGEX);
 	const lineMatch = line.match(LINE_SECTION_REGEX);
 	const stabBluffMatch = line.match(STAB_BLUFF_SECTION_REGEX);
 	const nonValueBlockMatch = line.match(NON_VALUE_BLOCK_REGEX);
@@ -332,7 +667,8 @@ function parseDecisionLogLine(line) {
 		!actionMatch || !handMatch || !strengthMatch || !pressureMatch || !commitMatch ||
 		!eliminationMatch || !positionMatch || !opportunityMatch || !raiseMatch || !spotMatch ||
 		!contextMatch ||
-		!publicMatch || !rawMatch || !flagMatch || !preflopMatch || !lineMatch || !stabBluffMatch ||
+		!publicMatch || !rawMatch || !flagMatch || !preflopMatch || !preflopScoreMatch ||
+		!lineMatch || !stabBluffMatch ||
 		!nonValueBlockMatch
 	) {
 		return null;
@@ -376,8 +712,16 @@ function parseDecisionLogLine(line) {
 	const shortStack = flagMatch[2] === "Y";
 	const premium = flagMatch[3] === "Y";
 	const preflopSeat = preflopMatch[1];
-	const preflopBand = preflopMatch[2];
-	const preflopDetail = preflopMatch[3];
+	const preflopSeatContext = preflopMatch[2] ?? "-";
+	const strengthScore = Number.parseFloat(preflopScoreMatch[1]);
+	const playabilityScore = Number.parseFloat(preflopScoreMatch[2]);
+	const dominationPenalty = Number.parseFloat(preflopScoreMatch[3]);
+	const openRaiseScore = Number.parseFloat(preflopScoreMatch[4]);
+	const openLimpScore = Number.parseFloat(preflopScoreMatch[5]);
+	const flatScore = Number.parseFloat(preflopScoreMatch[6]);
+	const threeBetValueScore = Number.parseFloat(preflopScoreMatch[7]);
+	const threeBetBluffScore = Number.parseFloat(preflopScoreMatch[8]);
+	const pushScore = Number.parseFloat(preflopScoreMatch[9]);
 	const lineTag = lineMatch[1];
 	const cbetPlan = flagToState(lineMatch[2]);
 	const barrelPlan = flagToState(lineMatch[3]);
@@ -432,8 +776,16 @@ function parseDecisionLogLine(line) {
 		shortStack,
 		premium,
 		preflopSeat,
-		preflopBand,
-		preflopDetail,
+		preflopSeatContext,
+		strengthScore,
+		playabilityScore,
+		dominationPenalty,
+		openRaiseScore,
+		openLimpScore,
+		flatScore,
+		threeBetValueScore,
+		threeBetBluffScore,
+		pushScore,
 		lineTag,
 		cbetPlan,
 		barrelPlan,
@@ -449,6 +801,12 @@ function parseDecisionLogLine(line) {
 		stackRatioBucket: bucketStackRatio(stackRatio),
 		commitmentBucket: bucketCommitmentPressure(commitmentPressure),
 		raiseLevelBucket: bucketRaiseLevel(raiseLevel),
+		strengthScoreBucket: bucketDecisionScore(strengthScore),
+		playabilityScoreBucket: bucketDecisionScore(playabilityScore),
+		dominationPenaltyBucket: bucketDominationPenalty(dominationPenalty),
+		openRaiseScoreBucket: bucketDecisionScore(openRaiseScore),
+		openLimpScoreBucket: bucketDecisionScore(openLimpScore),
+		flatScoreBucket: bucketDecisionScore(flatScore),
 	};
 }
 
@@ -758,6 +1116,8 @@ async function waitForPageReady(page) {
 function createEmptyPreflopMetrics() {
 	return {
 		decisions: 0,
+		premiumFoldCount: 0,
+		unopenedCallCount: 0,
 		actions: {},
 		actionsBySpotType: {},
 		actionsByStructure: {},
@@ -771,9 +1131,16 @@ function createEmptyPreflopMetrics() {
 		actionsByPremium: {},
 		actionsByChipLeader: {},
 		actionsByShortStack: {},
+		actionsByStrengthScoreBucket: {},
+		actionsByPlayabilityScoreBucket: {},
+		actionsByDominationPenaltyBucket: {},
+		actionsByOpenRaiseScoreBucket: {},
+		actionsByOpenLimpScoreBucket: {},
+		actionsByFlatScoreBucket: {},
 		uoActionsBySeat: {},
 		uoActionsByActivePlayers: {},
 		uoActionsBySeatAndPlayers: {},
+		transitions: createEmptyPreflopTransitionMetrics(),
 	};
 }
 
@@ -1017,11 +1384,43 @@ function analyzeRunLogs(logs) {
 				decision.shortStack ? "yes" : "no",
 				decision.action,
 			);
+			incrementNestedCount(
+				metrics.preflop.actionsByStrengthScoreBucket,
+				decision.strengthScoreBucket,
+				decision.action,
+			);
+			incrementNestedCount(
+				metrics.preflop.actionsByPlayabilityScoreBucket,
+				decision.playabilityScoreBucket,
+				decision.action,
+			);
+			incrementNestedCount(
+				metrics.preflop.actionsByDominationPenaltyBucket,
+				decision.dominationPenaltyBucket,
+				decision.action,
+			);
+			incrementNestedCount(
+				metrics.preflop.actionsByOpenRaiseScoreBucket,
+				decision.openRaiseScoreBucket,
+				decision.action,
+			);
+			incrementNestedCount(
+				metrics.preflop.actionsByOpenLimpScoreBucket,
+				decision.openLimpScoreBucket,
+				decision.action,
+			);
+			incrementNestedCount(
+				metrics.preflop.actionsByFlatScoreBucket,
+				decision.flatScoreBucket,
+				decision.action,
+			);
 
 			if (decision.premium && decision.action === "fold") {
+				metrics.preflop.premiumFoldCount += 1;
 				pushExample(metrics.examples.preflopPremiumFold, line);
 			}
 			if (decision.spotType === "UO" && decision.action === "call") {
+				metrics.preflop.unopenedCallCount += 1;
 				pushExample(metrics.examples.preflopUnopenedCall, line);
 			}
 			if (decision.spotType === "UO" && decision.preflopSeat !== "-") {
@@ -1240,6 +1639,7 @@ function analyzeRunLogs(logs) {
 		}
 	}
 
+	analyzePreflopTransitions(logs, metrics);
 	return metrics;
 }
 
@@ -1488,35 +1888,83 @@ async function main() {
 		console.log(
 			`postflop_high_risk_private_made_hand_folds=${aggregateMetrics.postflop.highRiskPrivateMadeHandFoldCount}`,
 		);
-		console.log(`preflop_premium_folds=${aggregateMetrics.examples.preflopPremiumFold.length}`);
+		console.log(`preflop_premium_folds=${aggregateMetrics.preflop.premiumFoldCount}`);
+		console.log(`preflop_unopened_calls=${aggregateMetrics.preflop.unopenedCallCount}`);
 		console.log(
-			`preflop_unopened_calls=${aggregateMetrics.examples.preflopUnopenedCall.length}`,
+			`sb_hu_open_uncontested=${
+				aggregateMetrics.preflop.transitions.sbHuOpen.uncontested
+			}/${aggregateMetrics.preflop.transitions.sbHuOpen.attempts}`,
 		);
-			console.log(
-				`bluff_raises_with_made_hand=${
-					aggregateMetrics.postflop.bluffRaiseClassCounts["made-hand"] || 0
-				}`,
-			);
-			console.log(
-				`postflop_no_bet_opportunities=${aggregateMetrics.postflop.noBetOpportunityCount}`,
-			);
-			console.log(
-				`postflop_no_bet_raises=${
-					aggregateMetrics.postflop.noBetOpportunityActions.raise || 0
-				}`,
-			);
-			console.log(
-				`postflop_weak_no_bet_opportunities=${
-					aggregateMetrics.postflop.weakNoBetOpportunityCount
-				}`,
-			);
-			console.log(
-				`postflop_weak_no_bet_raises=${
-					aggregateMetrics.postflop.weakNoBetOpportunityActions.raise || 0
-				}`,
-			);
-			console.log(`kicker_raises=${aggregateMetrics.kickerRaiseCount}`);
-			console.log(`public_made_kicker_raises=${aggregateMetrics.publicMadeKickerRaiseCount}`);
+		console.log(
+			`bb_defend_vs_sb_hu_open=${
+				aggregateMetrics.preflop.transitions.sbHuOpen.bbDefend
+			}/${aggregateMetrics.preflop.transitions.sbHuOpen.attempts}`,
+		);
+		console.log(
+			`flop_seen_after_sb_hu_open=${
+				aggregateMetrics.preflop.transitions.sbHuOpen.flopSeen
+			}/${aggregateMetrics.preflop.transitions.sbHuOpen.attempts}`,
+		);
+		console.log(
+			`btn_3_open_uncontested=${
+				aggregateMetrics.preflop.transitions.btn3Open.blindsFoldedThrough
+			}/${aggregateMetrics.preflop.transitions.btn3Open.attempts}`,
+		);
+		console.log(
+			`blinds_defend_vs_btn_3_open=${
+				aggregateMetrics.preflop.transitions.btn3Open.blindsDefend
+			}/${aggregateMetrics.preflop.transitions.btn3Open.attempts}`,
+		);
+		console.log(
+			`flop_seen_after_btn_3_open=${
+				aggregateMetrics.preflop.transitions.btn3Open.flopSeen
+			}/${aggregateMetrics.preflop.transitions.btn3Open.attempts}`,
+		);
+		console.log(
+			`bb_raise_vs_sb_hu_limp=${
+				aggregateMetrics.preflop.transitions.sbHuLimp.bigBlindRaise
+			}/${aggregateMetrics.preflop.transitions.sbHuLimp.attempts}`,
+		);
+		console.log(
+			`flop_seen_after_sb_hu_limp=${
+				aggregateMetrics.preflop.transitions.sbHuLimp.flopSeen
+			}/${aggregateMetrics.preflop.transitions.sbHuLimp.attempts}`,
+		);
+		console.log(
+			`blind_raise_vs_btn_3_limp=${
+				aggregateMetrics.preflop.transitions.btn3Limp.blindRaise
+			}/${aggregateMetrics.preflop.transitions.btn3Limp.attempts}`,
+		);
+		console.log(
+			`flop_seen_after_btn_3_limp=${
+				aggregateMetrics.preflop.transitions.btn3Limp.flopSeen
+			}/${aggregateMetrics.preflop.transitions.btn3Limp.attempts}`,
+		);
+		console.log(
+			`bluff_raises_with_made_hand=${
+				aggregateMetrics.postflop.bluffRaiseClassCounts["made-hand"] || 0
+			}`,
+		);
+		console.log(
+			`postflop_no_bet_opportunities=${aggregateMetrics.postflop.noBetOpportunityCount}`,
+		);
+		console.log(
+			`postflop_no_bet_raises=${
+				aggregateMetrics.postflop.noBetOpportunityActions.raise || 0
+			}`,
+		);
+		console.log(
+			`postflop_weak_no_bet_opportunities=${
+				aggregateMetrics.postflop.weakNoBetOpportunityCount
+			}`,
+		);
+		console.log(
+			`postflop_weak_no_bet_raises=${
+				aggregateMetrics.postflop.weakNoBetOpportunityActions.raise || 0
+			}`,
+		);
+		console.log(`kicker_raises=${aggregateMetrics.kickerRaiseCount}`);
+		console.log(`public_made_kicker_raises=${aggregateMetrics.publicMadeKickerRaiseCount}`);
 		console.log(`output_dir=${outputDir}`);
 	} finally {
 		serverAbort.abort();

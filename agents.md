@@ -306,8 +306,15 @@ When making changes, always provide:
 - Never claim tests were run if they were not.
 - After game-flow or rules changes that can affect a live hand, run `deno task speedmode` once if
   the local browser automation setup is available.
-- After bot logic or bot tuning changes, prefer `deno task speedmode:10` and summarize the key
-  findings from the generated `summary.json`. If that run is blocked, say so explicitly.
+- After bot logic or bot tuning changes, use staged `speedmode` validation instead of jumping
+  straight to large batches.
+- `deno task speedmode:10` is the mandatory structure test for each tuning iteration. Summarize the
+  key findings from the generated `summary.json`.
+- `deno task speedmode -- --runs=30` is an optional stability test, but only after the 10-run looks
+  directionally good.
+- `deno task speedmode -- --runs=100` is an acceptance run for candidate builds only, after the
+  10-run structure and 30-run stability both look good.
+- If any required `speedmode` run is blocked, say so explicitly.
 
 ---
 

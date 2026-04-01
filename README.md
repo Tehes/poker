@@ -32,9 +32,9 @@ joins via QR code or link to use their own device, while the shared table handle
 - **Fast Forward for Bot-Only Hands**: When no human can act in the current hand, a Fast Forward
   button lets you speed through the remaining bot action. If no humans have chips left after that,
   the game keeps fast-forwarding until a winner remains.
-- **Smart Bot Play**: Bots play tournament-style poker with explicit unopened and raised-pot spot
-  policies, tiered postflop defense, and selective heads-up checked-to pressure after passive
-  streets.
+- **Smart Bot Play**: Bots use tournament-style heuristics with M-ratio pressure, pot odds,
+  position, opponent tendencies, and context-aware postflop aggression instead of fixed charts or
+  simulations.
 - **Postflop Hand Labels**: When hole cards are visible on the table, the shared screen shows short
   postflop hand categories.
 - **Bot Reveals**: After some uncontested postflop wins, bots may occasionally reveal one or both
@@ -140,40 +140,29 @@ Backend sync is used only in multiplayer games that start with at least 2 human 
 Bots play tournament-style poker and follow consistent rules without hidden information or "reads".
 Their decisions consider:
 
-- **Hand evaluation**: preflop uses explicit hand bands and details instead of a Chen-score gate;
-  postflop separates public board strength from private upgrades so board-driven made hands mostly
-  support passive defense while real private lifts keep aggression.
-- **Board context**: recognizes top pair/overpair, straight/flush draws (outs to equity), and board
-  texture (dry vs wet) to adjust strength.
+- **Hand evaluation**: preflop uses a heuristic hand score, while postflop strength comes from real
+  solved hand rank plus context such as top pair, overpair, draw equity, and board texture.
 - **Tournament zones (M-ratio)**: dead/red/orange/yellow/green zones guide Harrington-style
-  short-stack decisions; deeper stacks use explicit spot policies for unopened, limped,
-  single-raised, and multi-raised preflop pots.
-- **Stack pressure and risk**: pot odds, stack ratio, and SPR; shallow SPR or <=10bb can trigger
-  shove thresholds; large all-in calls are tightened by an elimination-risk guardrail.
-- **Commitment control**: invested-stack and remaining-street pressure add a call penalty to reduce
-  multi-street bleeding while still calling when committed.
-- **Position and table**: position factor and active opponents shift aggression and raise
-  thresholds; chip leaders open wider, short stacks call tighter and cap non-premium bet sizes.
-- **Opponent tendencies**: uses spot-based opponent aggregation, prioritizing players behind, live
-  opponents, and the current aggressor; fold-heavy defenders increase bluff frequency while multiway
-  and strength-shown spots suppress non-value aggression.
-- **Tiered postflop defense**: distinguishes weak showdown, promoted top-pair spots, overpairs,
-  two pair, and trips-plus so strong private made hands are not filtered by the same generic
-  call barrier as marginal bluff-catchers.
-- **Bet sizing**: value/protection/bluff/overbet sizes scale with pot, texture, SPR, position, and
-  opponent count, with small randomness and rounding.
-- **Line memory and tie-breakers**: tracks the preflop aggressor for c-bet/barrel plans (aborts on
-  very wet boards); near-threshold decisions randomize between close actions and avoid bluffing into
-  all-ins.
-- **Raise constraints**: respects per-round raise limits and minimum-legal raises, and can downgrade
-  a raise to a call/check if the minimum is not met.
-- **All-in response**: avoids automatic folds against all-ins by allowing risk-aware calls with
-  sufficiently strong hands.
-- **Postflop pressure filters**: distinguishes public made hands, private upgrades, strong draws,
-  weak draws, and dead hands to tighten or loosen calling on later streets.
-- **Checked-to initiative**: mixes in c-bets, selective last-to-act stabs, delayed river probes,
-  and narrow heads-up first-to-act probes after passive prior streets, while still checking back
-  often enough to avoid spewing into ordinary weak-showdown spots.
+  short-stack decisions for shoves, calls, and yellow-zone opens.
+- **Pot odds and stack pressure**: pot odds, stack ratio, SPR, commitment pressure, and
+  elimination-risk penalties all influence whether a hand keeps going or gets released.
+- **Position and table size**: aggression thresholds are adjusted by position and remaining
+  opponents, so bots naturally loosen up short-handed and tighten up in crowded spots.
+- **Opponent tendencies**: average VPIP, aggression, and fold rate influence bluff frequency and
+  raise thresholds; fold-heavy tables invite more pressure, while loose or aggressive fields dampen
+  it.
+- **Postflop board context**: bots recognize top pair, overpairs, flush draws, straight draws, and
+  dry vs wet textures when deciding between value, protection, bluffing, calling, or checking.
+- **Bet sizing**: value, protection, bluff, overbet, and yellow-zone open sizes scale with pot,
+  texture, SPR, position, and opponent count, with small randomness and chip-grid rounding.
+- **Line memory**: the preflop aggressor can carry simple c-bet and barrel plans across streets,
+  while very wet boards can abort those lines.
+- **Tie-breakers and raise safety**: near-threshold spots randomize between close actions, and
+  illegal raises are downgraded to the nearest legal raise, call, or check.
+- **All-in response**: bots are prevented from auto-folding too often against all-ins when their
+  hand clears a risk-adjusted threshold.
+- **Checked-to initiative**: when no one has bet, bots can still take the betting lead with
+  controlled stabs or bluffs in the right position and texture.
 
 ---
 

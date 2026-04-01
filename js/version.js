@@ -1,6 +1,17 @@
-export const APP_VERSION = "1.0.7";
+export const APP_VERSION = "1.0.8";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.8",
+		date: "2026-04-02",
+		title: "Legacy bot baseline restored",
+		notes: [
+			"Restored the older heuristic tournament bot as the active default after the newer experimental bot branches regressed playability and plausibility.",
+			"Re-centered bot behavior around M-ratio pressure, pot odds, position, opponent-tendency tuning, and context-aware postflop aggression instead of the discarded spot-policy rewrite.",
+			"Updated the public README and version notes so the documented bot behavior now matches the actual runtime again.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.7",
 		date: "2026-04-01",
