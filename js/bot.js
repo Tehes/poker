@@ -12,11 +12,10 @@ MODULE BOUNDARY: Bot Decision Engine
 // that should be reused outside bot play.
 // STRATEGY NOTE: Winner-take-all tournament with no payout ladder. Bot decisions are chip-EV driven
 // with M-ratio zones and a light elimination-risk guardrail for large calls.
-// MODERNIZATION ORDER:
-// 1. Reduce preflop premium folds to zero before touching lower-priority behavior.
-// 2. Eliminate bluff raises with made hands.
-// 3. Remove unjustified board-made and private made-hand folds.
-// 4. Only then evaluate reads, stab logic, tournament tuning, and richer postflop categories.
+// CURRENT PRIORITIES:
+// 1. Eliminate bluff raises with made hands.
+// 2. Remove unjustified board-made and private made-hand folds.
+// 3. Only then evaluate reads, stab logic, tournament tuning, and richer postflop categories.
 // Every imported concept must earn its place through the existing speedmode tests.
 //
 // BOT NORTH STAR:
@@ -97,7 +96,7 @@ const ORANGE_CALL_RATIO = 0.8;
 const YELLOW_RAISE_RATIO = 0.6;
 const YELLOW_CALL_RATIO = 0.7;
 const YELLOW_SHOVE_RATIO = 0.85;
-const PREMIUM_PREFLOP_RATIO = 0.8;
+const PREMIUM_PREFLOP_SCORE = 9;
 const PREMIUM_POSTFLOP_RATIO = 0.55;
 const GREEN_MAX_STACK_BET = 0.25;
 const CHIP_LEADER_RAISE_DELTA = 0.05;
@@ -628,6 +627,10 @@ function preflopHandScore(cardA, cardB) {
 	return Math.min(10, score);
 }
 
+function isPremiumPreflopHand(cardA, cardB) {
+	return preflopHandScore(cardA, cardB) > PREMIUM_PREFLOP_SCORE;
+}
+
 /* ===========================
    Decision Helpers
 ========================== */
@@ -941,7 +944,7 @@ export function chooseBotAction(player, gameState) {
 	const isGreenZone = mZone === "green";
 	const strengthRatioBase = strengthRatio;
 	const premiumHand = preflop
-		? strengthRatioBase >= PREMIUM_PREFLOP_RATIO
+		? isPremiumPreflopHand(player.holeCards[0], player.holeCards[1])
 		: strengthRatioBase >= PREMIUM_POSTFLOP_RATIO;
 	const raiseAggAdj = amChipleader ? -CHIP_LEADER_RAISE_DELTA : 0;
 	const callTightAdj = shortstackRelative && stackRatio < ELIMINATION_RISK_START
@@ -1360,6 +1363,11 @@ export function chooseBotAction(player, gameState) {
 		} else {
 			decision = { action: "fold" };
 		}
+	}
+	if (preflop && premiumHand && decision.action === "fold") {
+		decision = needsToCall
+			? { action: "call", amount: Math.min(player.chips, needToCall) }
+			: { action: "check" };
 	}
 
 	let isBluff = false;

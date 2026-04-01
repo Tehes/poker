@@ -1,6 +1,17 @@
-export const APP_VERSION = "1.0.8";
+export const APP_VERSION = "1.0.9";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.9",
+		date: "2026-04-02",
+		title: "Premium preflop no-fold guardrail",
+		notes: [
+			"Added a simple premium preflop guardrail so hands above the current premium score threshold no longer end preflop on fold.",
+			"Kept the existing legacy tournament bot logic intact and limited the change to a narrow post-decision preflop safety override.",
+			"Aligned the runtime premium check and bot debug flag with the same fixed preflop score threshold for consistent batch reporting.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.8",
 		date: "2026-04-02",
