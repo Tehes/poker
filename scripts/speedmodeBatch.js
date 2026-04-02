@@ -30,6 +30,7 @@ const PREFLOP_SCORE_SECTION_REGEX =
 const LINE_SECTION_REGEX =
 	/\bLine:([^ \|]+) CP:([YN-]) BP:([YN-]) CM:([YN-]) BM:([YN-]) LA:([YN-])(?=\s|\|)/;
 const STAB_BLUFF_SECTION_REGEX = /\bStab:(Y|N) Bluff:(Y|N)\b/;
+const PRIVATE_EDGE_SECTION_REGEX = /\bPMH:(Y|N) Edge:(-?\d+\.\d+) PRE:(Y|N)\b/;
 const NON_VALUE_BLOCK_REGEX = /\bNVB:(Y|N)\b/;
 const PUBLIC_MADE_HANDS = new Set([
 	"Pair",
@@ -633,6 +634,9 @@ function classifyBluffRaise(decision) {
 	if (decision.action !== "raise" || !decision.bluff) {
 		return null;
 	}
+	if (decision.stab && decision.hasPrivateMadeHand) {
+		return null;
+	}
 	if (PUBLIC_MADE_HANDS.has(decision.rawHand)) {
 		return "made-hand";
 	}
@@ -661,6 +665,7 @@ function parseDecisionLogLine(line) {
 	const preflopScoreMatch = line.match(PREFLOP_SCORE_SECTION_REGEX);
 	const lineMatch = line.match(LINE_SECTION_REGEX);
 	const stabBluffMatch = line.match(STAB_BLUFF_SECTION_REGEX);
+	const privateEdgeMatch = line.match(PRIVATE_EDGE_SECTION_REGEX);
 	const nonValueBlockMatch = line.match(NON_VALUE_BLOCK_REGEX);
 
 	if (
@@ -668,7 +673,7 @@ function parseDecisionLogLine(line) {
 		!eliminationMatch || !positionMatch || !opportunityMatch || !raiseMatch || !spotMatch ||
 		!contextMatch ||
 		!publicMatch || !rawMatch || !flagMatch || !preflopMatch || !preflopScoreMatch ||
-		!lineMatch || !stabBluffMatch ||
+		!lineMatch || !stabBluffMatch || !privateEdgeMatch ||
 		!nonValueBlockMatch
 	) {
 		return null;
@@ -730,6 +735,9 @@ function parseDecisionLogLine(line) {
 	const lineAbort = flagToState(lineMatch[6]);
 	const stab = stabBluffMatch[1] === "Y";
 	const bluff = stabBluffMatch[2] === "Y";
+	const hasPrivateMadeHand = privateEdgeMatch[1] === "Y";
+	const edge = Number.parseFloat(privateEdgeMatch[2]);
+	const hasPrivateRaiseEdge = privateEdgeMatch[3] === "Y";
 	const nonValueBlocked = nonValueBlockMatch[1] === "Y";
 
 	return {
@@ -794,6 +802,9 @@ function parseDecisionLogLine(line) {
 		lineAbort,
 		stab,
 		bluff,
+		hasPrivateMadeHand,
+		edge,
+		hasPrivateRaiseEdge,
 		nonValueBlocked,
 		lineRole: lineTag === "PFA" ? "pfa" : "other",
 		positionBucket: bucketPositionFactor(positionFactor),

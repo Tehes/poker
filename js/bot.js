@@ -13,8 +13,8 @@ MODULE BOUNDARY: Bot Decision Engine
 // STRATEGY NOTE: Winner-take-all tournament with no payout ladder. Bot decisions are chip-EV driven
 // with M-ratio zones and a light elimination-risk guardrail for large calls.
 // CURRENT PRIORITIES:
-// 1. Eliminate bluff raises with made hands.
-// 2. Remove unjustified board-made and private made-hand folds.
+// 1. Review the remaining board-made and low-risk private made-hand fold outliers.
+// 2. Clean up the last board-made non-value aggression cases that still survive without private edge.
 // 3. Only then evaluate reads, stab logic, tournament tuning, and richer postflop categories.
 // Every imported concept must earn its place through the existing speedmode tests.
 //
@@ -902,6 +902,8 @@ export function chooseBotAction(player, gameState) {
 	const publicHand = postflopLogProfile?.publicHand ?? null;
 	const publicScore = postflopLogProfile?.publicScore ?? 0;
 	const rawScore = postflopLogProfile?.rawScore ?? strength;
+	const edge = preflop ? 0 : rawScore - publicScore;
+	const hasPrivateRaiseEdge = preflop || edge >= 0.05;
 	const liftType = postflopLogProfile?.liftType ?? "none";
 	const publicDefenseFloor = postflopLogProfile?.publicDefenseFloor ?? 0;
 	const passiveBonus = postflopLogProfile?.passiveBonus ?? 0;
@@ -932,6 +934,7 @@ export function chooseBotAction(player, gameState) {
 	const drawEquity = postflopContext.drawEquity;
 	const textureRisk = postflopContext.textureRisk;
 	const isMadeHand = !preflop && solvedHand && solvedHand.rank >= 2;
+	const hasPrivateMadeHand = holeImprovesHand && isMadeHand;
 	const isDraw = drawOuts >= 8;
 	const isWeakDraw = drawOuts > 0 && drawOuts < 8;
 	const isDeadHand = !preflop && !isMadeHand && !isDraw && !isWeakDraw;
@@ -1322,7 +1325,7 @@ export function chooseBotAction(player, gameState) {
 
 	if (!decision) {
 		if (needToCall <= 0) {
-			if (canRaise && decisionStrength >= raiseThreshold) {
+			if (canRaise && decisionStrength >= raiseThreshold && hasPrivateRaiseEdge) {
 				let raiseAmt = valueBetSize();
 				raiseAmt = Math.max(minRaiseAmount, raiseAmt);
 				if (Math.abs(decisionStrength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
@@ -1335,7 +1338,10 @@ export function chooseBotAction(player, gameState) {
 			} else {
 				decision = { action: "check" };
 			}
-		} else if (canRaise && decisionStrength >= raiseThreshold && stackRatio <= 1 / 3) {
+		} else if (
+			canRaise && decisionStrength >= raiseThreshold && hasPrivateRaiseEdge &&
+			stackRatio <= 1 / 3
+		) {
 			let raiseAmt = protectionBetSize();
 			raiseAmt = Math.max(minRaiseAmount, raiseAmt);
 			if (Math.abs(decisionStrength - raiseThreshold) <= STRENGTH_TIE_DELTA) {
@@ -1387,7 +1393,7 @@ export function chooseBotAction(player, gameState) {
 			bluffChance > 0 && canRaise && !facingRaise &&
 			(!preflop || strengthRatio >= MIN_PREFLOP_BLUFF_RATIO) &&
 			(decision.action === "check" || decision.action === "fold") && !facingAllIn &&
-			!nonValueAggressionMade
+			!nonValueAggressionMade && !hasPrivateMadeHand
 		) {
 			if (Math.random() < bluffChance) {
 				const bluffAmt = Math.max(ceilTo10(minRaiseAmount), bluffBetSize());
@@ -1403,7 +1409,7 @@ export function chooseBotAction(player, gameState) {
 		) {
 			if (currentPhaseIndex === 1 && botLine.cbetIntent) {
 				const wantsBluff = strengthRatio < 0.6 && drawEquity === 0;
-				if (!wantsBluff || !nonValueAggressionMade) {
+				if (!wantsBluff || (!nonValueAggressionMade && !hasPrivateMadeHand)) {
 					const bet = strengthRatio >= 0.6 || drawEquity > 0
 						? protectionBetSize()
 						: bluffBetSize();
@@ -1417,7 +1423,7 @@ export function chooseBotAction(player, gameState) {
 				}
 			} else if (currentPhaseIndex === 2 && botLine.barrelIntent) {
 				const wantsBluff = strengthRatio < 0.6 && drawEquity === 0;
-				if (!wantsBluff || !nonValueAggressionMade) {
+				if (!wantsBluff || (!nonValueAggressionMade && !hasPrivateMadeHand)) {
 					const bet = strengthRatio >= 0.65 || drawEquity > 0
 						? protectionBetSize()
 						: bluffBetSize();
@@ -1580,7 +1586,9 @@ export function chooseBotAction(player, gameState) {
 				`PH:${publicHand?.name ?? "-"} RH:${solvedHand?.name ?? "-"} PF:${
 					publicDefenseFloor.toFixed(2)
 				} PB:${passiveBonus.toFixed(2)} | ` +
-				`Pub:${publicScore.toFixed(2)} Raw:${rawScore.toFixed(2)} | ` +
+				`Pub:${publicScore.toFixed(2)} Raw:${rawScore.toFixed(2)} ` +
+				`PMH:${hasPrivateMadeHand ? "Y" : "N"} Edge:${edge.toFixed(2)} ` +
+				`PRE:${hasPrivateRaiseEdge ? "Y" : "N"} | ` +
 				`NVB:${nonValueAggressionBlocked ? "Y" : "N"} | ` +
 				`CL:${amChipleader ? "Y" : "N"} SS:${shortstackRelative ? "Y" : "N"} Prem:${
 					premiumHand ? "Y" : "N"

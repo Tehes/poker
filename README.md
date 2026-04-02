@@ -153,6 +153,12 @@ Their decisions consider:
   it.
 - **Postflop board context**: bots recognize top pair, overpairs, flush draws, straight draws, and
   dry vs wet textures when deciding between value, protection, bluffing, calling, or checking.
+- **Private edge vs public board**: postflop raises compare private solved-hand strength against the
+  public board baseline, so shared board strength is pushed more toward check/call while real
+  private edge can still value-bet or protect.
+- **Bluff guardrails**: once the hole cards create a private made hand, the dedicated bluff paths no
+  longer fire; remaining board-made cases stay visible as separate edge cases in speedmode instead
+  of being mixed into the private made-hand guard.
 - **Bet sizing**: value, protection, bluff, overbet, and yellow-zone open sizes scale with pot,
   texture, SPR, position, and opponent count, with small randomness and chip-grid rounding.
 - **Line memory**: the preflop aggressor can carry simple c-bet and barrel plans across streets,
@@ -194,6 +200,8 @@ deno task speedmode:10
 The runner starts a local static server, opens the table in headless Chrome with
 `?speedmode=1&botdebug=detail`, and writes one log plus one JSON summary per run. By default the
 output goes to `/tmp/poker-speedmode-batch-YYYYMMDD-HHMMSS/` and includes a combined `summary.json`.
+The detailed bot log includes tags such as `PMH` (private made hand), `Edge` (private score minus
+public board score), and `PRE` (private raise edge) to make postflop validation easier.
 
 Recommended workflow: after general game-flow changes, run `deno task speedmode` once. After bot
 logic or bot-tuning changes, prefer `deno task speedmode:10` so you get a broader summary before

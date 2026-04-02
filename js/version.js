@@ -1,6 +1,17 @@
-export const APP_VERSION = "1.0.9";
+export const APP_VERSION = "1.0.10";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.10",
+		date: "2026-04-02",
+		title: "Private-edge postflop guardrails",
+		notes: [
+			"Blocked the dedicated bluff paths once hole cards create a private made hand, while leaving board-made non-value edge cases isolated for later tuning.",
+			"Added a small postflop private-edge gate for the main value and protection raise branches by comparing raw solved strength against the public board baseline.",
+			"Extended bot debug logs and the public README with PMH, Edge, and PRE tags so speedmode validation can distinguish private-edge spots from public-board runouts faster.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.9",
 		date: "2026-04-02",
