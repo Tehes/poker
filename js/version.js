@@ -1,6 +1,17 @@
-export const APP_VERSION = "1.0.10";
+export const APP_VERSION = "1.0.11";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.11",
+		date: "2026-04-02",
+		title: "Score-based private edge signals",
+		notes: [
+			"Replaced the old hole-card improvement gate with score-based postflop private contribution and private raise-edge signals derived directly from public versus raw solved strength.",
+			"Removed the remaining legacy postflop log wrappers, added a new `meaningful` lift bucket between kicker and structural, and increased public/raw/edge log precision for small score deltas.",
+			"Updated speedmode summaries and the public README so non-structural public made-hand raises and the new meaningful-lift examples remain visible during validation.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.10",
 		date: "2026-04-02",

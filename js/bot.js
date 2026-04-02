@@ -214,16 +214,6 @@ function getSolvedHandScore(handObj) {
 	return handObj ? handObj.rank + handTiebreaker(handObj) : 0;
 }
 
-function solvedHandUsesHoleCards(hole, handObj) {
-	if (!handObj) {
-		return false;
-	}
-	const holeCards = hole.map((c) => new Card(c));
-	return handObj.cards.some((card) =>
-		holeCards.some((holeCard) => holeCard.rank === card.rank && holeCard.suit === card.suit)
-	);
-}
-
 function getPreflopSeatClass(players, player) {
 	const active = players.filter((currentPlayer) => !currentPlayer.folded);
 	if (player.smallBlind) {
@@ -357,45 +347,6 @@ function getLegacyPreflopLogScores(cardA, cardB) {
 		threeBetValueScore: strengthScore,
 		threeBetBluffScore: playabilityScore,
 		pushScore: strengthScore,
-	};
-}
-
-function getLegacyLiftType(solvedHand, publicHand, holeCards) {
-	if (!solvedHand || !publicHand) {
-		return "none";
-	}
-	if (solvedHand.rank > publicHand.rank) {
-		return "structural";
-	}
-	if (solvedHand.rank === publicHand.rank && solvedHand.name !== publicHand.name) {
-		return "category";
-	}
-	if (solvedHandUsesHoleCards(holeCards, solvedHand)) {
-		return "kicker";
-	}
-	return "none";
-}
-
-function buildLegacyPostflopLogProfile(solvedHand, communityCards, holeCards) {
-	if (!solvedHand || communityCards.length === 0) {
-		return {
-			publicHand: null,
-			publicScore: 0,
-			rawScore: solvedHand ? getSolvedHandScore(solvedHand) : 0,
-			liftType: "none",
-			publicDefenseFloor: 0,
-			passiveBonus: 0,
-		};
-	}
-
-	const publicHand = Hand.solve(communityCards);
-	return {
-		publicHand,
-		publicScore: getSolvedHandScore(publicHand),
-		rawScore: getSolvedHandScore(solvedHand),
-		liftType: getLegacyLiftType(solvedHand, publicHand, holeCards),
-		publicDefenseFloor: 0,
-		passiveBonus: 0,
 	};
 }
 
@@ -895,35 +846,31 @@ export function chooseBotAction(player, gameState) {
 
 	// Evaluate hand strength
 	const { strength, solvedHand } = evaluateHandStrength(player, communityCards, preflop);
-	const holeCards = player.holeCards.slice();
-	const postflopLogProfile = preflop
-		? null
-		: buildLegacyPostflopLogProfile(solvedHand, communityCards, holeCards);
-	const publicHand = postflopLogProfile?.publicHand ?? null;
-	const publicScore = postflopLogProfile?.publicScore ?? 0;
-	const rawScore = postflopLogProfile?.rawScore ?? strength;
+	const publicHand = preflop ? null : Hand.solve(communityCards);
+	const publicScore = preflop ? 0 : getSolvedHandScore(publicHand);
+	const rawScore = preflop ? strength : getSolvedHandScore(solvedHand);
 	const edge = preflop ? 0 : rawScore - publicScore;
+	const hasPrivateContribution = !preflop && edge > 0;
 	const hasPrivateRaiseEdge = preflop || edge >= 0.05;
-	const liftType = postflopLogProfile?.liftType ?? "none";
-	const publicDefenseFloor = postflopLogProfile?.publicDefenseFloor ?? 0;
-	const passiveBonus = postflopLogProfile?.passiveBonus ?? 0;
-	let holeImprovesHand = false;
+	const isMadeHand = !preflop && solvedHand && solvedHand.rank >= 2;
+	const liftType = preflop
+		? "none"
+		: (solvedHand?.rank ?? 0) > (publicHand?.rank ?? 0)
+		? "structural"
+		: edge >= 0.05
+		? "meaningful"
+		: edge > 0 && isMadeHand
+		? "kicker"
+		: "none";
+	const publicDefenseFloor = 0;
+	const passiveBonus = 0;
+	/* Private edge now drives contribution, raise gating, and debug lift classification.
 
-	/* Hybrid check: Do hole cards improve the hand?
-   - River: Delta-score (7-card vs 5-card board). Pokersolver may include hole
      cards in tie best-5 even when they don't improve (Board AA KK Q, Hole Q♦ 2♣
      → solver picks Q♦, but delta = 0).
    - Flop/Turn: No reliable board-vs-full test (board < 5 cards). Uses-hole-cards
      is a conservative gate to prevent obvious plays-the-board cases.
 	*/
-	if (!preflop && solvedHand) {
-		if (communityCards.length < 5) {
-			holeImprovesHand = solvedHandUsesHoleCards(holeCards, solvedHand);
-		} else if (communityCards.length === 5) {
-			const boardHand = Hand.solve(communityCards);
-			holeImprovesHand = getSolvedHandScore(solvedHand) > getSolvedHandScore(boardHand);
-		}
-	}
 
 	// Post-flop board context
 	const postflopContext = computePostflopContext(player, communityCards, preflop);
@@ -933,8 +880,7 @@ export function chooseBotAction(player, gameState) {
 	const drawOuts = postflopContext.drawOuts;
 	const drawEquity = postflopContext.drawEquity;
 	const textureRisk = postflopContext.textureRisk;
-	const isMadeHand = !preflop && solvedHand && solvedHand.rank >= 2;
-	const hasPrivateMadeHand = holeImprovesHand && isMadeHand;
+	const hasPrivateMadeHand = hasPrivateContribution && isMadeHand;
 	const isDraw = drawOuts >= 8;
 	const isWeakDraw = drawOuts > 0 && drawOuts < 8;
 	const isDeadHand = !preflop && !isMadeHand && !isDraw && !isWeakDraw;
@@ -988,7 +934,7 @@ export function chooseBotAction(player, gameState) {
 	let callBarrier = preflop ? Math.min(1, callBarrierBase + commitmentPenalty) : callBarrierBase;
 	if (!preflop) {
 		let callBarrierAdj = 0;
-		if (holeImprovesHand) {
+		if (hasPrivateContribution) {
 			if (overPair) {
 				callBarrierAdj -= 0.03;
 			} else if (topPair) {
@@ -1230,7 +1176,7 @@ export function chooseBotAction(player, gameState) {
 	raiseThreshold = Math.max(1, raiseThreshold - (aggressiveness - 1) * 0.8);
 	if (!preflop) {
 		let raiseAdj = 0;
-		if (holeImprovesHand) {
+		if (hasPrivateContribution) {
 			if (overPair) {
 				raiseAdj -= 0.35;
 			} else if (topPair) {
@@ -1586,8 +1532,8 @@ export function chooseBotAction(player, gameState) {
 				`PH:${publicHand?.name ?? "-"} RH:${solvedHand?.name ?? "-"} PF:${
 					publicDefenseFloor.toFixed(2)
 				} PB:${passiveBonus.toFixed(2)} | ` +
-				`Pub:${publicScore.toFixed(2)} Raw:${rawScore.toFixed(2)} ` +
-				`PMH:${hasPrivateMadeHand ? "Y" : "N"} Edge:${edge.toFixed(2)} ` +
+				`Pub:${publicScore.toFixed(4)} Raw:${rawScore.toFixed(4)} ` +
+				`PMH:${hasPrivateMadeHand ? "Y" : "N"} Edge:${edge.toFixed(4)} ` +
 				`PRE:${hasPrivateRaiseEdge ? "Y" : "N"} | ` +
 				`NVB:${nonValueAggressionBlocked ? "Y" : "N"} | ` +
 				`CL:${amChipleader ? "Y" : "N"} SS:${shortstackRelative ? "Y" : "N"} Prem:${

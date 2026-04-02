@@ -410,7 +410,8 @@ function analyzePreflopTransitions(logs, metrics) {
 		const sawFlop = handSawFlop(handLines);
 
 		const openRaiseIndex = preflopDecisions.findIndex((decision) =>
-			decision.spotType === "UO" && decision.action === "raise" && decision.preflopSeat !== "-"
+			decision.spotType === "UO" && decision.action === "raise" &&
+			decision.preflopSeat !== "-"
 		);
 		if (openRaiseIndex !== -1) {
 			const openDecision = preflopDecisions[openRaiseIndex];
@@ -474,8 +475,8 @@ function analyzePreflopTransitions(logs, metrics) {
 				const blindsDefended = [sbResponse, bbResponse].some((decision) =>
 					decision && (decision.action === "call" || decision.action === "raise")
 				);
-				const blindsFoldedThrough =
-					sbResponse?.action === "fold" && bbResponse?.action === "fold";
+				const blindsFoldedThrough = sbResponse?.action === "fold" &&
+					bbResponse?.action === "fold";
 
 				metrics.preflop.transitions.btn3Open.attempts += 1;
 				if (sbResponse) {
@@ -1251,6 +1252,7 @@ function createEmptyMetrics() {
 			stabRaise: [],
 			lineAbort: [],
 			kickerRaise: [],
+			meaningful: [],
 			structural: [],
 			postflopNoBetRaise: [],
 			postflopNoBetCheck: [],
@@ -1259,13 +1261,15 @@ function createEmptyMetrics() {
 		},
 		postflopSpots: 0,
 		kickerRaiseCount: 0,
-		publicMadeKickerRaiseCount: 0,
+		meaningfulRaiseCount: 0,
+		publicMadeNonStructuralRaiseCount: 0,
 		liftCounts: {},
 		publicHandCounts: {},
 		actionByLift: {},
 		publicHandActions: {},
 		pairKickerActions: {},
 		kickerRaiseExamples: [],
+		meaningfulRaiseExamples: [],
 		structuralExamples: [],
 	};
 }
@@ -1599,12 +1603,17 @@ function analyzeRunLogs(logs) {
 			pushExample(metrics.kickerRaiseExamples, line);
 			pushExample(metrics.examples.kickerRaise, line);
 		}
+		if (decision.action === "raise" && decision.liftType === "meaningful") {
+			metrics.meaningfulRaiseCount += 1;
+			pushExample(metrics.meaningfulRaiseExamples, line);
+			pushExample(metrics.examples.meaningful, line);
+		}
 		if (
 			decision.action === "raise" &&
-			(decision.liftType === "none" || decision.liftType === "kicker") &&
+			decision.liftType !== "structural" &&
 			PUBLIC_MADE_HANDS.has(decision.publicHand)
 		) {
-			metrics.publicMadeKickerRaiseCount += 1;
+			metrics.publicMadeNonStructuralRaiseCount += 1;
 		}
 		if (decision.liftType === "structural") {
 			pushExample(metrics.structuralExamples, line);
@@ -1658,7 +1667,8 @@ function mergeRunMetrics(target, source) {
 	target.decisionCount += source.decisionCount;
 	target.postflopSpots += source.postflopSpots;
 	target.kickerRaiseCount += source.kickerRaiseCount;
-	target.publicMadeKickerRaiseCount += source.publicMadeKickerRaiseCount;
+	target.meaningfulRaiseCount += source.meaningfulRaiseCount;
+	target.publicMadeNonStructuralRaiseCount += source.publicMadeNonStructuralRaiseCount;
 	deepMergeCounts(target.actionCounts, source.actionCounts);
 	deepMergeCounts(target.phaseCounts, source.phaseCounts);
 	deepMergeCounts(target.actionsByPhase, source.actionsByPhase);
@@ -1684,6 +1694,9 @@ function mergeRunMetrics(target, source) {
 	deepMergeCounts(target.publicHandActions, source.publicHandActions);
 	deepMergeCounts(target.pairKickerActions, source.pairKickerActions);
 	source.kickerRaiseExamples.forEach((line) => pushExample(target.kickerRaiseExamples, line));
+	source.meaningfulRaiseExamples.forEach((line) =>
+		pushExample(target.meaningfulRaiseExamples, line)
+	);
 	source.structuralExamples.forEach((line) => pushExample(target.structuralExamples, line));
 	source.examples.preflopPremiumFold.forEach((line) =>
 		pushExample(target.examples.preflopPremiumFold, line)
@@ -1718,6 +1731,7 @@ function mergeRunMetrics(target, source) {
 	source.examples.stabRaise.forEach((line) => pushExample(target.examples.stabRaise, line));
 	source.examples.lineAbort.forEach((line) => pushExample(target.examples.lineAbort, line));
 	source.examples.kickerRaise.forEach((line) => pushExample(target.examples.kickerRaise, line));
+	source.examples.meaningful.forEach((line) => pushExample(target.examples.meaningful, line));
 	source.examples.structural.forEach((line) => pushExample(target.examples.structural, line));
 	source.examples.postflopNoBetRaise.forEach((line) =>
 		pushExample(target.examples.postflopNoBetRaise, line)
@@ -1902,54 +1916,34 @@ async function main() {
 		console.log(`preflop_premium_folds=${aggregateMetrics.preflop.premiumFoldCount}`);
 		console.log(`preflop_unopened_calls=${aggregateMetrics.preflop.unopenedCallCount}`);
 		console.log(
-			`sb_hu_open_uncontested=${
-				aggregateMetrics.preflop.transitions.sbHuOpen.uncontested
-			}/${aggregateMetrics.preflop.transitions.sbHuOpen.attempts}`,
+			`sb_hu_open_uncontested=${aggregateMetrics.preflop.transitions.sbHuOpen.uncontested}/${aggregateMetrics.preflop.transitions.sbHuOpen.attempts}`,
 		);
 		console.log(
-			`bb_defend_vs_sb_hu_open=${
-				aggregateMetrics.preflop.transitions.sbHuOpen.bbDefend
-			}/${aggregateMetrics.preflop.transitions.sbHuOpen.attempts}`,
+			`bb_defend_vs_sb_hu_open=${aggregateMetrics.preflop.transitions.sbHuOpen.bbDefend}/${aggregateMetrics.preflop.transitions.sbHuOpen.attempts}`,
 		);
 		console.log(
-			`flop_seen_after_sb_hu_open=${
-				aggregateMetrics.preflop.transitions.sbHuOpen.flopSeen
-			}/${aggregateMetrics.preflop.transitions.sbHuOpen.attempts}`,
+			`flop_seen_after_sb_hu_open=${aggregateMetrics.preflop.transitions.sbHuOpen.flopSeen}/${aggregateMetrics.preflop.transitions.sbHuOpen.attempts}`,
 		);
 		console.log(
-			`btn_3_open_uncontested=${
-				aggregateMetrics.preflop.transitions.btn3Open.blindsFoldedThrough
-			}/${aggregateMetrics.preflop.transitions.btn3Open.attempts}`,
+			`btn_3_open_uncontested=${aggregateMetrics.preflop.transitions.btn3Open.blindsFoldedThrough}/${aggregateMetrics.preflop.transitions.btn3Open.attempts}`,
 		);
 		console.log(
-			`blinds_defend_vs_btn_3_open=${
-				aggregateMetrics.preflop.transitions.btn3Open.blindsDefend
-			}/${aggregateMetrics.preflop.transitions.btn3Open.attempts}`,
+			`blinds_defend_vs_btn_3_open=${aggregateMetrics.preflop.transitions.btn3Open.blindsDefend}/${aggregateMetrics.preflop.transitions.btn3Open.attempts}`,
 		);
 		console.log(
-			`flop_seen_after_btn_3_open=${
-				aggregateMetrics.preflop.transitions.btn3Open.flopSeen
-			}/${aggregateMetrics.preflop.transitions.btn3Open.attempts}`,
+			`flop_seen_after_btn_3_open=${aggregateMetrics.preflop.transitions.btn3Open.flopSeen}/${aggregateMetrics.preflop.transitions.btn3Open.attempts}`,
 		);
 		console.log(
-			`bb_raise_vs_sb_hu_limp=${
-				aggregateMetrics.preflop.transitions.sbHuLimp.bigBlindRaise
-			}/${aggregateMetrics.preflop.transitions.sbHuLimp.attempts}`,
+			`bb_raise_vs_sb_hu_limp=${aggregateMetrics.preflop.transitions.sbHuLimp.bigBlindRaise}/${aggregateMetrics.preflop.transitions.sbHuLimp.attempts}`,
 		);
 		console.log(
-			`flop_seen_after_sb_hu_limp=${
-				aggregateMetrics.preflop.transitions.sbHuLimp.flopSeen
-			}/${aggregateMetrics.preflop.transitions.sbHuLimp.attempts}`,
+			`flop_seen_after_sb_hu_limp=${aggregateMetrics.preflop.transitions.sbHuLimp.flopSeen}/${aggregateMetrics.preflop.transitions.sbHuLimp.attempts}`,
 		);
 		console.log(
-			`blind_raise_vs_btn_3_limp=${
-				aggregateMetrics.preflop.transitions.btn3Limp.blindRaise
-			}/${aggregateMetrics.preflop.transitions.btn3Limp.attempts}`,
+			`blind_raise_vs_btn_3_limp=${aggregateMetrics.preflop.transitions.btn3Limp.blindRaise}/${aggregateMetrics.preflop.transitions.btn3Limp.attempts}`,
 		);
 		console.log(
-			`flop_seen_after_btn_3_limp=${
-				aggregateMetrics.preflop.transitions.btn3Limp.flopSeen
-			}/${aggregateMetrics.preflop.transitions.btn3Limp.attempts}`,
+			`flop_seen_after_btn_3_limp=${aggregateMetrics.preflop.transitions.btn3Limp.flopSeen}/${aggregateMetrics.preflop.transitions.btn3Limp.attempts}`,
 		);
 		console.log(
 			`bluff_raises_with_made_hand=${
@@ -1965,9 +1959,7 @@ async function main() {
 			}`,
 		);
 		console.log(
-			`postflop_weak_no_bet_opportunities=${
-				aggregateMetrics.postflop.weakNoBetOpportunityCount
-			}`,
+			`postflop_weak_no_bet_opportunities=${aggregateMetrics.postflop.weakNoBetOpportunityCount}`,
 		);
 		console.log(
 			`postflop_weak_no_bet_raises=${
@@ -1975,7 +1967,10 @@ async function main() {
 			}`,
 		);
 		console.log(`kicker_raises=${aggregateMetrics.kickerRaiseCount}`);
-		console.log(`public_made_kicker_raises=${aggregateMetrics.publicMadeKickerRaiseCount}`);
+		console.log(`meaningful_raises=${aggregateMetrics.meaningfulRaiseCount}`);
+		console.log(
+			`public_made_non_structural_raises=${aggregateMetrics.publicMadeNonStructuralRaiseCount}`,
+		);
 		console.log(`output_dir=${outputDir}`);
 	} finally {
 		serverAbort.abort();

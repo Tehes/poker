@@ -200,8 +200,10 @@ deno task speedmode:10
 The runner starts a local static server, opens the table in headless Chrome with
 `?speedmode=1&botdebug=detail`, and writes one log plus one JSON summary per run. By default the
 output goes to `/tmp/poker-speedmode-batch-YYYYMMDD-HHMMSS/` and includes a combined `summary.json`.
-The detailed bot log includes tags such as `PMH` (private made hand), `Edge` (private score minus
-public board score), and `PRE` (private raise edge) to make postflop validation easier.
+The detailed bot log includes tags such as `PMH` (private made hand via positive edge), `Edge`
+(private score minus public board score), and `PRE` (private raise edge at `>= 0.05`) to make
+postflop validation easier. `LT` now distinguishes `none`, `kicker`, `meaningful`, and `structural`
+lifts.
 
 Recommended workflow: after general game-flow changes, run `deno task speedmode` once. After bot
 logic or bot-tuning changes, prefer `deno task speedmode:10` so you get a broader summary before
