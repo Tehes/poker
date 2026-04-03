@@ -949,6 +949,7 @@ export function chooseBotAction(player, gameState) {
 	const aggressorRead = spotReadProfile.aggressor;
 	const liveHasShowdownStrong = spotReadProfile.liveHasShowdownStrong;
 	const behindHasShowdownStrong = spotReadProfile.behindHasShowdownStrong;
+	const isLastToAct = spotContext.actingSlotIndex === spotContext.actingSlotCount - 1;
 
 	// Evaluate hand strength
 	const { strength, solvedHand } = evaluateHandStrength(player, communityCards, preflop);
@@ -1238,19 +1239,19 @@ export function chooseBotAction(player, gameState) {
 		else if (textureRisk > 0.6) chance -= 0.2;
 		chance -= Math.max(0, activeOpponents - 1) * 0.06;
 		chance += positionFactor * 0.08;
-		chance += Math.min(0.2, liveRead.foldRate * 0.25);
-		if (spotContext.headsUp && previousStreetCheckedThrough && liveRead.foldRate >= 0.4) {
-			chance += 0.08;
-		}
+		chance += Math.min(0.14, liveRead.foldRate * 0.18);
+		if (spotContext.headsUp && isLastToAct) chance += 0.04;
+		if (spotContext.multiRaised) chance -= 0.12;
+		if (!spotContext.headsUp && playersBehind.length > 0) chance -= 0.04;
 		if (!spotContext.headsUp && behindRead.agg >= 1.2) {
-			chance -= 0.10;
+			chance -= 0.05;
 		}
 		if (!spotContext.headsUp && behindRead.vpip >= 0.45 && positionFactor < 0.75) {
-			chance -= 0.08;
+			chance -= 0.04;
 		}
 		if (strengthRatio >= 0.7) chance += 0.15;
 		if (drawEquity > 0) chance += 0.08;
-		const weightScale = 0.6 + 0.4 * statsWeight;
+		const weightScale = 0.75 + 0.25 * statsWeight;
 		chance *= weightScale;
 		chance = Math.max(0.15, Math.min(0.85, chance));
 		return Math.random() < chance;
@@ -1263,19 +1264,58 @@ export function chooseBotAction(player, gameState) {
 		else if (textureRisk > 0.6) chance -= 0.15;
 		chance -= Math.max(0, activeOpponents - 1) * 0.05;
 		chance += positionFactor * 0.06;
-		chance += Math.min(0.15, liveRead.foldRate * 0.2);
+		chance += Math.min(0.12, liveRead.foldRate * 0.15);
 		if (spotContext.headsUp && previousStreetCheckedThrough && liveRead.foldRate >= 0.4) {
-			chance += 0.06;
+			chance += 0.08;
 		}
+		if (spotContext.multiRaised) chance -= 0.10;
+		if (!spotContext.headsUp && playersBehind.length > 0) chance -= 0.04;
 		if (liveRead.vpip >= 0.45 || liveHasShowdownStrong) {
-			chance -= 0.08;
+			chance -= 0.05;
 		}
 		if (strengthRatio >= 0.75) chance += 0.1;
 		if (drawEquity > 0) chance += 0.06;
-		const weightScale = 0.6 + 0.4 * statsWeight;
+		const weightScale = 0.75 + 0.25 * statsWeight;
 		chance *= weightScale;
 		chance = Math.max(0.1, Math.min(0.75, chance));
 		return Math.random() < chance;
+	}
+
+	function computeSpotBluffChance(weight) {
+		if (preflop) {
+			let chance = Math.min(0.3, foldRate) * weight;
+			chance *= 1 - textureRisk * 0.5;
+			return Math.min(0.3, chance);
+		}
+
+		let chance = 0.04;
+		if (spotContext.headsUp) chance += 0.04;
+		if (isLastToAct) chance += 0.04;
+		if (previousStreetCheckedThrough) chance += 0.04;
+		if (!spotContext.headsUp && playersBehind.length > 0) chance -= 0.02;
+		if (currentPhaseIndex === 2) chance -= 0.01;
+		else if (currentPhaseIndex >= 3) chance -= 0.03;
+		if (spotContext.multiRaised) chance -= 0.08;
+		chance *= 1 - textureRisk * 0.4;
+
+		let readMod = 1;
+		if (liveRead.foldRate >= 0.45) {
+			readMod += 0.08 * weight;
+		} else if (liveRead.foldRate <= 0.25) {
+			readMod -= 0.06 * weight;
+		}
+		if (playersBehind.length > 0 && (behindRead.agg > 1.2 || behindRead.vpip > 0.45)) {
+			readMod -= 0.08 * weight;
+		}
+		if (liveHasShowdownStrong) {
+			readMod -= 0.05 * weight;
+		}
+		if (spotContext.headsUp && previousStreetCheckedThrough && liveRead.foldRate >= 0.4) {
+			readMod += 0.05 * weight;
+		}
+
+		const bluffAggFactor = Math.max(0.8, Math.min(1.2, aggressiveness));
+		return Math.max(0, Math.min(0.22, chance * readMod * bluffAggFactor));
 	}
 
 	// Adjust based on observed opponent tendencies
@@ -1286,16 +1326,7 @@ export function chooseBotAction(player, gameState) {
 		foldRate = liveRead.foldRate;
 		const weight = tableReadProfile.weight;
 		statsWeight = weight;
-		bluffChance = Math.min(0.3, foldRate) * weight;
-		bluffChance *= 1 - textureRisk * 0.5;
-		if (playersBehind.length > 0 && (behindRead.agg > 1.2 || behindRead.vpip > 0.45)) {
-			bluffChance *= 0.75;
-		}
-		if (spotContext.headsUp && previousStreetCheckedThrough) {
-			bluffChance *= 1.15;
-		}
-		const bluffAggFactor = Math.max(0.8, Math.min(1.2, aggressiveness));
-		bluffChance = Math.min(0.3, bluffChance * bluffAggFactor);
+		bluffChance = computeSpotBluffChance(weight);
 
 		if (avgVPIP < 0.25) {
 			raiseThreshold -= 0.5 * weight;
@@ -1549,15 +1580,35 @@ export function chooseBotAction(player, gameState) {
 			textureRisk < 0.4 && (foldRate > 0.25 || drawEquity > 0) &&
 			(
 				spotContext.headsUp ||
-				spotContext.actingSlotIndex === spotContext.actingSlotCount - 1 ||
-				behindRead.foldRate >= 0.45
+				isLastToAct ||
+				previousStreetCheckedThrough
+			) &&
+			!spotContext.multiRaised &&
+			!(
+				currentPhaseIndex >= 2 &&
+				!spotContext.headsUp &&
+				!previousStreetCheckedThrough &&
+				!isLastToAct &&
+				drawEquity === 0
 			) &&
 			!(
 				!spotContext.headsUp &&
 				(behindRead.agg > 1.20 || behindHasShowdownStrong) &&
 				drawEquity === 0
 			) &&
-			Math.random() < Math.max(0.05, Math.min(0.35, 0.05 + positionFactor * 0.3)) &&
+			Math.random() < Math.max(
+				0.04,
+				Math.min(
+					0.28,
+					0.02 +
+					(spotContext.headsUp ? 0.07 : 0) +
+					(isLastToAct ? 0.08 : 0) +
+					(previousStreetCheckedThrough ? 0.05 : 0) +
+					(drawEquity > 0 ? 0.04 : 0) +
+					positionFactor * 0.04 -
+					(currentPhaseIndex === 2 ? 0.03 : currentPhaseIndex >= 3 ? 0.05 : 0),
+				),
+			) &&
 			!nonValueAggressionMade
 		) {
 			const betAmt = protectionBetSize();

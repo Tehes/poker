@@ -1,6 +1,17 @@
-export const APP_VERSION = "1.0.14";
+export const APP_VERSION = "1.0.15";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.15",
+		date: "2026-04-03",
+		title: "Spot-first non-value tuning",
+		notes: [
+			"Reweighted non-value postflop decisions so spot structure now leads reads: heads-up versus multiway, checked-through lines, last-to-act spots, and multi-raised pressure all matter more before opponent stats modulate the branch.",
+			"Moved bluff chance off a fold-rate-first base and tightened free stab entry so passive no-bet aggression now needs cleaner structural permission instead of opening mainly because opponents look foldy.",
+			"Validated the pass with staged 10-run, 30-run, and 100-run speedmode batches, where no-bet raises, weak no-bet raises, kicker raises, and public non-structural made-hand raises all fell while top-tier private made-hand folds stayed at zero.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.14",
 		date: "2026-04-03",
