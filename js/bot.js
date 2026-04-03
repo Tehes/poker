@@ -113,6 +113,7 @@ const POSTFLOP_CALL_BARRIER = 0.16;
 const ELIMINATION_RISK_START = 0.25;
 const ELIMINATION_RISK_FULL = 0.8;
 const ELIMINATION_PENALTY_MAX = 0.25;
+const TOP_TIER_POSTFLOP_GUARD_RANK_MIN = 5;
 const RIVER_SPLIT_PROTECTED_PUBLIC_RANK_MIN = 5;
 
 const botActionQueue = [];
@@ -1347,6 +1348,12 @@ export function chooseBotAction(player, gameState) {
 		decision = needsToCall
 			? { action: "call", amount: Math.min(player.chips, needToCall) }
 			: { action: "check" };
+	}
+	if (
+		!preflop && decision.action === "fold" && needsToCall &&
+		rawHandRank >= TOP_TIER_POSTFLOP_GUARD_RANK_MIN
+	) {
+		decision = { action: "call", amount: Math.min(player.chips, needToCall) };
 	}
 
 	let isBluff = false;

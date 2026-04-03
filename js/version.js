@@ -1,6 +1,17 @@
-export const APP_VERSION = "1.0.12";
+export const APP_VERSION = "1.0.13";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.13",
+		date: "2026-04-03",
+		title: "Postflop premium rescue guardrail",
+		notes: [
+			"Added a narrow postflop top-tier rescue so straight-or-better hands no longer die on fold after the normal call model rejects them under stack pressure.",
+			"Kept the existing postflop barrier, river low-edge veto, and aggression heuristics intact, limiting the change to a final premium safety override.",
+			"Validated the guardrail with staged 10-run, 30-run, and 100-run speedmode batches, where private top-tier made-hand folds dropped to zero without broad postflop aggression drift.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.12",
 		date: "2026-04-03",
