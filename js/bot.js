@@ -113,13 +113,7 @@ const POSTFLOP_CALL_BARRIER = 0.16;
 const ELIMINATION_RISK_START = 0.25;
 const ELIMINATION_RISK_FULL = 0.8;
 const ELIMINATION_PENALTY_MAX = 0.25;
-const RIVER_SPLIT_PROTECTED_PUBLIC_HANDS = new Set([
-	"Straight",
-	"Flush",
-	"Full House",
-	"Four of a Kind",
-	"Straight Flush",
-]);
+const RIVER_SPLIT_PROTECTED_PUBLIC_RANK_MIN = 5;
 
 const botActionQueue = [];
 let processingBotActions = false;
@@ -712,8 +706,8 @@ function shouldBlockRiverLowEdgeCall({
 	needsToCall,
 	communityCards,
 	hasPrivateRaiseEdge,
-	rawHandName,
-	publicHandName,
+	rawHandRank,
+	publicHandRank,
 }) {
 	if (
 		communityCards.length !== 5 || !needsToCall || decision.action !== "call" ||
@@ -722,8 +716,8 @@ function shouldBlockRiverLowEdgeCall({
 		return false;
 	}
 
-	const protectedBoardPlay = rawHandName === publicHandName &&
-		RIVER_SPLIT_PROTECTED_PUBLIC_HANDS.has(publicHandName);
+	const protectedBoardPlay = rawHandRank === publicHandRank &&
+		publicHandRank >= RIVER_SPLIT_PROTECTED_PUBLIC_RANK_MIN;
 
 	return !protectedBoardPlay;
 }
@@ -876,17 +870,19 @@ export function chooseBotAction(player, gameState) {
 	// Evaluate hand strength
 	const { strength, solvedHand } = evaluateHandStrength(player, communityCards, preflop);
 	const publicHand = preflop ? null : Hand.solve(communityCards);
+	const publicHandRank = publicHand?.rank ?? 0;
 	const publicHandName = publicHand?.name ?? "-";
 	const publicScore = preflop ? 0 : getSolvedHandScore(publicHand);
+	const rawHandRank = solvedHand?.rank ?? 0;
 	const rawScore = preflop ? strength : getSolvedHandScore(solvedHand);
 	const rawHandName = solvedHand?.name ?? "-";
 	const edge = preflop ? 0 : rawScore - publicScore;
 	const hasPrivateContribution = !preflop && edge > 0;
 	const hasPrivateRaiseEdge = preflop || edge >= 0.05;
-	const isMadeHand = !preflop && solvedHand && solvedHand.rank >= 2;
+	const isMadeHand = !preflop && rawHandRank >= 2;
 	const liftType = preflop
 		? "none"
-		: (solvedHand?.rank ?? 0) > (publicHand?.rank ?? 0)
+		: rawHandRank > publicHandRank
 		? "structural"
 		: edge >= 0.05
 		? "meaningful"
@@ -1497,8 +1493,8 @@ export function chooseBotAction(player, gameState) {
 			needsToCall,
 			communityCards,
 			hasPrivateRaiseEdge,
-			rawHandName,
-			publicHandName,
+			rawHandRank,
+			publicHandRank,
 		})
 	) {
 		decision = { action: "fold" };
