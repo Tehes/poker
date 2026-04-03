@@ -13,9 +13,8 @@ MODULE BOUNDARY: Bot Decision Engine
 // STRATEGY NOTE: Winner-take-all tournament with no payout ladder. Bot decisions are chip-EV driven
 // with M-ratio zones and a light elimination-risk guardrail for large calls.
 // CURRENT PRIORITIES:
-// 1. Review the remaining board-made and low-risk private made-hand fold outliers.
-// 2. Clean up the last board-made non-value aggression cases that still survive without private edge.
-// 3. Only then evaluate reads, stab logic, tournament tuning, and richer postflop categories.
+// 1. Clean up the last board-made non-value aggression cases that still survive without private edge.
+// 2. Only then evaluate reads, stab logic, tournament tuning, and richer postflop categories.
 // Every imported concept must earn its place through the existing speedmode tests.
 //
 // BOT NORTH STAR:
@@ -114,6 +113,13 @@ const POSTFLOP_CALL_BARRIER = 0.16;
 const ELIMINATION_RISK_START = 0.25;
 const ELIMINATION_RISK_FULL = 0.8;
 const ELIMINATION_PENALTY_MAX = 0.25;
+const RIVER_SPLIT_PROTECTED_PUBLIC_HANDS = new Set([
+	"Straight",
+	"Flush",
+	"Full House",
+	"Four of a Kind",
+	"Straight Flush",
+]);
 
 const botActionQueue = [];
 let processingBotActions = false;
@@ -636,16 +642,18 @@ function computePostflopContext(player, communityCards, preflop) {
 	context.topPair = ctxInfo.isTopPair;
 	context.overPair = ctxInfo.isOverPair;
 
-	const draws = analyzeDrawPotential(hole, communityCards);
-	context.drawChance = draws.flushDraw || draws.straightDraw;
-	context.drawOuts = draws.outs;
-	if (context.drawOuts > 0) {
-		const drawFactor = communityCards.length === 3
-			? 0.04
-			: communityCards.length === 4
-			? 0.02
-			: 0;
-		context.drawEquity = Math.min(1, context.drawOuts * drawFactor);
+	if (communityCards.length < 5) {
+		const draws = analyzeDrawPotential(hole, communityCards);
+		context.drawChance = draws.flushDraw || draws.straightDraw;
+		context.drawOuts = draws.outs;
+		if (context.drawOuts > 0) {
+			const drawFactor = communityCards.length === 3
+				? 0.04
+				: communityCards.length === 4
+				? 0.02
+				: 0;
+			context.drawEquity = Math.min(1, context.drawOuts * drawFactor);
+		}
 	}
 
 	context.textureRisk = evaluateBoardTexture(communityCards);
@@ -697,6 +705,27 @@ function computeEliminationRisk(stackRatio) {
 	const eliminationPenalty = risk * ELIMINATION_PENALTY_MAX;
 
 	return { eliminationRisk: risk, eliminationPenalty };
+}
+
+function shouldBlockRiverLowEdgeCall({
+	decision,
+	needsToCall,
+	communityCards,
+	hasPrivateRaiseEdge,
+	rawHandName,
+	publicHandName,
+}) {
+	if (
+		communityCards.length !== 5 || !needsToCall || decision.action !== "call" ||
+		hasPrivateRaiseEdge
+	) {
+		return false;
+	}
+
+	const protectedBoardPlay = rawHandName === publicHandName &&
+		RIVER_SPLIT_PROTECTED_PUBLIC_HANDS.has(publicHandName);
+
+	return !protectedBoardPlay;
 }
 
 function decideHarringtonAction({
@@ -847,8 +876,10 @@ export function chooseBotAction(player, gameState) {
 	// Evaluate hand strength
 	const { strength, solvedHand } = evaluateHandStrength(player, communityCards, preflop);
 	const publicHand = preflop ? null : Hand.solve(communityCards);
+	const publicHandName = publicHand?.name ?? "-";
 	const publicScore = preflop ? 0 : getSolvedHandScore(publicHand);
 	const rawScore = preflop ? strength : getSolvedHandScore(solvedHand);
+	const rawHandName = solvedHand?.name ?? "-";
 	const edge = preflop ? 0 : rawScore - publicScore;
 	const hasPrivateContribution = !preflop && edge > 0;
 	const hasPrivateRaiseEdge = preflop || edge >= 0.05;
@@ -1422,7 +1453,7 @@ export function chooseBotAction(player, gameState) {
 
 	const h1 = formatCard(player.holeCards[0]);
 	const h2 = formatCard(player.holeCards[1]);
-	const handName = !preflop ? solvedHand.name : "preflop";
+	const handName = !preflop ? rawHandName : "preflop";
 
 	// --- Ensure raises meet the minimum requirements ---
 	if (decision.action === "raise") {
@@ -1458,6 +1489,19 @@ export function chooseBotAction(player, gameState) {
 		} else if (currentPhaseIndex === 2 && botLine.cbetMade) {
 			botLine.barrelMade = true;
 		}
+	}
+
+	if (
+		shouldBlockRiverLowEdgeCall({
+			decision,
+			needsToCall,
+			communityCards,
+			hasPrivateRaiseEdge,
+			rawHandName,
+			publicHandName,
+		})
+	) {
+		decision = { action: "fold" };
 	}
 
 	if (DEBUG_DECISIONS) {
@@ -1529,7 +1573,7 @@ export function chooseBotAction(player, gameState) {
 					preflopScores.pushScore.toFixed(2)
 				} | ` +
 				`Ctx:${boardCtx} Draw:${drawFlag} Tex:${textureRisk.toFixed(2)} LT:${liftType} | ` +
-				`PH:${publicHand?.name ?? "-"} RH:${solvedHand?.name ?? "-"} PF:${
+				`PH:${publicHandName} RH:${rawHandName} PF:${
 					publicDefenseFloor.toFixed(2)
 				} PB:${passiveBonus.toFixed(2)} | ` +
 				`Pub:${publicScore.toFixed(4)} Raw:${rawScore.toFixed(4)} ` +

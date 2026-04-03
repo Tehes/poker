@@ -1,6 +1,17 @@
-export const APP_VERSION = "1.0.11";
+export const APP_VERSION = "1.0.12";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.12",
+		date: "2026-04-03",
+		title: "River low-edge call guardrail",
+		notes: [
+			"Stopped carrying live flush- and straight-draw pressure into completed river boards, so busted draws fall back into normal showdown handling.",
+			"Added a final river low-edge call veto that folds weak no-edge bluff-catch calls while keeping board-made straight-or-better split spots callable.",
+			"Validated the change against the 100-run baseline, where low-edge river calls and board-equal weak river calls dropped sharply without reintroducing premium preflop folds.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.11",
 		date: "2026-04-02",

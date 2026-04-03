@@ -156,6 +156,9 @@ Their decisions consider:
 - **Private edge vs public board**: postflop raises compare private solved-hand strength against the
   public board baseline, so shared board strength is pushed more toward check/call while real
   private edge can still value-bet or protect.
+- **River low-edge guardrail**: once the river is complete, busted draws no longer count as live
+  draw pressure, and weak no-edge bluff-catch calls are released unless the board itself already
+  makes a likely straight-or-better split spot.
 - **Bluff guardrails**: once the hole cards create a private made hand, the dedicated bluff paths no
   longer fire; remaining board-made cases stay visible as separate edge cases in speedmode instead
   of being mixed into the private made-hand guard.
