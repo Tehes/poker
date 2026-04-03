@@ -352,14 +352,81 @@ function getLegacyPreflopLogScores(cardA, cardB) {
 }
 
 // Calculate how often a player folds
-function calcFoldRate(p) {
-	return p.stats.hands > 0 ? p.stats.folds / p.stats.hands : 0;
+function buildAggregateRead(opponents) {
+	if (opponents.length === 0) {
+		return {
+			vpip: 0,
+			pfr: 0,
+			foldRate: 0,
+			agg: 1,
+			showdownWin: 0.5,
+			showdowns: 0,
+			weight: 0,
+		};
+	}
+
+	const count = opponents.length;
+	const avgHands = opponents.reduce((sum, opponent) => sum + opponent.stats.hands, 0) / count;
+	const weight = avgHands < MIN_HANDS_FOR_WEIGHT
+		? 0
+		: 1 - Math.exp(-(avgHands - MIN_HANDS_FOR_WEIGHT) / WEIGHT_GROWTH);
+
+	return {
+		vpip: opponents.reduce((sum, opponent) =>
+			sum + (opponent.stats.vpip + 1) / (opponent.stats.hands + 2), 0) / count,
+		pfr: opponents.reduce((sum, opponent) =>
+			sum + (opponent.stats.pfr + 1) / (opponent.stats.hands + 2), 0) / count,
+		foldRate: opponents.reduce((sum, opponent) =>
+			sum + (opponent.stats.folds + 1) / (opponent.stats.hands + 2), 0) / count,
+		agg: opponents.reduce((sum, opponent) =>
+			sum + (opponent.stats.aggressiveActs + 1) / (opponent.stats.calls + 1), 0) / count,
+		showdownWin: opponents.reduce((sum, opponent) =>
+			sum + (opponent.stats.showdownsWon + 1) / (opponent.stats.showdowns + 2), 0) / count,
+		showdowns: opponents.reduce((sum, opponent) => sum + opponent.stats.showdowns, 0) / count,
+		weight,
+	};
 }
 
-// Average fold rate across a set of opponents
-function avgFoldRate(opponents) {
-	if (opponents.length === 0) return 0;
-	return opponents.reduce((s, p) => s + calcFoldRate(p), 0) / opponents.length;
+function hasShowdownStrongRead(opponents) {
+	return opponents.some((opponent) =>
+		opponent.stats.showdowns >= 4 &&
+		(opponent.stats.showdownsWon + 1) / (opponent.stats.showdowns + 2) >= 0.55
+	);
+}
+
+function buildSpotReadProfile({ players, player, currentPhaseIndex, handContext }) {
+	const liveOpponents = players.filter((currentPlayer) =>
+		currentPlayer !== player && !currentPlayer.folded
+	);
+	const actionOrder = getActionOrder(players, currentPhaseIndex);
+	const actionableOrder = actionOrder.filter((currentPlayer) => !currentPlayer.allIn);
+	const actingSlotIndex = actionableOrder.indexOf(player);
+	const playersBehind = actingSlotIndex === -1
+		? []
+		: actionableOrder.slice(actingSlotIndex + 1).filter((currentPlayer) => currentPlayer !== player);
+	const streetAggressorSeatIndex = handContext?.streetAggressorSeatIndex;
+	const streetAggressor = streetAggressorSeatIndex === null || streetAggressorSeatIndex === undefined
+		? null
+		: players.find((currentPlayer) =>
+			currentPlayer.seatIndex === streetAggressorSeatIndex && !currentPlayer.folded
+		) || null;
+	const previousStreetCheckedThrough = currentPhaseIndex === 2
+		? Boolean(handContext?.flopCheckedThrough)
+		: currentPhaseIndex === 3
+		? Boolean(handContext?.turnCheckedThrough)
+		: false;
+
+	return {
+		liveOpponents,
+		playersBehind,
+		streetAggressor,
+		previousStreetCheckedThrough,
+		live: buildAggregateRead(liveOpponents),
+		behind: buildAggregateRead(playersBehind),
+		aggressor: buildAggregateRead(streetAggressor ? [streetAggressor] : []),
+		liveHasShowdownStrong: hasShowdownStrongRead(liveOpponents),
+		behindHasShowdownStrong: hasShowdownStrongRead(playersBehind),
+	};
 }
 
 /* -----------------------------
@@ -865,8 +932,23 @@ export function chooseBotAction(player, gameState) {
 		raisesThisRound,
 		handContext,
 	});
+	const spotReadProfile = buildSpotReadProfile({
+		players,
+		player,
+		currentPhaseIndex,
+		handContext,
+	});
+	const tableReadProfile = buildAggregateRead(players.filter((currentPlayer) => currentPlayer !== player));
 	const preflopSeatClass = preflop ? getPreflopSeatClass(players, player) : null;
 	const preflopScores = getLegacyPreflopLogScores(player.holeCards[0], player.holeCards[1]);
+	const liveOpponents = spotReadProfile.liveOpponents;
+	const playersBehind = spotReadProfile.playersBehind;
+	const previousStreetCheckedThrough = spotReadProfile.previousStreetCheckedThrough;
+	const liveRead = spotReadProfile.live;
+	const behindRead = spotReadProfile.behind;
+	const aggressorRead = spotReadProfile.aggressor;
+	const liveHasShowdownStrong = spotReadProfile.liveHasShowdownStrong;
+	const behindHasShowdownStrong = spotReadProfile.behindHasShowdownStrong;
 
 	// Evaluate hand strength
 	const { strength, solvedHand } = evaluateHandStrength(player, communityCards, preflop);
@@ -880,6 +962,7 @@ export function chooseBotAction(player, gameState) {
 	const edge = preflop ? 0 : rawScore - publicScore;
 	const hasPrivateContribution = !preflop && edge > 0;
 	const hasPrivateRaiseEdge = preflop || edge >= 0.05;
+	const canUsePureBluffLine = preflop || rawHandRank <= 1;
 	const isMadeHand = !preflop && rawHandRank >= 2;
 	const liftType = preflop
 		? "none"
@@ -987,6 +1070,24 @@ export function chooseBotAction(player, gameState) {
 		} else if (spr > 6) {
 			callBarrierAdj += 0.01;
 		}
+		if (
+			needsToCall && facingRaise && !hasPrivateRaiseEdge && drawEquity === 0 &&
+			rawHandRank <= 2
+		) {
+			let bluffcatchAdj = 0;
+			if (
+				spotContext.headsUp && aggressorRead.agg >= 1.6 &&
+				(aggressorRead.showdownWin <= 0.48 || aggressorRead.showdowns < 4)
+			) {
+				bluffcatchAdj -= 0.02;
+			} else if (
+				!spotContext.headsUp || aggressorRead.agg <= 0.90 ||
+				(aggressorRead.showdownWin >= 0.55 && aggressorRead.showdowns >= 4)
+			) {
+				bluffcatchAdj += 0.02;
+			}
+			callBarrierAdj += bluffcatchAdj;
+		}
 		callBarrierAdj = Math.max(-0.04, Math.min(0.04, callBarrierAdj));
 
 		const streetIndex = communityCards.length === 3
@@ -1054,7 +1155,6 @@ export function chooseBotAction(player, gameState) {
 	let statsWeight = 0;
 	let avgVPIP = 0;
 	let avgAgg = 0;
-	let avgHands = 0;
 
 	function capGreenNonPremium(amount) {
 		if (!isGreenZone || premiumHand) return amount;
@@ -1138,7 +1238,16 @@ export function chooseBotAction(player, gameState) {
 		else if (textureRisk > 0.6) chance -= 0.2;
 		chance -= Math.max(0, activeOpponents - 1) * 0.06;
 		chance += positionFactor * 0.08;
-		chance += Math.min(0.2, foldRate * 0.25);
+		chance += Math.min(0.2, liveRead.foldRate * 0.25);
+		if (spotContext.headsUp && previousStreetCheckedThrough && liveRead.foldRate >= 0.4) {
+			chance += 0.08;
+		}
+		if (!spotContext.headsUp && behindRead.agg >= 1.2) {
+			chance -= 0.10;
+		}
+		if (!spotContext.headsUp && behindRead.vpip >= 0.45 && positionFactor < 0.75) {
+			chance -= 0.08;
+		}
 		if (strengthRatio >= 0.7) chance += 0.15;
 		if (drawEquity > 0) chance += 0.08;
 		const weightScale = 0.6 + 0.4 * statsWeight;
@@ -1154,7 +1263,13 @@ export function chooseBotAction(player, gameState) {
 		else if (textureRisk > 0.6) chance -= 0.15;
 		chance -= Math.max(0, activeOpponents - 1) * 0.05;
 		chance += positionFactor * 0.06;
-		chance += Math.min(0.15, foldRate * 0.2);
+		chance += Math.min(0.15, liveRead.foldRate * 0.2);
+		if (spotContext.headsUp && previousStreetCheckedThrough && liveRead.foldRate >= 0.4) {
+			chance += 0.06;
+		}
+		if (liveRead.vpip >= 0.45 || liveHasShowdownStrong) {
+			chance -= 0.08;
+		}
 		if (strengthRatio >= 0.75) chance += 0.1;
 		if (drawEquity > 0) chance += 0.06;
 		const weightScale = 0.6 + 0.4 * statsWeight;
@@ -1164,25 +1279,21 @@ export function chooseBotAction(player, gameState) {
 	}
 
 	// Adjust based on observed opponent tendencies
-	const statOpponents = players.filter((p) => p !== player);
+	const statOpponents = liveOpponents;
 	if (statOpponents.length > 0) {
-		avgVPIP = statOpponents.reduce((s, p) => s + (p.stats.vpip + 1) / (p.stats.hands + 2), 0) /
-			statOpponents.length;
-		avgAgg = statOpponents.reduce((s, p) =>
-			s + (p.stats.aggressiveActs + 1) / (p.stats.calls + 1), 0) /
-			statOpponents.length;
-		foldRate = avgFoldRate(statOpponents);
-
-		// Weight adjustments by average hands played to avoid overreacting in early rounds
-		avgHands = statOpponents.reduce((s, p) =>
-			s + p.stats.hands, 0) /
-			statOpponents.length;
-		const weight = avgHands < MIN_HANDS_FOR_WEIGHT
-			? 0
-			: 1 - Math.exp(-(avgHands - MIN_HANDS_FOR_WEIGHT) / WEIGHT_GROWTH);
+		avgVPIP = tableReadProfile.vpip;
+		avgAgg = tableReadProfile.agg;
+		foldRate = liveRead.foldRate;
+		const weight = tableReadProfile.weight;
 		statsWeight = weight;
 		bluffChance = Math.min(0.3, foldRate) * weight;
 		bluffChance *= 1 - textureRisk * 0.5;
+		if (playersBehind.length > 0 && (behindRead.agg > 1.2 || behindRead.vpip > 0.45)) {
+			bluffChance *= 0.75;
+		}
+		if (spotContext.headsUp && previousStreetCheckedThrough) {
+			bluffChance *= 1.15;
+		}
 		const bluffAggFactor = Math.max(0.8, Math.min(1.2, aggressiveness));
 		bluffChance = Math.min(0.3, bluffChance * bluffAggFactor);
 
@@ -1373,7 +1484,7 @@ export function chooseBotAction(player, gameState) {
 			bluffChance > 0 && canRaise && !facingRaise &&
 			(!preflop || strengthRatio >= MIN_PREFLOP_BLUFF_RATIO) &&
 			(decision.action === "check" || decision.action === "fold") && !facingAllIn &&
-			!nonValueAggressionMade && !hasPrivateMadeHand
+			!nonValueAggressionMade && canUsePureBluffLine
 		) {
 			if (Math.random() < bluffChance) {
 				const bluffAmt = Math.max(ceilTo10(minRaiseAmount), bluffBetSize());
@@ -1436,6 +1547,16 @@ export function chooseBotAction(player, gameState) {
 			!preflop && currentBet === 0 && decision.action === "check" && canRaise &&
 			!facingRaise &&
 			textureRisk < 0.4 && (foldRate > 0.25 || drawEquity > 0) &&
+			(
+				spotContext.headsUp ||
+				spotContext.actingSlotIndex === spotContext.actingSlotCount - 1 ||
+				behindRead.foldRate >= 0.45
+			) &&
+			!(
+				!spotContext.headsUp &&
+				(behindRead.agg > 1.20 || behindHasShowdownStrong) &&
+				drawEquity === 0
+			) &&
 			Math.random() < Math.max(0.05, Math.min(0.35, 0.05 + positionFactor * 0.3)) &&
 			!nonValueAggressionMade
 		) {

@@ -1,6 +1,17 @@
-export const APP_VERSION = "1.0.13";
+export const APP_VERSION = "1.0.14";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.14",
+		date: "2026-04-03",
+		title: "Situational non-value read tuning",
+		notes: [
+			"Added role-based postflop opponent reads for live opponents, players behind, and the current aggressor so no-bet pressure, c-bets, barrels, and thin bluff-catch spots react to the actual spot instead of a table-wide average.",
+			"Tightened free pure-bluff branches to real high-card lines while keeping preflop-aggressor c-bet and barrel logic available, preventing public made hands from leaking into bluff-tagged raises.",
+			"Validated the pass with staged 10-run, 30-run, and 100-run speedmode batches, where weak no-bet raises, kicker raises, and public non-structural made-hand raises all fell without reintroducing premium postflop folds.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.13",
 		date: "2026-04-03",
