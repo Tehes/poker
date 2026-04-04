@@ -901,6 +901,7 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
     min-width: 80px;
     z-index: 1000;
     border-radius: 5%;
+    -webkit-touch-callout: default;
 }
 
 .qr .qr-link {
