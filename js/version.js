@@ -1,6 +1,17 @@
-export const APP_VERSION = "1.0.15";
+export const APP_VERSION = "1.0.16";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.16",
+		date: "2026-04-05",
+		title: "Postflop cost curve and speedmode diagnostics",
+		notes: [
+			"Replaced the hard postflop stack-ratio cap with a steeper elimination-risk curve that now runs through full-stack calls, so large postflop decisions are priced by one continuous barrier instead of a second gate.",
+			"Kept the checked-to no-bet filter active and expanded postflop private-aware strength usage so weak free stabs fall while private made-hand folds stay controlled without reintroducing the old cap hacks.",
+			"Extended speedmode with joined hand/decision outcome tracking and blocked no-bet follow-up reporting, then validated the pass with staged 10-run, 30-run, and 100-run batches against the previous baseline.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.15",
 		date: "2026-04-03",

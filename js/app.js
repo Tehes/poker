@@ -222,6 +222,8 @@ const gameState = {
 	currentBet: 0,
 	pot: 0,
 	activeSeatIndex: null,
+	handId: 0,
+	nextDecisionId: 1,
 	blindLevel: 0,
 	gameStarted: false,
 	gameFinished: false,
@@ -291,6 +293,51 @@ function logFlow(msg, data) {
 			console.log("%c" + ts, "color:#888", msg);
 		}
 	}
+}
+
+function logSpeedmodeEvent(type, payload) {
+	if (!SPEED_MODE) {
+		return;
+	}
+	console.log("speedmode_event", { type, ...payload });
+}
+
+function buildSpeedmodeHandStartPlayers(players) {
+	return players.map((player) => ({
+		name: player.name,
+		seatIndex: player.seatIndex,
+		chipsStart: player.chips,
+	}));
+}
+
+function buildSpeedmodeTotalBetByPlayer(contributors) {
+	return contributors.reduce((totals, player) => {
+		totals[player.name] = player.totalBet;
+		return totals;
+	}, {});
+}
+
+function buildSpeedmodeTotalBetBySeatIndex(contributors) {
+	return contributors.reduce((totals, player) => {
+		totals[player.seatIndex] = player.totalBet;
+		return totals;
+	}, {});
+}
+
+function buildSpeedmodePayoutByPlayer(totalPayoutByPlayer) {
+	const payouts = {};
+	for (const [player, amount] of totalPayoutByPlayer.entries()) {
+		payouts[player.name] = amount;
+	}
+	return payouts;
+}
+
+function buildSpeedmodePayoutBySeatIndex(totalPayoutByPlayer) {
+	const payouts = {};
+	for (const [player, amount] of totalPayoutByPlayer.entries()) {
+		payouts[player.seatIndex] = amount;
+	}
+	return payouts;
 }
 
 function createPageUrl(pageName) {
@@ -1406,6 +1453,8 @@ function startGame(event) {
 	if (!gameState.gameStarted) {
 		resetRuntimeFastForward();
 		totalHands = 0;
+		gameState.handId = 0;
+		gameState.nextDecisionId = 1;
 		gameState.blindLevel = 0;
 		gameState.smallBlind = INITIAL_SMALL_BLIND;
 		gameState.bigBlind = INITIAL_BIG_BLIND;
@@ -1734,6 +1783,8 @@ function preFlop() {
 
 	// --- Dealer, Blinds, Deal, And First Round ----------------------------------
 	gameState.handInProgress = true;
+	gameState.handId = totalHands;
+	gameState.nextDecisionId = 1;
 	updateFastForwardButton();
 
 	// Assign dealer
@@ -1741,6 +1792,7 @@ function preFlop() {
 
 	// post blinds
 	setBlinds();
+	const handStartPlayers = buildSpeedmodeHandStartPlayers(gameState.players);
 
 	// Shuffle and deal new hole cards
 	dealCards();
@@ -1751,6 +1803,15 @@ function preFlop() {
 			humans: gameState.players.filter((p) => !p.isBot).length,
 		});
 	}
+	logSpeedmodeEvent("hand_start", {
+		handId: gameState.handId,
+		blindLevel: gameState.blindLevel,
+		smallBlind: gameState.smallBlind,
+		bigBlind: gameState.bigBlind,
+		dealerSeatIndex: gameState.players.find((player) => player.dealer)?.seatIndex ?? null,
+		communityCards: [],
+		players: handStartPlayers,
+	});
 
 	// Start first betting round (preflop)
 	queueStateSync();
@@ -2372,6 +2433,23 @@ function doShowdown() {
 		totalPayoutByPlayer,
 		totalPot,
 	} = resolveShowdown(gameState.players, communityCards, CHIP_UNIT);
+	logSpeedmodeEvent("hand_result", {
+		handId: gameState.handId,
+		communityCards: communityCards.slice(),
+		hadShowdown,
+		uncontestedWinner: uncontestedWinner?.name ?? null,
+		uncontestedWinnerSeatIndex: uncontestedWinner?.seatIndex ?? null,
+		mainPotWinners: mainPotWinners.map((player) => player.name),
+		mainPotWinnerSeatIndexes: mainPotWinners.map((player) => player.seatIndex),
+		winningPlayers: winningPlayers.map((player) => player.name),
+		winningSeatIndexes: winningPlayers.map((player) => player.seatIndex),
+		potResults: potResults.map((result) => ({ ...result })),
+		totalPayoutByPlayer: buildSpeedmodePayoutByPlayer(totalPayoutByPlayer),
+		totalPayoutBySeatIndex: buildSpeedmodePayoutBySeatIndex(totalPayoutByPlayer),
+		totalBetByPlayer: buildSpeedmodeTotalBetByPlayer(contributors),
+		totalBetBySeatIndex: buildSpeedmodeTotalBetBySeatIndex(contributors),
+		totalPot,
+	});
 
 	if (hadShowdown) {
 		activePlayers.forEach((p) => p.stats.showdowns++);
@@ -2544,6 +2622,12 @@ globalThis.poker = {
 	get players() {
 		return gameState.allPlayers;
 	},
+	get gameFinished() {
+		return gameState.gameFinished;
+	},
+	get handInProgress() {
+		return gameState.handInProgress;
+	},
 	get reveals() {
 		return gameState.allPlayers.map((player) => ({
 			name: player.name,
@@ -2561,7 +2645,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-04-04-v1";
+const SERVICE_WORKER_VERSION = "2026-04-05-v1";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

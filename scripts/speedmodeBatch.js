@@ -7,31 +7,9 @@ const DEFAULT_OUTPUT_PREFIX = "poker-speedmode-batch";
 const LOAD_TIMEOUT_MS = 15000;
 const RUN_TIMEOUT_MS = 180000;
 const PAGE_READY_TIMEOUT_MS = 15000;
+const POST_RUN_DRAIN_TIMEOUT_MS = 5000;
 const POLL_INTERVAL_MS = 500;
-const HAND_LABEL_PATTERN =
-	"Straight Flush|Four of a Kind|Full House|Three of a Kind|Two Pair|High Card|Straight|Flush|Pair|-";
-const PUBLIC_HAND_REGEX = new RegExp(`\\bPH:(${HAND_LABEL_PATTERN})(?=\\s|\\|)`);
-const RAW_HAND_REGEX = new RegExp(`\\bRH:(${HAND_LABEL_PATTERN})(?=\\s|\\|)`);
-const DECISION_ACTION_REGEX = /→ (check|call|fold|raise)\b/;
-const HAND_SECTION_REGEX = /\bH:(.+?) Amt:(\d+)\b/;
-const STRENGTH_SECTION_REGEX = /\bPA:(\d+\.\d+) PS:(\d+\.\d+) M:(\d+\.\d+) Z:([a-z]+)\b/i;
-const PRESSURE_SECTION_REGEX = /\bPO:(\d+\.\d+) CB:(\d+\.\d+) SR:(\d+\.\d+)\b/;
-const COMMIT_SECTION_REGEX = /\bCP:(\d+\.\d+) CPen:(\d+\.\d+)\b/;
-const ELIMINATION_SECTION_REGEX = /\bER:(\d+\.\d+) EP:(\d+\.\d+)\b/;
-const POSITION_SECTION_REGEX = /\bPos:(\d+\.\d+) Opp:(\d+) Eff:(\d+)\b/;
-const OPPORTUNITY_SECTION_REGEX = /\bNB:(Y|N) CR:(Y|N) Act:(\d+)\/(\d+)(?=\s|\|)/;
-const RAISE_SECTION_REGEX = /\bRT10:(\d+\.\d+) Agg:(\d+\.\d+) RL:(\d+) RAdj:(\d+\.\d+)\b/;
-const SPOT_SECTION_REGEX = /\bSpot:([^/\s|]+)\/([^/\s|]+)\/([^ \|]+)\b/;
-const CONTEXT_SECTION_REGEX = /\bCtx:([^ \|]+) Draw:([^ \|]+) Tex:(\d+\.\d+) LT:([^ \|]+)\b/;
-const FLAG_SECTION_REGEX = /\bCL:(Y|N) SS:(Y|N) Prem:(Y|N)\b/;
-const PREFLOP_SECTION_REGEX = /\bPre:([^/\s|]+)(?:\/([^ \|]+))?(?=\s|\|)/;
-const PREFLOP_SCORE_SECTION_REGEX =
-	/\bStr:(\d+\.\d+) Pla:(\d+\.\d+) Dom:(\d+\.\d+) \| OR:(\d+\.\d+) OL:(\d+\.\d+) FL:(\d+\.\d+) 3V:(\d+\.\d+) 3B:(\d+\.\d+) PS:(\d+\.\d+)\b/;
-const LINE_SECTION_REGEX =
-	/\bLine:([^ \|]+) CP:([YN-]) BP:([YN-]) CM:([YN-]) BM:([YN-]) LA:([YN-])(?=\s|\|)/;
-const STAB_BLUFF_SECTION_REGEX = /\bStab:(Y|N) Bluff:(Y|N)\b/;
-const PRIVATE_EDGE_SECTION_REGEX = /\bPMH:(Y|N) Edge:(-?\d+\.\d+) PRE:(Y|N)\b/;
-const NON_VALUE_BLOCK_REGEX = /\bNVB:(Y|N)\b/;
+const SPEEDMODE_EVENT_PREFIX = "speedmode_event ";
 const PUBLIC_MADE_HANDS = new Set([
 	"Pair",
 	"Two Pair",
@@ -95,10 +73,14 @@ const START_CAPTURE_EXPRESSION = `(() => {
 const PAGE_READY_EXPRESSION =
 	`(() => !!window.poker && !!document.getElementById("start-button"))()`;
 const RUN_STATE_EXPRESSION = `(() => {
-	const players = window.poker?.players ?? [];
+	const poker = window.poker;
+	const players = poker?.players ?? [];
 	const livePlayers = players.filter((player) => player.chips > 0);
+	const finished = !!window.__speedmodeBatchStarted &&
+		poker?.gameFinished === true &&
+		poker?.handInProgress === false;
 	return {
-		finished: !!window.__speedmodeBatchStarted && players.length > 0 && livePlayers.length <= 1,
+		finished,
 		activePlayers: livePlayers.length,
 		champion: livePlayers.length === 1 ? livePlayers[0].name : null,
 		logCount: window.__capturedLogs?.length ?? 0,
@@ -106,10 +88,14 @@ const RUN_STATE_EXPRESSION = `(() => {
 	};
 })()`;
 const RUN_PAYLOAD_EXPRESSION = `(() => {
-	const players = window.poker?.players ?? [];
+	const poker = window.poker;
+	const players = poker?.players ?? [];
 	const livePlayers = players.filter((player) => player.chips > 0);
+	const finished = !!window.__speedmodeBatchStarted &&
+		poker?.gameFinished === true &&
+		poker?.handInProgress === false;
 	return {
-		finished: !!window.__speedmodeBatchStarted && players.length > 0 && livePlayers.length <= 1,
+		finished,
 		players: players.map((player) => ({ name: player.name, chips: player.chips })),
 		logs: window.__capturedLogs ?? [],
 	};
@@ -162,6 +148,138 @@ function deepMergeCounts(target, source) {
 			target[key] = (target[key] || 0) + value;
 		}
 	}
+}
+
+function parseSpeedmodeEventLine(line) {
+	if (!line.startsWith(SPEEDMODE_EVENT_PREFIX)) {
+		return null;
+	}
+
+	try {
+		const payload = JSON.parse(line.slice(SPEEDMODE_EVENT_PREFIX.length));
+		if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+			return null;
+		}
+		return payload;
+	} catch {
+		return null;
+	}
+}
+
+function createEmptyWinnerSideRow() {
+	return {
+		total: 0,
+		winner: 0,
+		loser: 0,
+	};
+}
+
+function createEmptyOutcomeMetricsAccumulator() {
+	return {
+		decisionJoinCoverage: {
+			totalDecisions: 0,
+			joinedDecisions: 0,
+			missingHandId: 0,
+			missingHandStart: 0,
+			missingHandResult: 0,
+			totalHands: 0,
+			joinedHands: 0,
+			missingHandResults: 0,
+		},
+		winnerSideByPhaseAction: {},
+		winnerSideByLiftAction: {},
+		protectiveFoldCounts: {
+			total: 0,
+			preflop: 0,
+			postflop: 0,
+		},
+		favoriteStrongHandFoldCounts: {
+			total: 0,
+			preflop: 0,
+			postflop: 0,
+		},
+		nonStructuralMadeHandRaiseOutcome: {
+			total: 0,
+			winner: 0,
+			loser: 0,
+		},
+		showdownVsUncontestedByAction: {},
+	};
+}
+
+function incrementWinnerSideBreakdown(target, outerKey, innerKey, wonHand) {
+	if (!target[outerKey]) {
+		target[outerKey] = {};
+	}
+	if (!target[outerKey][innerKey]) {
+		target[outerKey][innerKey] = createEmptyWinnerSideRow();
+	}
+	target[outerKey][innerKey].total += 1;
+	if (wonHand) {
+		target[outerKey][innerKey].winner += 1;
+	} else {
+		target[outerKey][innerKey].loser += 1;
+	}
+}
+
+function finalizeWinnerSideRow(row) {
+	return {
+		total: row.total,
+		winner: row.winner,
+		loser: row.loser,
+		winnerPct: row.total > 0 ? Number(((row.winner / row.total) * 100).toFixed(1)) : 0,
+	};
+}
+
+function finalizeWinnerSideBreakdown(target) {
+	return Object.fromEntries(
+		Object.entries(target).map(([outerKey, innerTarget]) => [
+			outerKey,
+			Object.fromEntries(
+				Object.entries(innerTarget).map(([innerKey, row]) => [
+					innerKey,
+					finalizeWinnerSideRow(row),
+				]),
+			),
+		]),
+	);
+}
+
+function finalizeOutcomeMetrics(metrics) {
+	const decisionJoinCoverage = {
+		...metrics.decisionJoinCoverage,
+		pct: metrics.decisionJoinCoverage.totalDecisions > 0
+			? Number(
+				(
+					(metrics.decisionJoinCoverage.joinedDecisions /
+						metrics.decisionJoinCoverage.totalDecisions) * 100
+				).toFixed(1),
+			)
+			: 0,
+	};
+	return {
+		decisionJoinCoverage,
+		winnerSideByPhaseAction: finalizeWinnerSideBreakdown(metrics.winnerSideByPhaseAction),
+		winnerSideByLiftAction: finalizeWinnerSideBreakdown(metrics.winnerSideByLiftAction),
+		protectiveFoldCounts: { ...metrics.protectiveFoldCounts },
+		favoriteStrongHandFoldCounts: { ...metrics.favoriteStrongHandFoldCounts },
+		nonStructuralMadeHandRaiseOutcome: {
+			...metrics.nonStructuralMadeHandRaiseOutcome,
+			winnerPct: metrics.nonStructuralMadeHandRaiseOutcome.total > 0
+				? Number(
+					(
+						(metrics.nonStructuralMadeHandRaiseOutcome.winner /
+							metrics.nonStructuralMadeHandRaiseOutcome.total) * 100
+					).toFixed(1),
+				)
+				: 0,
+		},
+		showdownVsUncontestedByAction: structuredClone(metrics.showdownVsUncontestedByAction),
+	};
+}
+
+function mergeOutcomeMetrics(target, source) {
+	deepMergeCounts(target, source);
 }
 
 function flagToState(flag) {
@@ -267,69 +385,6 @@ function pushExample(target, line, limit = 10) {
 	}
 }
 
-function parseJsonTail(line, marker) {
-	const markerIndex = line.indexOf(marker);
-	if (markerIndex === -1) {
-		return null;
-	}
-
-	const jsonText = line.slice(markerIndex + marker.length).trim();
-	if (!jsonText.startsWith("{")) {
-		return null;
-	}
-
-	try {
-		return JSON.parse(jsonText);
-	} catch {
-		return null;
-	}
-}
-
-function parseBettingRoundLine(line) {
-	const payload = parseJsonTail(line, "startBettingRound ");
-	return payload && typeof payload.phase === "string" ? payload : null;
-}
-
-function parseSetPhaseLine(line) {
-	const payload = parseJsonTail(line, "setPhase ");
-	return payload && typeof payload.phase === "string" ? payload : null;
-}
-
-function splitLogsIntoHands(logs) {
-	const hands = [];
-	let currentHand = null;
-
-	for (const line of logs) {
-		const bettingRound = parseBettingRoundLine(line);
-		if (bettingRound?.phase === "preflop") {
-			if (currentHand?.length) {
-				hands.push(currentHand);
-			}
-			currentHand = [line];
-			continue;
-		}
-		if (currentHand) {
-			currentHand.push(line);
-		}
-	}
-
-	if (currentHand?.length) {
-		hands.push(currentHand);
-	}
-	return hands;
-}
-
-function handSawFlop(handLines) {
-	return handLines.some((line) => {
-		const bettingRound = parseBettingRoundLine(line);
-		if (bettingRound?.phase === "flop") {
-			return true;
-		}
-		const phaseUpdate = parseSetPhaseLine(line);
-		return phaseUpdate?.phase === "flop";
-	});
-}
-
 function createEmptyPreflopTransitionMetrics() {
 	return {
 		unopenedRaiseAttemptsBySeatAndPlayers: {},
@@ -397,17 +452,152 @@ function incrementTrackedBlindResponse(target, seatClass, action) {
 	incrementCount(target, `${seatPrefix}${actionSuffix}`);
 }
 
-function analyzePreflopTransitions(logs, metrics) {
-	const hands = splitLogsIntoHands(logs);
+function formatDecisionExample(decision) {
+	const formatFixed = (value, digits) => typeof value === "number" ? value.toFixed(digits) : "-";
+	const toFlag = (value) => value ? "Y" : "N";
+	const noBetClass = typeof decision.noBetClass === "string" ? decision.noBetClass : "-";
+	const noBetInitialAction = typeof decision.noBetInitialAction === "string"
+		? decision.noBetInitialAction
+		: "-";
 
-	for (const handLines of hands) {
-		const preflopDecisions = handLines
-			.map((line) => parseDecisionLogLine(line))
-			.filter((decision) => decision?.phase === "preflop");
+	return `${decision.player} → ${decision.action} | ` +
+		`H:${decision.handName} Amt:${decision.amount ?? 0} | ` +
+		`Spot:${decision.spotKey} | ` +
+		`Ctx:${decision.boardContext} Draw:${decision.drawFlag} LT:${decision.liftType} | ` +
+		`PH:${decision.publicHand} RH:${decision.rawHand} | ` +
+		`Pub:${formatFixed(decision.publicScore, 4)} Raw:${formatFixed(decision.rawScore, 4)} ` +
+		`PMH:${toFlag(decision.hasPrivateMadeHand)} Edge:${formatFixed(decision.edge, 4)} ` +
+		`PRE:${toFlag(decision.hasPrivateRaiseEdge)} ` +
+		`SRaw:${formatFixed(decision.strengthRatioRaw, 2)} ` +
+		`EBo:${formatFixed(decision.edgeBoost, 4)} ` +
+		`PAS:${formatFixed(decision.privateAwareStrength, 2)} | ` +
+		`NVB:${toFlag(decision.nonValueBlocked)} | ` +
+		`Line:${decision.lineTag} CP:${decision.cbetPlan} BP:${decision.barrelPlan} ` +
+		`CM:${decision.cbetMade} BM:${decision.barrelMade} LA:${decision.lineAbort} | ` +
+		`NBCls:${noBetClass} NBInit:${noBetInitialAction} | ` +
+		`Stab:${toFlag(decision.stab)} Bluff:${toFlag(decision.bluff)}`;
+}
+
+function normalizeStructuredDecision(decision) {
+	if (
+		!decision || typeof decision !== "object" || Array.isArray(decision) ||
+		typeof decision.action !== "string" || typeof decision.phase !== "string"
+	) {
+		return null;
+	}
+
+	const positionFactor = decision.positionFactor ?? 0;
+	const eliminationRisk = decision.eliminationRisk ?? 0;
+	const stackRatio = decision.stackRatio ?? 0;
+	const commitmentPressure = decision.commitmentPressure ?? 0;
+	const raiseLevel = decision.raiseLevel ?? 0;
+	const strengthScore = decision.strengthScore ?? 0;
+	const playabilityScore = decision.playabilityScore ?? 0;
+	const dominationPenalty = decision.dominationPenalty ?? 0;
+	const openRaiseScore = decision.openRaiseScore ?? 0;
+	const openLimpScore = decision.openLimpScore ?? 0;
+	const flatScore = decision.flatScore ?? 0;
+	const lineTag = decision.lineTag ?? "-";
+
+	return {
+		...decision,
+		line: formatDecisionExample(decision),
+		preflopSeat: decision.preflopSeat ?? "-",
+		preflopSeatContext: decision.preflopSeatContext ?? "-",
+		cbetPlan: flagToState(decision.cbetPlan),
+		barrelPlan: flagToState(decision.barrelPlan),
+		cbetMade: flagToState(decision.cbetMade),
+		barrelMade: flagToState(decision.barrelMade),
+		lineAbort: flagToState(decision.lineAbort),
+		noBetClass: typeof decision.noBetClass === "string" ? decision.noBetClass : null,
+		noBetInitialAction: typeof decision.noBetInitialAction === "string"
+			? decision.noBetInitialAction
+			: null,
+		noBetFilterApplied: decision.noBetFilterApplied === true,
+		noBetBlockReason: typeof decision.noBetBlockReason === "string"
+			? decision.noBetBlockReason
+			: null,
+		lineRole: lineTag === "PFA" ? "pfa" : "other",
+		positionBucket: bucketPositionFactor(positionFactor),
+		eliminationRiskBucket: bucketEliminationRisk(eliminationRisk),
+		stackRatioBucket: bucketStackRatio(stackRatio),
+		commitmentBucket: bucketCommitmentPressure(commitmentPressure),
+		raiseLevelBucket: bucketRaiseLevel(raiseLevel),
+		strengthScoreBucket: bucketDecisionScore(strengthScore),
+		playabilityScoreBucket: bucketDecisionScore(playabilityScore),
+		dominationPenaltyBucket: bucketDominationPenalty(dominationPenalty),
+		openRaiseScoreBucket: bucketDecisionScore(openRaiseScore),
+		openLimpScoreBucket: bucketDecisionScore(openLimpScore),
+		flatScoreBucket: bucketDecisionScore(flatScore),
+	};
+}
+
+function groupDecisionsByHandId(decisions) {
+	const grouped = new Map();
+
+	for (const decision of decisions) {
+		if (typeof decision.handId !== "number") {
+			continue;
+		}
+		if (!grouped.has(decision.handId)) {
+			grouped.set(decision.handId, []);
+		}
+		grouped.get(decision.handId).push(decision);
+	}
+
+	for (const handDecisions of grouped.values()) {
+		handDecisions.sort((a, b) => (a.decisionId ?? 0) - (b.decisionId ?? 0));
+	}
+
+	return grouped;
+}
+
+function analyzeBlockedNoBetRaiseFollowups(decisions, metrics) {
+	const decisionsByHandId = groupDecisionsByHandId(decisions);
+
+	for (const handDecisions of decisionsByHandId.values()) {
+		for (const decision of handDecisions) {
+			if (
+				decision.phase !== "postflop" ||
+				decision.noBetFilterApplied !== true ||
+				decision.noBetInitialAction !== "raise"
+			) {
+				continue;
+			}
+
+			const laterFacingBetDecision = handDecisions.find((laterDecision) =>
+				laterDecision.seatIndex === decision.seatIndex &&
+				(laterDecision.decisionId ?? 0) > (decision.decisionId ?? 0) &&
+				laterDecision.phase === "postflop" &&
+				laterDecision.toCall > 0
+			);
+
+			if (!laterFacingBetDecision) {
+				metrics.postflop.blockedNoBetRaiseWithoutLaterFacingBetCount += 1;
+				continue;
+			}
+
+			metrics.postflop.blockedNoBetRaiseLaterFacingBetCount += 1;
+			incrementCount(
+				metrics.postflop.blockedNoBetRaiseLaterFacingBetActions,
+				laterFacingBetDecision.action,
+			);
+		}
+	}
+}
+
+function analyzePreflopTransitions(decisions, hands, metrics) {
+	const decisionsByHandId = groupDecisionsByHandId(decisions);
+
+	for (const hand of hands) {
+		const handDecisions = decisionsByHandId.get(hand.handId) ?? [];
+		const preflopDecisions = handDecisions.filter((decision) => decision.phase === "preflop");
 		if (!preflopDecisions.length) {
 			continue;
 		}
-		const sawFlop = handSawFlop(handLines);
+
+		const sawFlop = handDecisions.some((decision) => decision.phase === "postflop") ||
+			(hand.handResult?.communityCards?.length ?? 0) >= 3;
 
 		const openRaiseIndex = preflopDecisions.findIndex((decision) =>
 			decision.spotType === "UO" && decision.action === "raise" &&
@@ -647,178 +837,254 @@ function classifyBluffRaise(decision) {
 	return "air";
 }
 
-function parseDecisionLogLine(line) {
-	const actionMatch = line.match(DECISION_ACTION_REGEX);
-	const handMatch = line.match(HAND_SECTION_REGEX);
-	const strengthMatch = line.match(STRENGTH_SECTION_REGEX);
-	const pressureMatch = line.match(PRESSURE_SECTION_REGEX);
-	const commitMatch = line.match(COMMIT_SECTION_REGEX);
-	const eliminationMatch = line.match(ELIMINATION_SECTION_REGEX);
-	const positionMatch = line.match(POSITION_SECTION_REGEX);
-	const opportunityMatch = line.match(OPPORTUNITY_SECTION_REGEX);
-	const raiseMatch = line.match(RAISE_SECTION_REGEX);
-	const spotMatch = line.match(SPOT_SECTION_REGEX);
-	const contextMatch = line.match(CONTEXT_SECTION_REGEX);
-	const publicMatch = line.match(PUBLIC_HAND_REGEX);
-	const rawMatch = line.match(RAW_HAND_REGEX);
-	const flagMatch = line.match(FLAG_SECTION_REGEX);
-	const preflopMatch = line.match(PREFLOP_SECTION_REGEX);
-	const preflopScoreMatch = line.match(PREFLOP_SCORE_SECTION_REGEX);
-	const lineMatch = line.match(LINE_SECTION_REGEX);
-	const stabBluffMatch = line.match(STAB_BLUFF_SECTION_REGEX);
-	const privateEdgeMatch = line.match(PRIVATE_EDGE_SECTION_REGEX);
-	const nonValueBlockMatch = line.match(NON_VALUE_BLOCK_REGEX);
-
+function isProtectiveFoldDecision(decision) {
 	if (
-		!actionMatch || !handMatch || !strengthMatch || !pressureMatch || !commitMatch ||
-		!eliminationMatch || !positionMatch || !opportunityMatch || !raiseMatch || !spotMatch ||
-		!contextMatch ||
-		!publicMatch || !rawMatch || !flagMatch || !preflopMatch || !preflopScoreMatch ||
-		!lineMatch || !stabBluffMatch || !privateEdgeMatch ||
-		!nonValueBlockMatch
+		decision.action !== "fold" || decision.phase !== "postflop" || decision.toCall <= 0 ||
+		typeof decision.ownWinProbability !== "number" ||
+		typeof decision.bestFieldWinProbability !== "number"
 	) {
-		return null;
+		return false;
 	}
 
-	const handName = handMatch[1].trim();
-	const phase = handName === "preflop" ? "preflop" : "postflop";
-	const amount = Number.parseInt(handMatch[2], 10);
-	const aggressionStrength = Number.parseFloat(strengthMatch[1]);
-	const passiveStrength = Number.parseFloat(strengthMatch[2]);
-	const mRatio = Number.parseFloat(strengthMatch[3]);
-	const mZone = strengthMatch[4];
-	const potOdds = Number.parseFloat(pressureMatch[1]);
-	const callBarrier = Number.parseFloat(pressureMatch[2]);
-	const stackRatio = Number.parseFloat(pressureMatch[3]);
-	const commitmentPressure = Number.parseFloat(commitMatch[1]);
-	const commitmentPenalty = Number.parseFloat(commitMatch[2]);
-	const eliminationRisk = Number.parseFloat(eliminationMatch[1]);
-	const eliminationPenalty = Number.parseFloat(eliminationMatch[2]);
-	const positionFactor = Number.parseFloat(positionMatch[1]);
-	const activeOpponents = Number.parseInt(positionMatch[2], 10);
-	const effectiveStack = Number.parseInt(positionMatch[3], 10);
-	const noBet = opportunityMatch[1] === "Y";
-	const canRaiseOpportunity = opportunityMatch[2] === "Y";
-	const actingSlotIndex = Number.parseInt(opportunityMatch[3], 10);
-	const actingSlotCount = Number.parseInt(opportunityMatch[4], 10);
-	const raiseThreshold = Number.parseFloat(raiseMatch[1]);
-	const aggressiveness = Number.parseFloat(raiseMatch[2]);
-	const raiseLevel = Number.parseInt(raiseMatch[3], 10);
-	const raiseAdjustment = Number.parseFloat(raiseMatch[4]);
-	const spotType = spotMatch[1];
-	const structureTag = spotMatch[2];
-	const pressureTag = spotMatch[3];
-	const boardContext = contextMatch[1];
-	const drawFlag = contextMatch[2];
-	const textureRisk = Number.parseFloat(contextMatch[3]);
-	const liftType = contextMatch[4];
-	const publicHand = publicMatch[1];
-	const rawHand = rawMatch[1];
-	const chipLeader = flagMatch[1] === "Y";
-	const shortStack = flagMatch[2] === "Y";
-	const premium = flagMatch[3] === "Y";
-	const preflopSeat = preflopMatch[1];
-	const preflopSeatContext = preflopMatch[2] ?? "-";
-	const strengthScore = Number.parseFloat(preflopScoreMatch[1]);
-	const playabilityScore = Number.parseFloat(preflopScoreMatch[2]);
-	const dominationPenalty = Number.parseFloat(preflopScoreMatch[3]);
-	const openRaiseScore = Number.parseFloat(preflopScoreMatch[4]);
-	const openLimpScore = Number.parseFloat(preflopScoreMatch[5]);
-	const flatScore = Number.parseFloat(preflopScoreMatch[6]);
-	const threeBetValueScore = Number.parseFloat(preflopScoreMatch[7]);
-	const threeBetBluffScore = Number.parseFloat(preflopScoreMatch[8]);
-	const pushScore = Number.parseFloat(preflopScoreMatch[9]);
-	const lineTag = lineMatch[1];
-	const cbetPlan = flagToState(lineMatch[2]);
-	const barrelPlan = flagToState(lineMatch[3]);
-	const cbetMade = flagToState(lineMatch[4]);
-	const barrelMade = flagToState(lineMatch[5]);
-	const lineAbort = flagToState(lineMatch[6]);
-	const stab = stabBluffMatch[1] === "Y";
-	const bluff = stabBluffMatch[2] === "Y";
-	const hasPrivateMadeHand = privateEdgeMatch[1] === "Y";
-	const edge = Number.parseFloat(privateEdgeMatch[2]);
-	const hasPrivateRaiseEdge = privateEdgeMatch[3] === "Y";
-	const nonValueBlocked = nonValueBlockMatch[1] === "Y";
+	const behindField = decision.ownWinProbability < decision.bestFieldWinProbability;
+	const expensiveCall = typeof decision.callBarrier === "number" &&
+		typeof decision.potOdds === "number" &&
+		decision.callBarrier >= decision.potOdds + 0.03;
+	const survivalPressure = (typeof decision.eliminationRisk === "number" &&
+			decision.eliminationRisk >= 0.33) ||
+		(typeof decision.stackRatio === "number" && decision.stackRatio >= 0.25) ||
+		(typeof decision.commitmentPressure === "number" &&
+			decision.commitmentPressure >= 0.25);
+
+	return behindField && expensiveCall && survivalPressure;
+}
+
+function isFavoriteStrongHandFoldDecision(decision) {
+	if (
+		decision.action !== "fold" || decision.phase !== "postflop" || decision.toCall <= 0 ||
+		!STRONG_POSTFLOP_HANDS.has(decision.rawHand) ||
+		typeof decision.ownWinProbability !== "number" ||
+		typeof decision.bestFieldWinProbability !== "number" ||
+		decision.winProbRank !== 1
+	) {
+		return false;
+	}
+
+	return decision.ownWinProbability > decision.bestFieldWinProbability;
+}
+
+function buildJoinedHandRecord(handId, handStart, handResult) {
+	return {
+		handId,
+		complete: !!handStart && !!handResult,
+		handStart: handStart ? structuredClone(handStart) : null,
+		handResult: handResult ? structuredClone(handResult) : null,
+	};
+}
+
+function analyzeOutcomeLogs(logs) {
+	const handStarts = new Map();
+	const handResults = new Map();
+	const decisionEvents = [];
+
+	for (const line of logs) {
+		const event = parseSpeedmodeEventLine(line);
+		if (!event) {
+			continue;
+		}
+
+		switch (event.type) {
+			case "hand_start":
+				if (typeof event.handId === "number") {
+					handStarts.set(event.handId, event);
+				}
+				break;
+			case "hand_result":
+				if (typeof event.handId === "number") {
+					handResults.set(event.handId, event);
+				}
+				break;
+			case "bot_decision":
+				decisionEvents.push(event);
+				break;
+		}
+	}
+
+	const metrics = createEmptyOutcomeMetricsAccumulator();
+	const handIds = Array.from(new Set([...handStarts.keys(), ...handResults.keys()])).sort((a, b) =>
+		a - b
+	);
+	const hands = handIds.map((handId) =>
+		buildJoinedHandRecord(handId, handStarts.get(handId) ?? null, handResults.get(handId) ?? null)
+	);
+	const handsById = new Map(hands.map((hand) => [hand.handId, hand]));
+	metrics.decisionJoinCoverage.totalHands = hands.length;
+
+	for (const hand of hands) {
+		if (hand.complete) {
+			metrics.decisionJoinCoverage.joinedHands += 1;
+		} else if (!hand.handResult) {
+			metrics.decisionJoinCoverage.missingHandResults += 1;
+		}
+	}
+
+	const decisions = decisionEvents
+		.map((decision) => {
+			metrics.decisionJoinCoverage.totalDecisions += 1;
+
+			if (typeof decision.handId !== "number") {
+				metrics.decisionJoinCoverage.missingHandId += 1;
+				return {
+					...decision,
+					wonHand: null,
+					wonMainPot: null,
+					wonShowdown: null,
+					winnerSide: "unknown",
+					netChipDelta: null,
+					uncontestedWin: null,
+					hadShowdown: null,
+					communityCardsFinal: decision.communityCards ?? [],
+					protectiveFold: false,
+					favoriteStrongHandFold: false,
+				};
+			}
+
+			const joinedHand = handsById.get(decision.handId) ?? null;
+			if (!joinedHand?.handStart) {
+				metrics.decisionJoinCoverage.missingHandStart += 1;
+			}
+			if (!joinedHand?.handResult) {
+				metrics.decisionJoinCoverage.missingHandResult += 1;
+			}
+			if (!joinedHand?.complete) {
+				return {
+					...decision,
+					wonHand: null,
+					wonMainPot: null,
+					wonShowdown: null,
+					winnerSide: "unknown",
+					netChipDelta: null,
+					uncontestedWin: null,
+					hadShowdown: joinedHand?.handResult?.hadShowdown ?? null,
+					communityCardsFinal: joinedHand?.handResult?.communityCards ??
+						decision.communityCards ?? [],
+					protectiveFold: false,
+					favoriteStrongHandFold: false,
+				};
+			}
+
+			metrics.decisionJoinCoverage.joinedDecisions += 1;
+			const handResult = joinedHand.handResult;
+			const decisionSeatKey = String(decision.seatIndex);
+			const payout = handResult.totalPayoutBySeatIndex?.[decisionSeatKey] ?? 0;
+			const totalBet = handResult.totalBetBySeatIndex?.[decisionSeatKey] ?? 0;
+			const wonHand = handResult.winningSeatIndexes.includes(decision.seatIndex);
+			const wonMainPot = handResult.mainPotWinnerSeatIndexes.includes(decision.seatIndex);
+			const wonShowdown = handResult.hadShowdown === true && wonHand;
+			const uncontestedWin = handResult.hadShowdown === false &&
+				handResult.uncontestedWinnerSeatIndex === decision.seatIndex;
+			const protectiveFold = isProtectiveFoldDecision(decision);
+			const favoriteStrongHandFold = isFavoriteStrongHandFoldDecision(decision);
+
+			incrementWinnerSideBreakdown(
+				metrics.winnerSideByPhaseAction,
+				decision.phase,
+				decision.action,
+				wonHand,
+			);
+			if (decision.phase === "postflop") {
+				incrementWinnerSideBreakdown(
+					metrics.winnerSideByLiftAction,
+					decision.liftType,
+					decision.action,
+					wonHand,
+				);
+			}
+			if (protectiveFold) {
+				metrics.protectiveFoldCounts.total += 1;
+				incrementCount(metrics.protectiveFoldCounts, decision.phase);
+			}
+			if (favoriteStrongHandFold) {
+				metrics.favoriteStrongHandFoldCounts.total += 1;
+				incrementCount(metrics.favoriteStrongHandFoldCounts, decision.phase);
+			}
+			if (
+				decision.action === "raise" &&
+				decision.liftType !== "structural" &&
+				PUBLIC_MADE_HANDS.has(decision.publicHand)
+			) {
+				metrics.nonStructuralMadeHandRaiseOutcome.total += 1;
+				if (wonHand) {
+					metrics.nonStructuralMadeHandRaiseOutcome.winner += 1;
+				} else {
+					metrics.nonStructuralMadeHandRaiseOutcome.loser += 1;
+				}
+			}
+			if (!metrics.showdownVsUncontestedByAction[decision.action]) {
+				metrics.showdownVsUncontestedByAction[decision.action] = {
+					showdown: 0,
+					uncontested: 0,
+				};
+			}
+			if (handResult.hadShowdown) {
+				metrics.showdownVsUncontestedByAction[decision.action].showdown += 1;
+			} else {
+				metrics.showdownVsUncontestedByAction[decision.action].uncontested += 1;
+			}
+
+			return {
+				...decision,
+				wonHand,
+				wonMainPot,
+				wonShowdown,
+				winnerSide: wonHand ? "winner" : "loser",
+				netChipDelta: payout - totalBet,
+				uncontestedWin,
+				hadShowdown: handResult.hadShowdown,
+				communityCardsFinal: handResult.communityCards.slice(),
+				protectiveFold,
+				favoriteStrongHandFold,
+			};
+		})
+		.sort((a, b) => {
+			if ((a.handId ?? 0) !== (b.handId ?? 0)) {
+				return (a.handId ?? 0) - (b.handId ?? 0);
+			}
+			return (a.decisionId ?? 0) - (b.decisionId ?? 0);
+		});
 
 	return {
-		line,
-		action: actionMatch[1],
-		phase,
-		handName,
-		amount,
-		aggressionStrength,
-		passiveStrength,
-		mRatio,
-		mZone,
-		potOdds,
-		callBarrier,
-		stackRatio,
-		commitmentPressure,
-		commitmentPenalty,
-		eliminationRisk,
-		eliminationPenalty,
-		positionFactor,
-		activeOpponents,
-		activePlayers: activeOpponents + 1,
-		effectiveStack,
-		noBet,
-		canRaiseOpportunity,
-		actingSlotIndex,
-		actingSlotCount,
-		actingSlotKey: `${actingSlotIndex}/${actingSlotCount}`,
-		raiseThreshold,
-		aggressiveness,
-		raiseLevel,
-		raiseAdjustment,
-		spotType,
-		structureTag,
-		pressureTag,
-		spotKey: `${spotType}/${structureTag}/${pressureTag}`,
-		boardContext,
-		drawFlag,
-		textureRisk,
-		liftType,
-		publicHand,
-		rawHand,
-		chipLeader,
-		shortStack,
-		premium,
-		preflopSeat,
-		preflopSeatContext,
-		strengthScore,
-		playabilityScore,
-		dominationPenalty,
-		openRaiseScore,
-		openLimpScore,
-		flatScore,
-		threeBetValueScore,
-		threeBetBluffScore,
-		pushScore,
-		lineTag,
-		cbetPlan,
-		barrelPlan,
-		cbetMade,
-		barrelMade,
-		lineAbort,
-		stab,
-		bluff,
-		hasPrivateMadeHand,
-		edge,
-		hasPrivateRaiseEdge,
-		nonValueBlocked,
-		lineRole: lineTag === "PFA" ? "pfa" : "other",
-		positionBucket: bucketPositionFactor(positionFactor),
-		eliminationRiskBucket: bucketEliminationRisk(eliminationRisk),
-		stackRatioBucket: bucketStackRatio(stackRatio),
-		commitmentBucket: bucketCommitmentPressure(commitmentPressure),
-		raiseLevelBucket: bucketRaiseLevel(raiseLevel),
-		strengthScoreBucket: bucketDecisionScore(strengthScore),
-		playabilityScoreBucket: bucketDecisionScore(playabilityScore),
-		dominationPenaltyBucket: bucketDominationPenalty(dominationPenalty),
-		openRaiseScoreBucket: bucketDecisionScore(openRaiseScore),
-		openLimpScoreBucket: bucketDecisionScore(openLimpScore),
-		flatScoreBucket: bucketDecisionScore(flatScore),
+		hands,
+		decisions,
+		rawMetrics: metrics,
+		metrics: finalizeOutcomeMetrics(metrics),
+	};
+}
+
+async function waitForSettledRunPayload(page, timeoutMs = POST_RUN_DRAIN_TIMEOUT_MS) {
+	const startedAt = Date.now();
+	let latestPayload = null;
+
+	while (Date.now() - startedAt < timeoutMs) {
+		latestPayload = await page.evaluate(RUN_PAYLOAD_EXPRESSION);
+		const outcome = analyzeOutcomeLogs(latestPayload.logs);
+		const hasStructuredEvents = outcome.rawMetrics.decisionJoinCoverage.totalDecisions > 0 ||
+			outcome.rawMetrics.decisionJoinCoverage.totalHands > 0;
+		const missingOutcomeEvents = outcome.rawMetrics.decisionJoinCoverage.missingHandStart > 0 ||
+			outcome.rawMetrics.decisionJoinCoverage.missingHandResult > 0 ||
+			outcome.rawMetrics.decisionJoinCoverage.missingHandResults > 0;
+
+		if (!hasStructuredEvents || !missingOutcomeEvents) {
+			return { payload: latestPayload, outcome };
+		}
+
+		await sleep(POLL_INTERVAL_MS);
+	}
+
+	const payload = latestPayload ?? await page.evaluate(RUN_PAYLOAD_EXPRESSION);
+	return {
+		payload,
+		outcome: analyzeOutcomeLogs(payload.logs),
 	};
 }
 
@@ -1186,13 +1452,26 @@ function createEmptyPostflopMetrics() {
 		bluffActions: {},
 		bluffRaiseClassCounts: {},
 		nonValueBlockedActions: {},
+		checkedToSpotCount: 0,
+		checkedToSpotActions: {},
+		checkedToSpotByClass: {},
+		checkedToSpotActionsByClass: {},
 		noBetOpportunityCount: 0,
 		noBetOpportunityActions: {},
+		noBetOpportunityByClass: {},
+		noBetOpportunityActionsByClass: {},
 		noBetOpportunityByLineRole: {},
 		noBetOpportunityBySpot: {},
 		noBetOpportunityByStructure: {},
 		noBetOpportunityByActingSlot: {},
 		noBetOpportunityActionsByLineRoleAndActingSlot: {},
+		blockedNoBetRaiseCount: 0,
+		blockedNoBetRaiseByClass: {},
+		blockedNoBetRaiseByReason: {},
+		blockedNoBetRaiseByClassAndReason: {},
+		blockedNoBetRaiseLaterFacingBetCount: 0,
+		blockedNoBetRaiseLaterFacingBetActions: {},
+		blockedNoBetRaiseWithoutLaterFacingBetCount: 0,
 		weakNoBetOpportunityCount: 0,
 		weakNoBetOpportunityActions: {},
 		weakNoBetOpportunityByWeakClass: {},
@@ -1274,14 +1553,14 @@ function createEmptyMetrics() {
 	};
 }
 
-function analyzeRunLogs(logs) {
+function analyzeRunDecisions(decisions, hands) {
 	const metrics = createEmptyMetrics();
+	const normalizedDecisions = decisions
+		.map((decision) => normalizeStructuredDecision(decision))
+		.filter(Boolean);
 
-	for (const line of logs) {
-		const decision = parseDecisionLogLine(line);
-		if (!decision) {
-			continue;
-		}
+	for (const decision of normalizedDecisions) {
+		const line = decision.line;
 
 		metrics.decisionCount += 1;
 		incrementCount(metrics.actionCounts, decision.action);
@@ -1525,9 +1804,27 @@ function analyzeRunLogs(logs) {
 		if (decision.lineAbort === "yes") {
 			pushExample(metrics.examples.lineAbort, line);
 		}
+		if (decision.noBet) {
+			const checkedToClass = decision.noBetClass ?? "unknown";
+			metrics.postflop.checkedToSpotCount += 1;
+			incrementCount(metrics.postflop.checkedToSpotActions, decision.action);
+			incrementCount(metrics.postflop.checkedToSpotByClass, checkedToClass);
+			incrementNestedCount(
+				metrics.postflop.checkedToSpotActionsByClass,
+				checkedToClass,
+				decision.action,
+			);
+		}
 		if (decision.noBet && decision.canRaiseOpportunity) {
+			const noBetClass = decision.noBetClass ?? "unknown";
 			metrics.postflop.noBetOpportunityCount += 1;
 			incrementCount(metrics.postflop.noBetOpportunityActions, decision.action);
+			incrementCount(metrics.postflop.noBetOpportunityByClass, noBetClass);
+			incrementNestedCount(
+				metrics.postflop.noBetOpportunityActionsByClass,
+				noBetClass,
+				decision.action,
+			);
 			incrementCount(metrics.postflop.noBetOpportunityByLineRole, decision.lineRole);
 			incrementCount(metrics.postflop.noBetOpportunityBySpot, decision.spotKey);
 			incrementCount(metrics.postflop.noBetOpportunityByStructure, decision.structureTag);
@@ -1538,6 +1835,17 @@ function analyzeRunLogs(logs) {
 				decision.actingSlotKey,
 				decision.action,
 			);
+			if (decision.noBetFilterApplied && decision.noBetInitialAction === "raise") {
+				const noBetBlockReason = decision.noBetBlockReason ?? "unknown";
+				metrics.postflop.blockedNoBetRaiseCount += 1;
+				incrementCount(metrics.postflop.blockedNoBetRaiseByClass, noBetClass);
+				incrementCount(metrics.postflop.blockedNoBetRaiseByReason, noBetBlockReason);
+				incrementNestedCount(
+					metrics.postflop.blockedNoBetRaiseByClassAndReason,
+					noBetClass,
+					noBetBlockReason,
+				);
+			}
 			if (decision.action === "raise") {
 				pushExample(metrics.examples.postflopNoBetRaise, line);
 			} else if (decision.action === "check") {
@@ -1659,7 +1967,8 @@ function analyzeRunLogs(logs) {
 		}
 	}
 
-	analyzePreflopTransitions(logs, metrics);
+	analyzeBlockedNoBetRaiseFollowups(normalizedDecisions, metrics);
+	analyzePreflopTransitions(normalizedDecisions, hands, metrics);
 	return metrics;
 }
 
@@ -1747,7 +2056,14 @@ function mergeRunMetrics(target, source) {
 	);
 }
 
-async function runSingleTournament(page, config, runIndex, aggregateMetrics, champions) {
+async function runSingleTournament(
+	page,
+	config,
+	runIndex,
+	aggregateMetrics,
+	aggregateOutcomeMetrics,
+	champions,
+) {
 	const runLabel = String(runIndex).padStart(2, "0");
 	const baseUrl = `http://127.0.0.1:${config.serverPort}/${config.pagePath}`;
 
@@ -1769,13 +2085,15 @@ async function runSingleTournament(page, config, runIndex, aggregateMetrics, cha
 		throw new Error(`Run ${runLabel} timed out`);
 	}
 
-	const payload = await page.evaluate(RUN_PAYLOAD_EXPRESSION);
-	const runMetrics = analyzeRunLogs(payload.logs);
+	const { payload, outcome: runOutcome } = await waitForSettledRunPayload(page);
+	const runMetrics = analyzeRunDecisions(runOutcome.decisions, runOutcome.hands);
 	mergeRunMetrics(aggregateMetrics, runMetrics);
+	mergeOutcomeMetrics(aggregateOutcomeMetrics, runOutcome.rawMetrics);
 	incrementCount(champions, state.champion || "unknown");
 
 	const logPath = `${config.outputDir}/run-${runLabel}.log`;
 	const summaryPath = `${config.outputDir}/run-${runLabel}.json`;
+	const detailsPath = `${config.outputDir}/run-${runLabel}.details.json`;
 	await Deno.writeTextFile(logPath, payload.logs.join("\n"));
 	await Deno.writeTextFile(
 		summaryPath,
@@ -1786,6 +2104,22 @@ async function runSingleTournament(page, config, runIndex, aggregateMetrics, cha
 				logCount: payload.logs.length,
 				players: payload.players,
 				metrics: runMetrics,
+				outcomeMetrics: runOutcome.metrics,
+			},
+			null,
+			2,
+		),
+	);
+	await Deno.writeTextFile(
+		detailsPath,
+		JSON.stringify(
+			{
+				run: runIndex,
+				champion: state.champion,
+				logCount: payload.logs.length,
+				hands: runOutcome.hands,
+				decisions: runOutcome.decisions,
+				outcomeMetrics: runOutcome.metrics,
 			},
 			null,
 			2,
@@ -1799,7 +2133,9 @@ async function runSingleTournament(page, config, runIndex, aggregateMetrics, cha
 		logCount: payload.logs.length,
 		logPath,
 		summaryPath,
+		detailsPath,
 		metrics: runMetrics,
+		outcomeMetrics: runOutcome.metrics,
 	};
 }
 
@@ -1810,6 +2146,7 @@ async function main() {
 	const outputDir = resolveOutputDir(args.outputDir);
 	const chromeCommand = await resolveChromeCommand(args.chromePath);
 	const aggregateMetrics = createEmptyMetrics();
+	const aggregateOutcomeMetrics = createEmptyOutcomeMetricsAccumulator();
 	const champions = {};
 	const runSummaries = [];
 	const profileDir = `${outputDir}/chrome-profile`;
@@ -1858,6 +2195,7 @@ async function main() {
 				},
 				runIndex,
 				aggregateMetrics,
+				aggregateOutcomeMetrics,
 				champions,
 			);
 			runSummaries.push(runSummary);
@@ -1888,13 +2226,18 @@ async function main() {
 				logCount: runSummary.logCount,
 				logPath: runSummary.logPath,
 				summaryPath: runSummary.summaryPath,
+				detailsPath: runSummary.detailsPath,
 			})),
 			metrics: aggregateMetrics,
+			outcomeMetrics: finalizeOutcomeMetrics(aggregateOutcomeMetrics),
 		};
 		await Deno.writeTextFile(`${outputDir}/summary.json`, JSON.stringify(summary, null, 2));
 
 		console.log(`runs=${args.runCount}`);
 		console.log(`decisions=${aggregateMetrics.decisionCount}`);
+		console.log(
+			`decision_join_coverage=${summary.outcomeMetrics.decisionJoinCoverage.joinedDecisions}/${summary.outcomeMetrics.decisionJoinCoverage.totalDecisions}`,
+		);
 		console.log(`preflop_spots=${aggregateMetrics.preflop.decisions}`);
 		console.log(`postflop_spots=${aggregateMetrics.postflopSpots}`);
 		console.log(`postflop_made_hand_folds=${aggregateMetrics.postflop.madeHandFoldCount}`);
@@ -1957,6 +2300,30 @@ async function main() {
 			`postflop_no_bet_raises=${
 				aggregateMetrics.postflop.noBetOpportunityActions.raise || 0
 			}`,
+		);
+		console.log(
+			`postflop_blocked_no_bet_raises=${aggregateMetrics.postflop.blockedNoBetRaiseCount}`,
+		);
+		console.log(
+			`postflop_blocked_no_bet_later_facing_bet=${aggregateMetrics.postflop.blockedNoBetRaiseLaterFacingBetCount}`,
+		);
+		console.log(
+			`postflop_blocked_no_bet_later_facing_bet_folds=${
+				aggregateMetrics.postflop.blockedNoBetRaiseLaterFacingBetActions.fold || 0
+			}`,
+		);
+		console.log(
+			`postflop_blocked_no_bet_later_facing_bet_calls=${
+				aggregateMetrics.postflop.blockedNoBetRaiseLaterFacingBetActions.call || 0
+			}`,
+		);
+		console.log(
+			`postflop_blocked_no_bet_later_facing_bet_raises=${
+				aggregateMetrics.postflop.blockedNoBetRaiseLaterFacingBetActions.raise || 0
+			}`,
+		);
+		console.log(
+			`postflop_blocked_no_bet_without_later_facing_bet=${aggregateMetrics.postflop.blockedNoBetRaiseWithoutLaterFacingBetCount}`,
 		);
 		console.log(
 			`postflop_weak_no_bet_opportunities=${aggregateMetrics.postflop.weakNoBetOpportunityCount}`,

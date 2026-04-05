@@ -137,41 +137,53 @@ Backend sync is used only in multiplayer games that start with at least 2 human 
 
 ## Bot Behavior (Tournament Logic)
 
-Bots play tournament-style poker and follow consistent rules without hidden information or "reads".
-Their decisions consider:
+Bots play **plausible, tournament-style poker** based on heuristics, not simulations or hidden information.  
+The goal is not solver-perfect play, but **realistic, hard-to-exploit decisions** that resemble human tournament strategy.
 
-- **Hand evaluation**: preflop uses a heuristic hand score, while postflop strength comes from real
-  solved hand rank plus context such as top pair, overpair, draw equity, and board texture.
-- **Tournament zones (M-ratio)**: dead/red/orange/yellow/green zones guide Harrington-style
-  short-stack decisions for shoves, calls, and yellow-zone opens.
-- **Pot odds and stack pressure**: pot odds, stack ratio, SPR, commitment pressure, and
-  elimination-risk penalties all influence whether a hand keeps going or gets released.
-- **Position and table size**: aggression thresholds are adjusted by position and remaining
-  opponents, so bots naturally loosen up short-handed and tighten up in crowded spots.
-- **Opponent tendencies**: average VPIP, aggression, and fold rate influence bluff frequency and
-  raise thresholds; fold-heavy tables invite more pressure, while loose or aggressive fields dampen
-  it.
-- **Postflop board context**: bots recognize top pair, overpairs, flush draws, straight draws, and
-  dry vs wet textures when deciding between value, protection, bluffing, calling, or checking.
-- **Private edge vs public board**: postflop raises compare private solved-hand strength against the
-  public board baseline, so shared board strength is pushed more toward check/call while real
-  private edge can still value-bet or protect.
-- **River low-edge guardrail**: once the river is complete, busted draws no longer count as live
-  draw pressure, and weak no-edge bluff-catch calls are released unless the board itself already
-  makes a likely straight-or-better split spot.
-- **Bluff guardrails**: once the hole cards create a private made hand, the dedicated bluff paths no
-  longer fire; remaining board-made cases stay visible as separate edge cases in speedmode instead
-  of being mixed into the private made-hand guard.
-- **Bet sizing**: value, protection, bluff, overbet, and yellow-zone open sizes scale with pot,
-  texture, SPR, position, and opponent count, with small randomness and chip-grid rounding.
-- **Line memory**: the preflop aggressor can carry simple c-bet and barrel plans across streets,
-  while very wet boards can abort those lines.
-- **Tie-breakers and raise safety**: near-threshold spots randomize between close actions, and
-  illegal raises are downgraded to the nearest legal raise, call, or check.
-- **All-in response**: bots are prevented from auto-folding too often against all-ins when their
-  hand clears a risk-adjusted threshold.
-- **Checked-to initiative**: when no one has bet, bots can still take the betting lead with
-  controlled stabs or bluffs in the right position and texture.
+Core principles:
+
+- **Tournament pressure (M-ratio)**  
+  Short-stack zones drive shove, call, and raise behavior based on Harrington-style logic.
+
+- **Private strength vs board strength**  
+  Postflop decisions are based on how much the hole cards improve the board.  
+  Bots distinguish between:
+  - board-driven strength (shared by everyone)
+  - true private edge (unique to the player)
+
+- **Private-aware strength model**  
+  Raw hand strength is adjusted by private edge, so bots don’t overvalue strong-looking boards  
+  (e.g. trips on a paired board) and don’t undervalue real made hands.
+
+- **Risk-aware decision making**  
+  Calls and folds are influenced by:
+  - pot odds
+  - stack commitment
+  - elimination risk  
+  Expensive decisions require stronger justification, but strong private hands can override pure survival logic.
+
+- **Position and table dynamics**  
+  Bots adapt aggression based on position, number of opponents, and remaining players.
+
+- **Opponent tendencies (lightweight reads)**  
+  VPIP, aggression, fold rate, and showdown strength slightly shift thresholds without dominating decisions.
+
+- **Board texture and draw equity**  
+  Wet boards increase protection and reduce bluffing; dry boards enable more aggression.
+
+- **Controlled initiative (checked-to play)**  
+  When no one bets, bots selectively take the lead depending on position, board context, and opponent behavior.  
+  Weak or risky spots are filtered out to avoid over-aggression.
+
+- **Line consistency**  
+  Simple betting plans (c-bet, barrel) are carried across streets but can be aborted on bad runouts.
+
+- **Strict guardrails**  
+  The system prevents unrealistic behavior:
+  - no folding premium preflop hands  
+  - no bluffing with made hands  
+  - no absurd folds of strong private hands  
+  - no broken multi-raise sequences  
 
 ---
 
