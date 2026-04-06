@@ -36,6 +36,12 @@ const TOP_TIER_POSTFLOP_HANDS = new Set([
 	"Four of a Kind",
 	"Straight Flush",
 ]);
+const BELOW_TRIPS_POSTFLOP_HANDS = new Set([
+	"High Card",
+	"Pair",
+	"Two Pair",
+]);
+const RERAISE_LOW_EDGE_THRESHOLD = 1.0;
 const CONTENT_TYPES = {
 	".css": "text/css; charset=utf-8",
 	".html": "text/html; charset=utf-8",
@@ -837,6 +843,29 @@ function classifyBluffRaise(decision) {
 	return "air";
 }
 
+function getPostflopStreet(decision) {
+	const communityCardCount = decision.communityCards?.length ?? 0;
+	if (communityCardCount === 3) {
+		return "flop";
+	}
+	if (communityCardCount === 4) {
+		return "turn";
+	}
+	if (communityCardCount === 5) {
+		return "river";
+	}
+	return `cc${communityCardCount}`;
+}
+
+function isPostflopReraise(decision) {
+	return decision.phase === "postflop" && decision.action === "raise" && decision.raiseLevel > 0;
+}
+
+function isRaiseAllIn(decision) {
+	return typeof decision.chipsBefore === "number" && decision.chipsBefore > 0 &&
+		(decision.amount ?? 0) >= decision.chipsBefore;
+}
+
 function isProtectiveFoldDecision(decision) {
 	if (
 		decision.action !== "fold" || decision.phase !== "postflop" || decision.toCall <= 0 ||
@@ -1492,6 +1521,23 @@ function createEmptyPostflopMetrics() {
 		privateTopTierMadeHandFoldCount: 0,
 		highRiskPrivateMadeHandFoldCount: 0,
 		highRiskPrivateTopTierMadeHandFoldCount: 0,
+		reraises: {
+			totalCount: 0,
+			lowEdgeCount: 0,
+			activePlayers4PlusCount: 0,
+			activePlayers5PlusCount: 0,
+			flopMultiwayCount: 0,
+			flopMultiway4PlusCount: 0,
+			flopMultiway5PlusCount: 0,
+			allInCount: 0,
+			allInBelowTripsCount: 0,
+			allInLowEdgeCount: 0,
+			allInActivePlayers4PlusCount: 0,
+			allInActivePlayers5PlusCount: 0,
+			byStreet: {},
+			byActivePlayers: {},
+			byRawHand: {},
+		},
 	};
 }
 
@@ -1525,6 +1571,11 @@ function createEmptyMetrics() {
 			postflopPrivateMadeHandFold: [],
 			postflopPrivateTopTierMadeHandFold: [],
 			postflopHighRiskPrivateMadeHandFold: [],
+			postflopReraiseLowEdge: [],
+			postflopReraise4Plus: [],
+			postflopFlopReraiseMultiway: [],
+			postflopAllInReraiseBelowTrips: [],
+			postflopAllInReraiseLowEdge: [],
 			bluffRaiseAir: [],
 			bluffRaiseDraw: [],
 			bluffRaiseMadeHand: [],
@@ -1777,6 +1828,56 @@ function analyzeRunDecisions(decisions, hands) {
 			decision.nonValueBlocked ? "yes" : "no",
 			decision.action,
 		);
+		if (isPostflopReraise(decision)) {
+			const street = getPostflopStreet(decision);
+			const activePlayers = decision.activePlayers ?? 0;
+			const isLowEdgeReraise = decision.edge < RERAISE_LOW_EDGE_THRESHOLD;
+			const isAllInReraise = isRaiseAllIn(decision);
+
+			metrics.postflop.reraises.totalCount += 1;
+			incrementCount(metrics.postflop.reraises.byStreet, street);
+			incrementCount(metrics.postflop.reraises.byActivePlayers, String(activePlayers));
+			incrementCount(metrics.postflop.reraises.byRawHand, decision.rawHand);
+
+			if (isLowEdgeReraise) {
+				metrics.postflop.reraises.lowEdgeCount += 1;
+				pushExample(metrics.examples.postflopReraiseLowEdge, line);
+			}
+			if (activePlayers >= 4) {
+				metrics.postflop.reraises.activePlayers4PlusCount += 1;
+				pushExample(metrics.examples.postflopReraise4Plus, line);
+			}
+			if (activePlayers >= 5) {
+				metrics.postflop.reraises.activePlayers5PlusCount += 1;
+			}
+			if (street === "flop" && decision.structureTag === "MW") {
+				metrics.postflop.reraises.flopMultiwayCount += 1;
+				pushExample(metrics.examples.postflopFlopReraiseMultiway, line);
+				if (activePlayers >= 4) {
+					metrics.postflop.reraises.flopMultiway4PlusCount += 1;
+				}
+				if (activePlayers >= 5) {
+					metrics.postflop.reraises.flopMultiway5PlusCount += 1;
+				}
+			}
+			if (isAllInReraise) {
+				metrics.postflop.reraises.allInCount += 1;
+				if (activePlayers >= 4) {
+					metrics.postflop.reraises.allInActivePlayers4PlusCount += 1;
+				}
+				if (activePlayers >= 5) {
+					metrics.postflop.reraises.allInActivePlayers5PlusCount += 1;
+				}
+				if (BELOW_TRIPS_POSTFLOP_HANDS.has(decision.rawHand)) {
+					metrics.postflop.reraises.allInBelowTripsCount += 1;
+					pushExample(metrics.examples.postflopAllInReraiseBelowTrips, line);
+				}
+				if (isLowEdgeReraise) {
+					metrics.postflop.reraises.allInLowEdgeCount += 1;
+					pushExample(metrics.examples.postflopAllInReraiseLowEdge, line);
+				}
+			}
+		}
 
 		if (decision.lineTag === "PFA") {
 			metrics.postflop.pfaDecisionCount += 1;
@@ -2028,6 +2129,21 @@ function mergeRunMetrics(target, source) {
 	source.examples.postflopHighRiskPrivateMadeHandFold.forEach((line) =>
 		pushExample(target.examples.postflopHighRiskPrivateMadeHandFold, line)
 	);
+	source.examples.postflopReraiseLowEdge.forEach((line) =>
+		pushExample(target.examples.postflopReraiseLowEdge, line)
+	);
+	source.examples.postflopReraise4Plus.forEach((line) =>
+		pushExample(target.examples.postflopReraise4Plus, line)
+	);
+	source.examples.postflopFlopReraiseMultiway.forEach((line) =>
+		pushExample(target.examples.postflopFlopReraiseMultiway, line)
+	);
+	source.examples.postflopAllInReraiseBelowTrips.forEach((line) =>
+		pushExample(target.examples.postflopAllInReraiseBelowTrips, line)
+	);
+	source.examples.postflopAllInReraiseLowEdge.forEach((line) =>
+		pushExample(target.examples.postflopAllInReraiseLowEdge, line)
+	);
 	source.examples.bluffRaiseAir.forEach((line) =>
 		pushExample(target.examples.bluffRaiseAir, line)
 	);
@@ -2218,6 +2334,9 @@ async function main() {
 				chromeCommand,
 				outputDir,
 				projectRootPath,
+				analysisThresholds: {
+					reraiseLowEdge: RERAISE_LOW_EDGE_THRESHOLD,
+				},
 			},
 			champions,
 			runs: runSummaries.map((runSummary) => ({
@@ -2252,6 +2371,25 @@ async function main() {
 		);
 		console.log(
 			`postflop_private_top_tier_made_hand_folds=${aggregateMetrics.postflop.privateTopTierMadeHandFoldCount}`,
+		);
+		console.log(`postflop_reraises=${aggregateMetrics.postflop.reraises.totalCount}`);
+		console.log(
+			`postflop_reraises_edge_lt_${RERAISE_LOW_EDGE_THRESHOLD.toFixed(1)}=${aggregateMetrics.postflop.reraises.lowEdgeCount}`,
+		);
+		console.log(
+			`postflop_reraises_active_players_4_plus=${aggregateMetrics.postflop.reraises.activePlayers4PlusCount}`,
+		);
+		console.log(
+			`postflop_reraises_active_players_5_plus=${aggregateMetrics.postflop.reraises.activePlayers5PlusCount}`,
+		);
+		console.log(
+			`postflop_reraises_flop_multiway=${aggregateMetrics.postflop.reraises.flopMultiwayCount}`,
+		);
+		console.log(
+			`postflop_reraises_allin_below_trips=${aggregateMetrics.postflop.reraises.allInBelowTripsCount}`,
+		);
+		console.log(
+			`postflop_reraises_allin_edge_lt_${RERAISE_LOW_EDGE_THRESHOLD.toFixed(1)}=${aggregateMetrics.postflop.reraises.allInLowEdgeCount}`,
 		);
 		console.log(
 			`postflop_high_risk_private_made_hand_folds=${aggregateMetrics.postflop.highRiskPrivateMadeHandFoldCount}`,

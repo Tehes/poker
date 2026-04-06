@@ -1,0 +1,16 @@
+{
+    "deno.disablePaths": [
+        "tmp"
+    ],
+    "deno.enablePaths": [
+        "api",
+        "js",
+        "scripts"
+    ],
+    "files.watcherExclude": {
+        "**/tmp/**": true
+    },
+    "search.exclude": {
+        "**/tmp/**": true
+    }
+}

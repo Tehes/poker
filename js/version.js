@@ -1,13 +1,24 @@
-export const APP_VERSION = "1.0.16";
+export const APP_VERSION = "1.0.17";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.17",
+		date: "2026-04-06",
+		title: "Edge-first postflop sizing and reraise damping",
+		notes: [
+			"Reworked postflop bet sizing around an edge-first model with lighter opponent-count, board, draw, SPR, and stack-pressure modifiers instead of the older more escalatory sizing mix.",
+			"Removed the separate postflop overbet branch so large bets now only emerge from the shared sizing path and its final stack caps.",
+			"Added stronger raise-level damping, rereraise stack caps, and richer speedmode rereraise diagnostics to target multi-street escalation without opening new obvious guardrail failures.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.16",
 		date: "2026-04-05",
 		title: "Postflop cost curve and speedmode diagnostics",
 		notes: [
-			"Replaced the hard postflop stack-ratio cap with a steeper elimination-risk curve that now runs through full-stack calls, so large postflop decisions are priced by one continuous barrier instead of a second gate.",
-			"Kept the checked-to no-bet filter active and expanded postflop private-aware strength usage so weak free stabs fall while private made-hand folds stay controlled without reintroducing the old cap hacks.",
+			"Introduced postflop private-aware strength as a first-class signal and threaded it through more postflop value, protection, and call branches so private hand improvements matter earlier than the raw board score alone.",
+			"Added a checked-to no-bet filter and replaced the hard postflop stack-ratio cap with a steeper elimination-risk curve that now runs through full-stack calls, removing the old second gate from postflop call decisions.",
 			"Extended speedmode with joined hand/decision outcome tracking and blocked no-bet follow-up reporting, then validated the pass with staged 10-run, 30-run, and 100-run batches against the previous baseline.",
 		],
 		estimated: false,
