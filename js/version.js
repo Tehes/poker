@@ -1,6 +1,17 @@
-export const APP_VERSION = "1.0.17";
+export const APP_VERSION = "1.0.18";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.18",
+		date: "2026-04-07",
+		title: "Minimum-aware reraise calls",
+		notes: [
+			"Downgraded postflop raise-level 2+ reraises to calls when the bot's raw sizing falls below the legal minimum raise instead of inflating them to the minimum.",
+			"Kept short-stack all-ins eligible for the existing legal all-in path so the change only targets non-all-in reraise escalation.",
+			"Validated the tuning direction with staged 10-run, 30-run, and 100-run speedmode batches against the previous 100-run baseline.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.17",
 		date: "2026-04-06",

@@ -2058,22 +2058,30 @@ export function chooseBotAction(player, gameState) {
 			stackRatio <= 1 / 3
 		) {
 			let raiseAmt = protectionBetSize();
-			raiseAmt = Math.max(minRaiseAmount, raiseAmt);
+			const callAmt = Math.min(player.chips, needToCall);
 			if (
-				Math.abs(decisionStrength - raiseThreshold) <=
-					STRENGTH_TIE_DELTA
+				!preflop && raiseLevel >= 2 &&
+				raiseAmt < minRaiseAmount &&
+				player.chips > minRaiseAmount
 			) {
-				const callAmt = Math.min(player.chips, needToCall);
-				const alt =
-					(gateStrengthRatio >= eliminationBarrier &&
-							passesPreflopCallLimit)
-						? { action: "call", amount: callAmt }
-						: { action: "fold" };
-				decision = Math.random() < 0.5
-					? { action: "raise", amount: raiseAmt }
-					: alt;
+				decision = { action: "call", amount: callAmt };
 			} else {
-				decision = { action: "raise", amount: raiseAmt };
+				raiseAmt = Math.max(minRaiseAmount, raiseAmt);
+				if (
+					Math.abs(decisionStrength - raiseThreshold) <=
+						STRENGTH_TIE_DELTA
+				) {
+					const alt =
+						(gateStrengthRatio >= eliminationBarrier &&
+								passesPreflopCallLimit)
+							? { action: "call", amount: callAmt }
+							: { action: "fold" };
+					decision = Math.random() < 0.5
+						? { action: "raise", amount: raiseAmt }
+						: alt;
+				} else {
+					decision = { action: "raise", amount: raiseAmt };
+				}
 			}
 		} else if (
 			gateStrengthRatio >= eliminationBarrier && passesPreflopCallLimit
