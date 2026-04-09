@@ -1,6 +1,18 @@
-export const APP_VERSION = "1.0.18";
+export const APP_VERSION = "1.0.19";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.19",
+		date: "2026-04-09",
+		title: "Marginal-edge postflop tuning",
+		notes: [
+			"Added a shared postflop marginal-edge classification so small private made hands and weak draws now feed the main call, raise, no-bet, and river guard branches through one edge-first signal.",
+			"Made marginal hands more pot-control oriented by raising their postflop raise thresholds, tightening multiway and re-raised calls, keeping checked-through relief narrow, and adding a final narrow call tax for marginal made hands on turn multiway spots and later streets under aggression when the private edge stays below the stronger marginal band.",
+			"Kept the broader marginal-edge classification, no-bet filtering, and heads-up single-bet river bluff-catch path intact so the pass targets likely hope-call pockets without broadly shutting down marginal play.",
+			"Validated the combined pass with staged 10-run, 30-run, and 100-run speedmode batches using the local Chrome binary; the final 100-run cut marginal facing-raise calls from 731 to 603 while keeping premium preflop folds, private top-tier made-hand folds, and bluff raises with made hands at zero.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.18",
 		date: "2026-04-07",

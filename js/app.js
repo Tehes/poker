@@ -1020,16 +1020,18 @@ Analytics And Remote State-Sync Helpers
 ---------------------------------------------------------------------------------------------------*/
 
 function getHandsPlayedBucket(handCount) {
-	if (handCount < 20) return "<20";
-	if (handCount <= 25) return "20-25";
-	if (handCount <= 30) return "26-30";
-	if (handCount <= 35) return "31-35";
+	if (handCount < 35) return "<35";
 	if (handCount <= 40) return "36-40";
 	if (handCount <= 45) return "41-45";
 	if (handCount <= 50) return "46-50";
 	if (handCount <= 55) return "51-55";
 	if (handCount <= 60) return "56-60";
-	return ">60";
+	if (handCount <= 70) return "61-70";
+	if (handCount <= 80) return "71-80";
+	if (handCount <= 90) return "81-90";
+	if (handCount <= 100) return "91-100";
+	if (handCount <= 120) return "101-120";
+	return ">120";
 }
 
 function getExitCounts() {
@@ -2645,7 +2647,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-04-07-v1";
+const SERVICE_WORKER_VERSION = "2026-04-09-v1";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

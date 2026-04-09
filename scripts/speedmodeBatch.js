@@ -474,6 +474,7 @@ function formatDecisionExample(decision) {
 		`Pub:${formatFixed(decision.publicScore, 4)} Raw:${formatFixed(decision.rawScore, 4)} ` +
 		`PMH:${toFlag(decision.hasPrivateMadeHand)} Edge:${formatFixed(decision.edge, 4)} ` +
 		`PRE:${toFlag(decision.hasPrivateRaiseEdge)} ` +
+		`ME:${toFlag(decision.marginalEdge)} MR:${decision.marginalReason ?? "-"} ` +
 		`SRaw:${formatFixed(decision.strengthRatioRaw, 2)} ` +
 		`EBo:${formatFixed(decision.edgeBoost, 4)} ` +
 		`PAS:${formatFixed(decision.privateAwareStrength, 2)} | ` +
@@ -522,6 +523,10 @@ function normalizeStructuredDecision(decision) {
 		noBetFilterApplied: decision.noBetFilterApplied === true,
 		noBetBlockReason: typeof decision.noBetBlockReason === "string"
 			? decision.noBetBlockReason
+			: null,
+		marginalEdge: decision.marginalEdge === true,
+		marginalReason: typeof decision.marginalReason === "string"
+			? decision.marginalReason
 			: null,
 		lineRole: lineTag === "PFA" ? "pfa" : "other",
 		positionBucket: bucketPositionFactor(positionFactor),
@@ -1465,6 +1470,13 @@ function createEmptyPostflopMetrics() {
 		boardContextActions: {},
 		drawCounts: {},
 		drawActions: {},
+		marginalDecisionCount: 0,
+		marginalActions: {},
+		marginalReasonCounts: {},
+		marginalActionByReason: {},
+		marginalRaiseCount: 0,
+		marginalRiverCallCount: 0,
+		marginalFacingRaiseCallCount: 0,
 		pairKickerActions: {},
 		pfaDecisionCount: 0,
 		lineActions: {},
@@ -1904,6 +1916,30 @@ function analyzeRunDecisions(decisions, hands) {
 		}
 		if (decision.lineAbort === "yes") {
 			pushExample(metrics.examples.lineAbort, line);
+		}
+		if (decision.marginalEdge) {
+			metrics.postflop.marginalDecisionCount += 1;
+			incrementCount(metrics.postflop.marginalActions, decision.action);
+			if (decision.marginalReason) {
+				incrementCount(
+					metrics.postflop.marginalReasonCounts,
+					decision.marginalReason,
+				);
+				incrementNestedCount(
+					metrics.postflop.marginalActionByReason,
+					decision.marginalReason,
+					decision.action,
+				);
+			}
+			if (decision.action === "raise") {
+				metrics.postflop.marginalRaiseCount += 1;
+			}
+			if (getPostflopStreet(decision) === "river" && decision.action === "call") {
+				metrics.postflop.marginalRiverCallCount += 1;
+			}
+			if (decision.pressureTag === "FR" && decision.action === "call") {
+				metrics.postflop.marginalFacingRaiseCallCount += 1;
+			}
 		}
 		if (decision.noBet) {
 			const checkedToClass = decision.noBetClass ?? "unknown";
@@ -2470,6 +2506,16 @@ async function main() {
 			`postflop_weak_no_bet_raises=${
 				aggregateMetrics.postflop.weakNoBetOpportunityActions.raise || 0
 			}`,
+		);
+		console.log(
+			`marginal_actions=${JSON.stringify(aggregateMetrics.postflop.marginalActions)}`,
+		);
+		console.log(`marginal_raises=${aggregateMetrics.postflop.marginalRaiseCount}`);
+		console.log(
+			`marginal_river_calls=${aggregateMetrics.postflop.marginalRiverCallCount}`,
+		);
+		console.log(
+			`marginal_facing_raise_calls=${aggregateMetrics.postflop.marginalFacingRaiseCallCount}`,
 		);
 		console.log(`kicker_raises=${aggregateMetrics.kickerRaiseCount}`);
 		console.log(`meaningful_raises=${aggregateMetrics.meaningfulRaiseCount}`);

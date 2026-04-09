@@ -853,13 +853,15 @@ function shouldBlockRiverLowEdgeCall({
 	needsToCall,
 	communityCards,
 	hasPrivateRaiseEdge,
+	isMarginalEdgeHand,
+	activeOpponents,
+	raiseLevel,
 	rawHandRank,
 	publicHandRank,
 }) {
 	if (
 		communityCards.length !== 5 || !needsToCall ||
-		decision.action !== "call" ||
-		hasPrivateRaiseEdge
+		decision.action !== "call"
 	) {
 		return false;
 	}
@@ -867,7 +869,13 @@ function shouldBlockRiverLowEdgeCall({
 	const protectedBoardPlay = rawHandRank === publicHandRank &&
 		publicHandRank >= RIVER_SPLIT_PROTECTED_PUBLIC_RANK_MIN;
 
-	return !protectedBoardPlay;
+	if (protectedBoardPlay) {
+		return false;
+	}
+	if (isMarginalEdgeHand && (activeOpponents > 1 || raiseLevel >= 2)) {
+		return true;
+	}
+	return !hasPrivateRaiseEdge;
 }
 
 function classifyNoBetOpportunity({
@@ -882,6 +890,7 @@ function classifyNoBetOpportunity({
 	headsUp,
 	isLastToAct,
 	previousStreetCheckedThrough,
+	isMarginalMadeHand,
 }) {
 	const strongDrawAutoValue = drawOuts >= 8 &&
 		(headsUp || isLastToAct || previousStreetCheckedThrough ||
@@ -902,7 +911,10 @@ function classifyNoBetOpportunity({
 	if (rawHandRank <= 1 || (liftType === "none" && !hasPrivateMadeHand)) {
 		return "probe";
 	}
-	return "marginal-made";
+	if (isMarginalMadeHand) {
+		return "marginal-made";
+	}
+	return "probe";
 }
 
 function hasAggroBehind(playersBehind, behindRead, behindHasShowdownStrong) {
@@ -1254,6 +1266,28 @@ export function chooseBotAction(player, gameState) {
 	const isDraw = drawOuts >= 8;
 	const isWeakDraw = drawOuts > 0 && drawOuts < 8;
 	const isDeadHand = !preflop && !isMadeHand && !isDraw && !isWeakDraw;
+	const isMarginalMadeHand = !preflop && isMadeHand &&
+		edge >= 0.20 && edge < 0.80 &&
+		rawHandRank <= 3;
+	const isMarginalWeakDraw = !preflop && isWeakDraw &&
+		edge >= 0.05 && edge < 0.30;
+	const isMarginalEdgeHand = isMarginalMadeHand || isMarginalWeakDraw;
+	const marginalReason = isMarginalMadeHand
+		? "made"
+		: isMarginalWeakDraw
+		? "weak-draw"
+		: null;
+	const streetIndex = communityCards.length === 3
+		? 1
+		: communityCards.length === 4
+		? 2
+		: communityCards.length === 5
+		? 3
+		: 0;
+	const raiseLevel = facingRaise && raisesThisRound > 0
+		? Math.max(0, raisesThisRound)
+		: 0;
+	const isCheckedToSpot = !preflop && currentBet === 0;
 
 	// Normalize strength to [0,1]
 	// preflop score and postflop rank both live roughly in 0..10, so /10 is intentional
@@ -1386,16 +1420,6 @@ export function chooseBotAction(player, gameState) {
 		}
 		callBarrierAdj = Math.max(-0.04, Math.min(0.04, callBarrierAdj));
 
-		const streetIndex = communityCards.length === 3
-			? 1
-			: communityCards.length === 4
-			? 2
-			: communityCards.length === 5
-			? 3
-			: 0;
-		const raiseLevelForCalls = facingRaise && raisesThisRound > 0
-			? raisesThisRound
-			: 0;
 		const streetPressure = needsToCall ? streetIndex * 0.01 : 0;
 		const weakDrawPressure = needsToCall && isWeakDraw
 			? streetIndex * 0.01
@@ -1403,7 +1427,35 @@ export function chooseBotAction(player, gameState) {
 		const deadHandPressure = needsToCall && isDeadHand
 			? streetIndex * 0.02
 			: 0;
-		const barrelPressure = needsToCall ? raiseLevelForCalls * 0.02 : 0;
+		const barrelPressure = needsToCall ? raiseLevel * 0.02 : 0;
+		let marginalCallAdj = 0;
+		if (needsToCall && isMarginalEdgeHand) {
+			if (spotContext.headsUp && raiseLevel === 0 && streetIndex < 3) {
+				marginalCallAdj -= 0.02;
+			}
+			if (raiseLevel >= 1) {
+				marginalCallAdj += 0.03;
+			}
+			if (!spotContext.headsUp) {
+				marginalCallAdj += 0.02;
+			}
+			if (textureRisk > 0.6) {
+				marginalCallAdj += 0.02;
+			}
+			if (streetIndex === 3) {
+				marginalCallAdj += 0.03;
+			}
+			if (isMarginalMadeHand && streetIndex === 2 && !spotContext.headsUp) {
+				marginalCallAdj += 0.02;
+			}
+			if (
+				isMarginalMadeHand && streetIndex >= 2 &&
+				raiseLevel >= 1 &&
+				edge < 0.55
+			) {
+				marginalCallAdj += 0.02;
+			}
+		}
 
 		const potOddsAdj = needsToCall
 			? Math.max(-0.12, Math.min(0.08, (0.25 - potOdds) * 0.6))
@@ -1416,8 +1468,8 @@ export function chooseBotAction(player, gameState) {
 		}
 		const commitmentShift = needsToCall ? commitmentPenalty * 0.8 : 0;
 
-		callBarrier = callBarrierBase + callBarrierAdj + potOddsShift +
-			commitmentShift;
+		callBarrier = callBarrierBase + callBarrierAdj + marginalCallAdj +
+			potOddsShift + commitmentShift;
 		callBarrier += streetPressure + weakDrawPressure + deadHandPressure +
 			barrelPressure;
 		if (needsToCall && isDeadHand) {
@@ -1432,7 +1484,7 @@ export function chooseBotAction(player, gameState) {
 			if (streetIndex >= 2) {
 				callBarrier = 1;
 			} else if (
-				streetIndex === 1 && (potOdds > 0.18 || raiseLevelForCalls > 0)
+				streetIndex === 1 && (potOdds > 0.18 || raiseLevel > 0)
 			) {
 				callBarrier = 1;
 			}
@@ -1940,23 +1992,42 @@ export function chooseBotAction(player, gameState) {
 		}
 		raiseAdj = Math.max(-0.5, Math.min(0.5, raiseAdj));
 		raiseThreshold += raiseAdj;
+		if (isMarginalEdgeHand) {
+			let marginalRaiseAdj = 0.30;
+			if (!spotContext.headsUp) {
+				marginalRaiseAdj += 0.15;
+			}
+			if (streetIndex === 3) {
+				marginalRaiseAdj += 0.20;
+			}
+			if (raiseLevel >= 1) {
+				marginalRaiseAdj += 0.20;
+			}
+			if (
+				isCheckedToSpot &&
+				(spotContext.headsUp || isLastToAct) &&
+				previousStreetCheckedThrough &&
+				streetIndex > 0 &&
+				streetIndex < 3
+			) {
+				marginalRaiseAdj -= 0.10;
+			}
+			raiseThreshold += marginalRaiseAdj;
+		}
 		raiseThreshold = Math.max(1.4, raiseThreshold);
 	}
-		const raiseLevel = (facingRaise && raisesThisRound > 0)
-			? Math.max(0, raisesThisRound)
-			: 0;
-		raiseThreshold += raiseLevel * RERAISE_RATIO_STEP * 10;
-		if (!preflop && raiseLevel > 0) {
-			raiseThreshold += getReraiseInvestmentThresholdAdj(
-				handInvestmentRatio,
-				edge,
-			);
-			raiseThreshold += getPostflopReraiseThresholdAdj(
-				raiseLevel,
-				edge,
-			);
-		}
-		const betAggFactor = Math.max(0.9, Math.min(1.1, aggressiveness));
+	raiseThreshold += raiseLevel * RERAISE_RATIO_STEP * 10;
+	if (!preflop && raiseLevel > 0) {
+		raiseThreshold += getReraiseInvestmentThresholdAdj(
+			handInvestmentRatio,
+			edge,
+		);
+		raiseThreshold += getPostflopReraiseThresholdAdj(
+			raiseLevel,
+			edge,
+		);
+	}
+	const betAggFactor = Math.max(0.9, Math.min(1.1, aggressiveness));
 	const shoveAggAdj = Math.max(
 		-0.08,
 		Math.min(0.08, (aggressiveness - 1) * 0.12),
@@ -2284,7 +2355,6 @@ export function chooseBotAction(player, gameState) {
 		isStab = false;
 	}
 
-	const isCheckedToSpot = !preflop && currentBet === 0;
 	const isNoBetOpportunity = isCheckedToSpot && canRaise;
 	const noBetClass = isCheckedToSpot
 		? classifyNoBetOpportunity({
@@ -2299,6 +2369,7 @@ export function chooseBotAction(player, gameState) {
 			headsUp: spotContext.headsUp,
 			isLastToAct,
 			previousStreetCheckedThrough,
+			isMarginalMadeHand,
 		})
 		: null;
 	const noBetInitialAction = isCheckedToSpot ? decision.action : null;
@@ -2385,6 +2456,9 @@ export function chooseBotAction(player, gameState) {
 			needsToCall,
 			communityCards,
 			hasPrivateRaiseEdge,
+			isMarginalEdgeHand,
+			activeOpponents,
+			raiseLevel,
 			rawHandRank,
 			publicHandRank,
 		})
@@ -2560,6 +2634,8 @@ export function chooseBotAction(player, gameState) {
 		stab: isStab,
 		bluff: isBluff,
 		hasPrivateMadeHand,
+		marginalEdge: isMarginalEdgeHand,
+		marginalReason,
 		edge: toRoundedNumber(edge, 4),
 		hasPrivateRaiseEdge,
 		nonValueBlocked: nonValueAggressionBlocked,
@@ -2623,7 +2699,8 @@ export function chooseBotAction(player, gameState) {
 				`PMH:${hasPrivateMadeHand ? "Y" : "N"} Edge:${
 					edge.toFixed(4)
 				} ` +
-				`PRE:${hasPrivateRaiseEdge ? "Y" : "N"} | ` +
+				`PRE:${hasPrivateRaiseEdge ? "Y" : "N"} ` +
+				`ME:${isMarginalEdgeHand ? "Y" : "N"} MR:${marginalReason ?? "-"} | ` +
 				`NVB:${nonValueAggressionBlocked ? "Y" : "N"} | ` +
 				`CL:${amChipleader ? "Y" : "N"} SS:${
 					shortstackRelative ? "Y" : "N"
