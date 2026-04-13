@@ -8,7 +8,9 @@
 	},
 	"tasks": {
 		"speedmode": "deno run --allow-env=CHROME_BIN --allow-net=127.0.0.1,localhost --allow-read=. --allow-write=.,/tmp --allow-run ./scripts/speedmodeBatch.js",
-		"speedmode:10": "deno run --allow-env=CHROME_BIN --allow-net=127.0.0.1,localhost --allow-read=. --allow-write=.,/tmp --allow-run ./scripts/speedmodeBatch.js --runs=10"
+		"speedmode:10": "deno run --allow-env=CHROME_BIN --allow-net=127.0.0.1,localhost --allow-read=. --allow-write=.,/tmp --allow-run ./scripts/speedmodeBatch.js --runs=10",
+		"speedmode:30": "deno run --allow-env=CHROME_BIN --allow-net=127.0.0.1,localhost --allow-read=. --allow-write=.,/tmp --allow-run ./scripts/speedmodeBatch.js --runs=30",
+		"speedmode:100": "deno run --allow-env=CHROME_BIN --allow-net=127.0.0.1,localhost --allow-read=. --allow-write=.,/tmp --allow-run ./scripts/speedmodeBatch.js --runs=100"
 	},
 	"lint": {
 		"rules": {

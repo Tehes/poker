@@ -171,6 +171,13 @@ Core principles:
 - **Board texture and draw equity**  
   Wet boards increase protection and reduce bluffing; dry boards enable more aggression.
 
+- **Balanced bluffing and bluff-catching**  
+  Bots do not only wait for value. They mix in bluffs and defend thin bluff-catch spots often enough to avoid becoming trivially exploitable.
+
+- **Marginal hands stay playable**  
+  Thin showdown hands, small made hands, and weaker draws are handled more carefully instead of
+  collapsing into automatic folds or automatic aggression.
+
 - **Controlled initiative (checked-to play)**  
   When no one bets, bots selectively take the lead depending on position, board context, and opponent behavior.  
   Weak or risky spots are filtered out to avoid over-aggression.

@@ -18,7 +18,11 @@ MODULE BOUNDARY: Main Table Runtime
 Imports
 ---------------------------------------------------------------------------------------------------*/
 
-import { chooseBotAction, enqueueBotAction, setBotPlaybackFast } from "./bot.js";
+import {
+	chooseBotAction,
+	enqueueBotAction,
+	setBotPlaybackFast,
+} from "./bot.js";
 import {
 	calculateWinProbabilities,
 	createHandContextState,
@@ -43,9 +47,15 @@ import {
 	trackUsedCard,
 } from "./gameEngine.js";
 import QrCreator from "./qr-creator.js";
-import { getActionButtonLabel, getPlayerActionState } from "./shared/actionModel.js";
+import {
+	getActionButtonLabel,
+	getPlayerActionState,
+} from "./shared/actionModel.js";
 import { createHumanTurnController } from "./shared/humanTurnController.js";
-import { buildPublicPlayerView, buildSyncView } from "./shared/syncViewModel.js";
+import {
+	buildPublicPlayerView,
+	buildSyncView,
+} from "./shared/syncViewModel.js";
 import {
 	clearChipTransferAnimation,
 	renderChipStacks,
@@ -71,12 +81,16 @@ const notification = document.querySelector("#notification");
 const foldButton = document.querySelector("#fold-button");
 const actionButton = document.querySelector("#action-button");
 const amountControls = document.querySelector("#amount-controls");
-const amountDecrementButton = document.querySelector("#amount-decrement-button");
+const amountDecrementButton = document.querySelector(
+	"#amount-decrement-button",
+);
 const statsButton = document.querySelector("#stats-button");
 const logButton = document.querySelector("#log-button");
 const fastForwardButton = document.querySelector("#fast-forward-button");
 const potEl = document.getElementById("pot");
-const communityCardSlots = document.querySelectorAll("#community-cards .cardslot");
+const communityCardSlots = document.querySelectorAll(
+	"#community-cards .cardslot",
+);
 const tableRenderTarget = {
 	potEl,
 	chipTransferTimer: null,
@@ -94,12 +108,19 @@ const versionOverlay = document.querySelector("#version-overlay");
 const versionCloseButton = document.querySelector("#version-close-button");
 const versionList = document.querySelector("#version-list");
 const instructionsOverlay = document.querySelector("#instructions-overlay");
-const instructionsCloseButton = document.querySelector("#instructions-close-button");
+const instructionsCloseButton = document.querySelector(
+	"#instructions-close-button",
+);
 const logList = document.querySelector("#log-list");
 const amountSlider = document.querySelector("#amount-slider");
-const amountIncrementButton = document.querySelector("#amount-increment-button");
+const amountIncrementButton = document.querySelector(
+	"#amount-increment-button",
+);
 const sliderOutput = document.querySelector("output");
-const seatRefs = Array.from(document.querySelectorAll(".seat")).map((seatEl, seatSlot) => ({
+const seatRefs = Array.from(document.querySelectorAll(".seat")).map((
+	seatEl,
+	seatSlot,
+) => ({
 	seatSlot,
 	seatEl,
 	nameEl: seatEl.querySelector("h3"),
@@ -166,8 +187,11 @@ const HISTORY_LOG = false; // Set to true to enable history logging in the conso
 let DEBUG_FLOW = false; // Set to true for verbose game-flow logging
 const CHIP_UNIT = 10;
 
-const speedModeParam = new URLSearchParams(globalThis.location.search).get("speedmode");
-const SPEED_MODE = speedModeParam !== null && speedModeParam !== "0" && speedModeParam !== "false";
+const speedModeParam = new URLSearchParams(globalThis.location.search).get(
+	"speedmode",
+);
+const SPEED_MODE = speedModeParam !== null && speedModeParam !== "0" &&
+	speedModeParam !== "false";
 if (SPEED_MODE) {
 	NOTIF_INTERVAL = 0;
 	ACTION_LABEL_DURATION = 0;
@@ -208,7 +232,11 @@ const WINNER_REACTION_EMOJIS = {
 	bigPot: ["🤑"],
 	fallback: ["🙂", "😊"],
 };
-const WINNER_REACTION_MONSTER_HANDS = new Set(["Full House", "Four of a Kind", "Straight Flush"]);
+const WINNER_REACTION_MONSTER_HANDS = new Set([
+	"Full House",
+	"Four of a Kind",
+	"Straight Flush",
+]);
 const WINNER_REACTION_STRONG_HANDS = new Set(["Straight", "Flush"]);
 const CARD_SUIT_SYMBOLS = {
 	C: "♣",
@@ -341,7 +369,8 @@ function buildSpeedmodePayoutBySeatIndex(totalPayoutByPlayer) {
 }
 
 function createPageUrl(pageName) {
-	const base = globalThis.location.origin + globalThis.location.pathname.replace(/[^/]*$/, "");
+	const base = globalThis.location.origin +
+		globalThis.location.pathname.replace(/[^/]*$/, "");
 	return new URL(`${base}${pageName}`);
 }
 
@@ -413,11 +442,19 @@ function bindSeatRefPlayer(player) {
 		return;
 	}
 	seatRef.clearActionLabelState = () => clearPlayerActionState(player);
-	seatRef.clearWinnerReactionState = () => clearPlayerWinnerReactionState(player);
+	seatRef.clearWinnerReactionState = () =>
+		clearPlayerWinnerReactionState(player);
 }
 
-function buildPlayerSeatState(player, communityCards = getCommunityCardCodes()) {
-	const publicPlayerView = buildPublicPlayerView(player, communityCards, gameState);
+function buildPlayerSeatState(
+	player,
+	communityCards = getCommunityCardCodes(),
+) {
+	const publicPlayerView = buildPublicPlayerView(
+		player,
+		communityCards,
+		gameState,
+	);
 	const winProbabilityLabel = publicPlayerView.showWinProbability &&
 			typeof publicPlayerView.winProbability === "number"
 		? `${Math.round(publicPlayerView.winProbability)}%`
@@ -694,12 +731,21 @@ function renderStatsOverlay() {
 		row.appendChild(createStatsCell("td", player.stats.hands));
 		row.appendChild(createStatsCell("td", player.stats.handsWon));
 		row.appendChild(
-			createStatsCell("td", formatPercent(player.stats.handsWon, player.stats.hands)),
+			createStatsCell(
+				"td",
+				formatPercent(player.stats.handsWon, player.stats.hands),
+			),
 		);
 		row.appendChild(createStatsCell("td", player.stats.showdowns));
 		row.appendChild(createStatsCell("td", player.stats.showdownsWon));
 		row.appendChild(
-			createStatsCell("td", formatPercent(player.stats.showdownsWon, player.stats.showdowns)),
+			createStatsCell(
+				"td",
+				formatPercent(
+					player.stats.showdownsWon,
+					player.stats.showdowns,
+				),
+			),
 		);
 		row.appendChild(createStatsCell("td", player.stats.folds));
 		row.appendChild(createStatsCell("td", player.stats.foldsPreflop));
@@ -851,7 +897,11 @@ function getPlayerActionNotificationText(playerName, actionName, amount = 0) {
 	}
 }
 
-function logSkippedPlayerActionProbability(player, action, skipProbabilityLogReason) {
+function logSkippedPlayerActionProbability(
+	player,
+	action,
+	skipProbabilityLogReason,
+) {
 	switch (skipProbabilityLogReason) {
 		case "allin-runout-preflop":
 			logFlow("winProbability: preflop all-in runout pending", {
@@ -860,7 +910,9 @@ function logSkippedPlayerActionProbability(player, action, skipProbabilityLogRea
 			});
 			break;
 		case "fold-preflop":
-			logFlow("winProbability: preflop fold skipped", { name: player.name });
+			logFlow("winProbability: preflop fold skipped", {
+				name: player.name,
+			});
 			break;
 	}
 }
@@ -1001,7 +1053,10 @@ function resetRuntimeFastForward() {
 }
 
 function activateFastForward() {
-	if (!gameState.handInProgress || handFastForwardActive || autoplayToGameEnd || SPEED_MODE) {
+	if (
+		!gameState.handInProgress || handFastForwardActive ||
+		autoplayToGameEnd || SPEED_MODE
+	) {
 		return;
 	}
 	handFastForwardActive = true;
@@ -1035,8 +1090,10 @@ function getHandsPlayedBucket(handCount) {
 }
 
 function getExitCounts() {
-	const humansWithChipsAtExit = gameState.players.filter((p) => !p.isBot && p.chips > 0).length;
-	const botsWithChipsAtExit = gameState.players.filter((p) => p.isBot && p.chips > 0).length;
+	const humansWithChipsAtExit =
+		gameState.players.filter((p) => !p.isBot && p.chips > 0).length;
+	const botsWithChipsAtExit =
+		gameState.players.filter((p) => p.isBot && p.chips > 0).length;
 	return { humansWithChipsAtExit, botsWithChipsAtExit };
 }
 
@@ -1052,7 +1109,9 @@ function trackUnfinishedExit() {
 		return;
 	}
 	const { humansWithChipsAtExit, botsWithChipsAtExit } = getExitCounts();
-	const exitCategory = humansWithChipsAtExit === 0 ? "last_human_bust" : "humans_left_with_chips";
+	const exitCategory = humansWithChipsAtExit === 0
+		? "last_human_bust"
+		: "humans_left_with_chips";
 	exitEventSent = true;
 	globalThis.umami?.track("Poker", {
 		finished: false,
@@ -1104,16 +1163,22 @@ function initStateSyncForGame() {
 	}
 
 	const tableUrl = new URL(globalThis.location.href);
-	tableId = tableUrl.searchParams.get("tableId") || Math.random().toString(36).slice(2, 8);
+	tableId = tableUrl.searchParams.get("tableId") ||
+		Math.random().toString(36).slice(2, 8);
 	syncTableUrlWithState();
 }
 
 function createTurnToken() {
-	return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+	return `${Date.now().toString(36)}${
+		Math.random().toString(36).slice(2, 8)
+	}`;
 }
 
 function setPendingAction(player) {
-	if (!hasStateSyncEnabled() || !player || player.isBot || player.folded || player.allIn) {
+	if (
+		!hasStateSyncEnabled() || !player || player.isBot || player.folded ||
+		player.allIn
+	) {
 		if (gameState.pendingAction !== null) {
 			gameState.pendingAction = null;
 			queueStateSync(0);
@@ -1151,9 +1216,9 @@ async function fetchPendingRemoteAction(turnToken) {
 	}
 
 	try {
-		const url = `${ACTION_SYNC_ENDPOINT}?tableId=${encodeURIComponent(tableId)}&turnToken=${
-			encodeURIComponent(turnToken)
-		}`;
+		const url = `${ACTION_SYNC_ENDPOINT}?tableId=${
+			encodeURIComponent(tableId)
+		}&turnToken=${encodeURIComponent(turnToken)}`;
 		const res = await fetch(url, {
 			cache: "no-store",
 		});
@@ -1355,16 +1420,23 @@ function triggerMainPotWinnerReactions(context) {
 
 function updateHandStrengthDisplays() {
 	const communityCards = getCommunityCardCodes();
-	gameState.players.forEach((player) => renderPlayerSeat(player, communityCards));
+	gameState.players.forEach((player) =>
+		renderPlayerSeat(player, communityCards)
+	);
 }
 
 function updateWinProbabilityDisplays() {
 	const communityCards = getCommunityCardCodes();
-	gameState.players.forEach((player) => renderPlayerSeat(player, communityCards));
+	gameState.players.forEach((player) =>
+		renderPlayerSeat(player, communityCards)
+	);
 }
 
 function computeSpectatorWinProbabilities(reason = "") {
-	if (!gameState.spectatorMode && !isAllInRunout(gameState.players, gameState.currentBet)) {
+	if (
+		!gameState.spectatorMode &&
+		!isAllInRunout(gameState.players, gameState.currentBet)
+	) {
 		return;
 	}
 	if (gameState.currentPhaseIndex === 0) {
@@ -1392,7 +1464,11 @@ function computeSpectatorWinProbabilities(reason = "") {
 	gameState.players.forEach((p) => {
 		p.winProbability = p.folded ? 0 : null;
 	});
-	const result = calculateWinProbabilities(gameState.players, communityCards, gameState.deck);
+	const result = calculateWinProbabilities(
+		gameState.players,
+		communityCards,
+		gameState.deck,
+	);
 
 	if (result.status === "invalid_board") {
 		logFlow("winProbability: invalid board state", {
@@ -1605,7 +1681,9 @@ function updateBlindLevelForCurrentHand() {
 	}
 
 	let nextBigBlind = gameState.bigBlind;
-	for (let level = gameState.blindLevel + 1; level <= nextBlindLevel; level++) {
+	for (
+		let level = gameState.blindLevel + 1; level <= nextBlindLevel; level++
+	) {
 		nextBigBlind = getBigBlindForLevel(level, nextBigBlind);
 	}
 
@@ -1618,7 +1696,9 @@ function updateBlindLevelForCurrentHand() {
 	gameState.smallBlind = nextSmallBlind;
 
 	if (blindsChanged) {
-		enqueueNotification(`Blinds are now ${gameState.smallBlind}/${gameState.bigBlind}.`);
+		enqueueNotification(
+			`Blinds are now ${gameState.smallBlind}/${gameState.bigBlind}.`,
+		);
 	}
 }
 
@@ -1631,15 +1711,23 @@ function setBlinds() {
 		clearPlayerRole(p, "big-blind");
 	});
 	// Post blinds for Pre-Flop and set currentBet
-	const { smallBlindIndex: sbIdx, bigBlindIndex: bbIdx } = getBlindSeatIndexes(
-		gameState.players.length,
-	);
+	const { smallBlindIndex: sbIdx, bigBlindIndex: bbIdx } =
+		getBlindSeatIndexes(
+			gameState.players.length,
+		);
 
-	const sbBet = placePlayerBet(gameState.players[sbIdx], gameState.smallBlind);
+	const sbBet = placePlayerBet(
+		gameState.players[sbIdx],
+		gameState.smallBlind,
+	);
 	const bbBet = placePlayerBet(gameState.players[bbIdx], gameState.bigBlind);
 
-	enqueueNotification(`${gameState.players[sbIdx].name} posted small blind of ${sbBet}.`);
-	enqueueNotification(`${gameState.players[bbIdx].name} posted big blind of ${bbBet}.`);
+	enqueueNotification(
+		`${gameState.players[sbIdx].name} posted small blind of ${sbBet}.`,
+	);
+	enqueueNotification(
+		`${gameState.players[bbIdx].name} posted big blind of ${bbBet}.`,
+	);
 
 	// Add blinds to the pot
 	addToPot(sbBet + bbBet);
@@ -1656,11 +1744,18 @@ function dealCards() {
 	shuffleArray(gameState.deck);
 
 	for (const player of gameState.players) {
-		const card1 = trackUsedCard(gameState.cardGraveyard, takeDeckCard(gameState.deck));
-		const card2 = trackUsedCard(gameState.cardGraveyard, takeDeckCard(gameState.deck));
+		const card1 = trackUsedCard(
+			gameState.cardGraveyard,
+			takeDeckCard(gameState.deck),
+		);
+		const card2 = trackUsedCard(
+			gameState.cardGraveyard,
+			takeDeckCard(gameState.deck),
+		);
 		setPlayerHoleCards(player, [card1, card2]);
 
-		const showCards = gameState.spectatorMode || (!player.isBot && gameState.openCardsMode);
+		const showCards = gameState.spectatorMode ||
+			(!player.isBot && gameState.openCardsMode);
 		setPlayerVisibleHoleCards(player, [showCards, showCards]);
 
 		if (!player.isBot) {
@@ -1707,7 +1802,14 @@ function preFlop() {
 		p.isWinner = false;
 		clearPlayerWinnerReaction(p);
 		renderPlayerWinnerState(p, false);
-		removePlayerSeatClasses(p, "folded", "called", "raised", "checked", "allin");
+		removePlayerSeatClasses(
+			p,
+			"folded",
+			"called",
+			"raised",
+			"checked",
+			"allin",
+		);
 		setPlayerHoleCards(p, [null, null]);
 		hidePlayerHoleCards(p);
 		hidePlayerQr(p);
@@ -1810,7 +1912,9 @@ function preFlop() {
 		blindLevel: gameState.blindLevel,
 		smallBlind: gameState.smallBlind,
 		bigBlind: gameState.bigBlind,
-		dealerSeatIndex: gameState.players.find((player) => player.dealer)?.seatIndex ?? null,
+		dealerSeatIndex: gameState.players.find((player) =>
+			player.dealer
+		)?.seatIndex ?? null,
 		communityCards: [],
 		players: handStartPlayers,
 	});
@@ -1829,20 +1933,28 @@ function dealCommunityCards(amount) {
 	trackUsedCard(gameState.cardGraveyard, takeDeckCard(gameState.deck)); // burn
 	const dealtCards = [];
 	for (let i = 0; i < amount; i++) {
-		const card = trackUsedCard(gameState.cardGraveyard, takeDeckCard(gameState.deck));
+		const card = trackUsedCard(
+			gameState.cardGraveyard,
+			takeDeckCard(gameState.deck),
+		);
 		if (card) {
 			dealtCards.push(card);
 		}
 	}
 	appendCommunityCards(dealtCards);
 	updateHandStrengthDisplays();
-	if (gameState.spectatorMode || isAllInRunout(gameState.players, gameState.currentBet)) {
+	if (
+		gameState.spectatorMode ||
+		isAllInRunout(gameState.players, gameState.currentBet)
+	) {
 		computeSpectatorWinProbabilities("dealCommunityCards");
 	}
 }
 
 function setPhase() {
-	logFlow("setPhase", { phase: getCurrentPhase(gameState.currentPhaseIndex) });
+	logFlow("setPhase", {
+		phase: getCurrentPhase(gameState.currentPhaseIndex),
+	});
 	// EARLY EXIT: If only one player remains, skip straight to showdown
 	const activePlayers = gameState.players.filter((p) => !p.folded);
 	if (activePlayers.length <= 1) {
@@ -1851,7 +1963,8 @@ function setPhase() {
 
 	const completedPhase = getCurrentPhase(gameState.currentPhaseIndex);
 	if (gameState.handContext && gameState.currentPhaseIndex > 0) {
-		const checkedThrough = gameState.handContext.streetAggressorSeatIndex === null;
+		const checkedThrough =
+			gameState.handContext.streetAggressorSeatIndex === null;
 		if (completedPhase === "flop") {
 			gameState.handContext.flopCheckedThrough = checkedThrough;
 		} else if (completedPhase === "turn") {
@@ -1886,7 +1999,10 @@ function setPhase() {
 function queueRunoutPhaseAdvance(reason = "") {
 	humanTurnController.hide();
 	const runoutPhaseDelay = getRunoutPhaseDelay();
-	if (!isAllInRunout(gameState.players, gameState.currentBet) || runoutPhaseDelay === 0) {
+	if (
+		!isAllInRunout(gameState.players, gameState.currentBet) ||
+		runoutPhaseDelay === 0
+	) {
 		return setPhase();
 	}
 	if (runoutPhaseTimer) {
@@ -1912,14 +2028,22 @@ function notifyPlayerAction(player, action = "", amount = 0, actionMeta = {}) {
 
 	const msg = getPlayerActionNotificationText(player.name, action, amount);
 	if (action) {
-		setPlayerActionState(player, action, Date.now() + getActionLabelDuration());
+		setPlayerActionState(
+			player,
+			action,
+			Date.now() + getActionLabelDuration(),
+		);
 	} else {
 		clearPlayerActionState(player);
 	}
 
 	renderPlayerResolvedAction(player);
 
-	const followUpEffects = getPlayerActionFollowUpEffects(gameState, player, action);
+	const followUpEffects = getPlayerActionFollowUpEffects(
+		gameState,
+		player,
+		action,
+	);
 	if (followUpEffects.clearWinProbability) {
 		player.winProbability = 0;
 	}
@@ -1931,7 +2055,11 @@ function notifyPlayerAction(player, action = "", amount = 0, actionMeta = {}) {
 	if (followUpEffects.recomputeSpectatorWinProbabilities) {
 		computeSpectatorWinProbabilities(followUpEffects.probabilityReason);
 	} else if (followUpEffects.skipProbabilityLogReason) {
-		logSkippedPlayerActionProbability(player, action, followUpEffects.skipProbabilityLogReason);
+		logSkippedPlayerActionProbability(
+			player,
+			action,
+			followUpEffects.skipProbabilityLogReason,
+		);
 	}
 	queueStateSync(0);
 	updateFastForwardButton();
@@ -1939,7 +2067,9 @@ function notifyPlayerAction(player, action = "", amount = 0, actionMeta = {}) {
 }
 
 function setActiveTurnPlayer(player) {
-	document.querySelectorAll(".seat").forEach((seat) => seat.classList.remove("active"));
+	document.querySelectorAll(".seat").forEach((seat) =>
+		seat.classList.remove("active")
+	);
 	addPlayerSeatClasses(player, "active");
 	if (gameState.activeSeatIndex !== player.seatIndex) {
 		gameState.activeSeatIndex = player.seatIndex;
@@ -1948,7 +2078,9 @@ function setActiveTurnPlayer(player) {
 }
 
 function clearActiveTurnPlayer(sync = true) {
-	document.querySelectorAll(".seat").forEach((seat) => seat.classList.remove("active"));
+	document.querySelectorAll(".seat").forEach((seat) =>
+		seat.classList.remove("active")
+	);
 	if (gameState.activeSeatIndex === null) {
 		return;
 	}
@@ -2008,20 +2140,32 @@ function applyTurnAction(player, actionRequest) {
 	switch (actionRequest.action) {
 		case "fold":
 			player.folded = true;
-			notifyPlayerAction(player, "fold", 0, { aggressive: false, voluntary: false });
+			notifyPlayerAction(player, "fold", 0, {
+				aggressive: false,
+				voluntary: false,
+			});
 			hidePlayerQr(player);
 			return { action: "fold", amount: 0 };
 		case "check":
-			notifyPlayerAction(player, "check", 0, { aggressive: false, voluntary: false });
+			notifyPlayerAction(player, "check", 0, {
+				aggressive: false,
+				voluntary: false,
+			});
 			return { action: "check", amount: 0 };
 		case "call": {
-			const callAmount = Math.min(player.chips, currentActionState.needToCall);
+			const callAmount = Math.min(
+				player.chips,
+				currentActionState.needToCall,
+			);
 			if (
 				callAmount === player.chips &&
 				player.chips > 0 &&
 				currentActionState.needToCall > 0
 			) {
-				return applyTurnAction(player, { action: "allin", amount: player.chips });
+				return applyTurnAction(player, {
+					action: "allin",
+					amount: player.chips,
+				});
 			}
 			const actual = placePlayerBet(player, callAmount);
 			addToPot(actual);
@@ -2040,7 +2184,10 @@ function applyTurnAction(player, actionRequest) {
 				gameState.lastRaise = actual - currentActionState.needToCall;
 				gameState.raisesThisRound++;
 			} else if (actual >= currentActionState.needToCall) {
-				gameState.currentBet = Math.max(gameState.currentBet, player.roundBet);
+				gameState.currentBet = Math.max(
+					gameState.currentBet,
+					player.roundBet,
+				);
 			}
 			notifyPlayerAction(player, "allin", actual, {
 				aggressive: isAggressiveAllIn,
@@ -2057,7 +2204,10 @@ function applyTurnAction(player, actionRequest) {
 				bet = Math.min(player.chips, currentActionState.minRaise);
 			}
 			if (bet >= player.chips && player.chips > 0) {
-				return applyTurnAction(player, { action: "allin", amount: player.chips });
+				return applyTurnAction(player, {
+					action: "allin",
+					amount: player.chips,
+				});
 			}
 			const actual = placePlayerBet(player, bet);
 			if (actual > currentActionState.needToCall) {
@@ -2089,7 +2239,10 @@ function normalizeBotActionRequest(player, decision) {
 		case "check":
 			return { action: decision.action };
 		case "call":
-			return { action: "call", amount: Math.min(player.chips, actionState.needToCall) };
+			return {
+				action: "call",
+				amount: Math.min(player.chips, actionState.needToCall),
+			};
 		case "raise": {
 			let amount = Number.parseInt(decision.amount, 10);
 			if (Number.isNaN(amount)) {
@@ -2124,7 +2277,9 @@ function runBotTurn({ player, cycles, anyUncalled, nextPlayer }) {
 			const fallbackActionState = getPlayerActionState(gameState, player);
 			resolvedAction = applyTurnAction(
 				player,
-				fallbackActionState.canCheck ? { action: "check" } : { action: "fold" },
+				fallbackActionState.canCheck
+					? { action: "check" }
+					: { action: "fold" },
 			);
 		}
 		continueAfterResolvedTurn({
@@ -2159,7 +2314,9 @@ function startBettingRound() {
 	});
 	// Clear action indicators from the previous betting round
 	clearActiveTurnPlayer(false);
-	gameState.players.forEach((p) => removePlayerSeatClasses(p, "checked", "called", "raised"));
+	gameState.players.forEach((p) =>
+		removePlayerSeatClasses(p, "checked", "called", "raised")
+	);
 	clearPendingAction();
 
 	// --- Early Exit Checks -------------------------------------------------------
@@ -2178,9 +2335,15 @@ function startBettingRound() {
 
 	// --- Start Index -------------------------------------------------------------
 	// 2) Determine start index
-	const startIdx = getBettingRoundStartIndex(gameState.players, gameState.currentPhaseIndex);
+	const startIdx = getBettingRoundStartIndex(
+		gameState.players,
+		gameState.currentPhaseIndex,
+	);
 
-	logFlow("betting start index", { index: startIdx, player: gameState.players[startIdx].name });
+	logFlow("betting start index", {
+		index: startIdx,
+		player: gameState.players[startIdx].name,
+	});
 
 	gameState.raisesThisRound = 0;
 	let idx = startIdx;
@@ -2189,7 +2352,8 @@ function startBettingRound() {
 	function anyUncalled() {
 		if (gameState.currentBet === 0) {
 			// Post-flop: Prüfe ob alle Spieler schon dran waren
-			return cycles < gameState.players.filter((p) => !p.folded && !p.allIn).length;
+			return cycles <
+				gameState.players.filter((p) => !p.folded && !p.allIn).length;
 		}
 		return gameState.players.some((p) =>
 			!p.folded && !p.allIn && p.roundBet < gameState.currentBet
@@ -2244,7 +2408,8 @@ function startBettingRound() {
 			logFlow("already matched bet", { name: player.name, cycles });
 			// Allow one pass-through for Big Blind pre-flop or Check post-flop
 			if (
-				(gameState.currentPhaseIndex === 0 && cycles <= gameState.players.length) ||
+				(gameState.currentPhaseIndex === 0 &&
+					cycles <= gameState.players.length) ||
 				(gameState.currentPhaseIndex > 0 &&
 					gameState.currentBet === 0 &&
 					cycles <= gameState.players.length)
@@ -2269,7 +2434,12 @@ function startBettingRound() {
 		}
 
 		// --- Human Branch ------------------------------------------------------------
-		return humanTurnController.runHumanTurn({ player, cycles, anyUncalled, nextPlayer });
+		return humanTurnController.runHumanTurn({
+			player,
+			cycles,
+			anyUncalled,
+			nextPlayer,
+		});
 	}
 
 	nextPlayer();
@@ -2333,7 +2503,8 @@ function getChipTransferRemainingDuration(chipTransfer) {
 	}
 
 	const endAt = chipTransfer.transfers.reduce(
-		(maxEndAt, transfer) => Math.max(maxEndAt, chipTransfer.startedAt + transfer.durationMs),
+		(maxEndAt, transfer) =>
+			Math.max(maxEndAt, chipTransfer.startedAt + transfer.durationMs),
 		chipTransfer.startedAt,
 	);
 	return Math.max(0, Math.ceil(endAt - Date.now()));
@@ -2442,12 +2613,16 @@ function doShowdown() {
 		uncontestedWinner: uncontestedWinner?.name ?? null,
 		uncontestedWinnerSeatIndex: uncontestedWinner?.seatIndex ?? null,
 		mainPotWinners: mainPotWinners.map((player) => player.name),
-		mainPotWinnerSeatIndexes: mainPotWinners.map((player) => player.seatIndex),
+		mainPotWinnerSeatIndexes: mainPotWinners.map((player) =>
+			player.seatIndex
+		),
 		winningPlayers: winningPlayers.map((player) => player.name),
 		winningSeatIndexes: winningPlayers.map((player) => player.seatIndex),
 		potResults: potResults.map((result) => ({ ...result })),
 		totalPayoutByPlayer: buildSpeedmodePayoutByPlayer(totalPayoutByPlayer),
-		totalPayoutBySeatIndex: buildSpeedmodePayoutBySeatIndex(totalPayoutByPlayer),
+		totalPayoutBySeatIndex: buildSpeedmodePayoutBySeatIndex(
+			totalPayoutByPlayer,
+		),
 		totalBetByPlayer: buildSpeedmodeTotalBetByPlayer(contributors),
 		totalBetBySeatIndex: buildSpeedmodeTotalBetBySeatIndex(contributors),
 		totalPot,
@@ -2473,7 +2648,10 @@ function doShowdown() {
 
 	if (uncontestedWinner) {
 		const revealedPlayers = new Set();
-		const revealDecision = getBotRevealDecision(uncontestedWinner, communityCards);
+		const revealDecision = getBotRevealDecision(
+			uncontestedWinner,
+			communityCards,
+		);
 		if (revealDecision) {
 			revealedPlayers.add(uncontestedWinner);
 			applyBotReveal(uncontestedWinner, revealDecision);
@@ -2505,18 +2683,23 @@ function doShowdown() {
 	}
 
 	// Skip pure refund-only side pots in the log. They animate correctly, but they are not real wins.
-	const filteredResults = potResults.filter((result) => result.isRefundOnly !== true);
+	const filteredResults = potResults.filter((result) =>
+		result.isRefundOnly !== true
+	);
 
 	// --- Notification Consolidation ----------------------------------------------
 	// Consolidate notifications: if same player wins all pots, combine amounts
 	if (filteredResults.length > 0) {
 		const allSame = filteredResults.every((r) =>
-			r.players.length === 1 && r.players[0] === filteredResults[0].players[0]
+			r.players.length === 1 &&
+			r.players[0] === filteredResults[0].players[0]
 		);
 		if (allSame) {
 			const total = filteredResults.reduce((sum, r) => sum + r.amount, 0);
 			let msg = `${filteredResults[0].players[0]} wins ${total}`;
-			if (filteredResults[0].hand) msg += ` with ${filteredResults[0].hand}`;
+			if (filteredResults[0].hand) {
+				msg += ` with ${filteredResults[0].hand}`;
+			}
 			enqueueNotification(msg);
 		} else {
 			filteredResults.forEach((r) => {
@@ -2525,7 +2708,9 @@ function doShowdown() {
 					if (r.hand) msg += ` with ${r.hand}`;
 					enqueueNotification(msg);
 				} else {
-					enqueueNotification(`${r.players.join(" & ")} split ${r.amount}`);
+					enqueueNotification(
+						`${r.players.join(" & ")} split ${r.amount}`,
+					);
 				}
 			});
 		}
@@ -2576,7 +2761,9 @@ function init() {
 		try {
 			globalThis.top.location.href = globalThis.location.href;
 		} catch {
-			alert("No framing allowed. Please visit: https://tehes.github.io/poker/");
+			alert(
+				"No framing allowed. Please visit: https://tehes.github.io/poker/",
+			);
 			throw new Error(
 				"No framing allowed. Open the original: https://tehes.github.io/poker/",
 			);
@@ -2594,19 +2781,43 @@ function init() {
 		}
 	}, false);
 	startButton.addEventListener("click", startGame, false);
-	instructionsButton.addEventListener("click", () => openOverlay("instructions"), false);
-	versionButton.addEventListener("click", () => openOverlay("version"), false);
+	instructionsButton.addEventListener(
+		"click",
+		() => openOverlay("instructions"),
+		false,
+	);
+	versionButton.addEventListener(
+		"click",
+		() => openOverlay("version"),
+		false,
+	);
 	notification.addEventListener("click", () => openOverlay("log"), false);
 	statsButton.addEventListener("click", () => openOverlay("stats"), false);
 	logButton.addEventListener("click", () => openOverlay("log"), false);
 	fastForwardButton.addEventListener("click", activateFastForward, false);
-	statsCloseButton.addEventListener("click", () => closeOverlay("stats"), false);
+	statsCloseButton.addEventListener(
+		"click",
+		() => closeOverlay("stats"),
+		false,
+	);
 	logCloseButton.addEventListener("click", () => closeOverlay("log"), false);
-	versionCloseButton.addEventListener("click", () => closeOverlay("version"), false);
-	instructionsCloseButton.addEventListener("click", () => closeOverlay("instructions"), false);
+	versionCloseButton.addEventListener(
+		"click",
+		() => closeOverlay("version"),
+		false,
+	);
+	instructionsCloseButton.addEventListener(
+		"click",
+		() => closeOverlay("instructions"),
+		false,
+	);
 	overlayBackdrop.addEventListener("click", closeAllOverlays, false);
 	globalThis.addEventListener("pagehide", () => trackUnfinishedExit(), false);
-	globalThis.addEventListener("beforeunload", () => trackUnfinishedExit(), false);
+	globalThis.addEventListener(
+		"beforeunload",
+		() => trackUnfinishedExit(),
+		false,
+	);
 	humanTurnController.init();
 	renderPot();
 	renderTableCommunityCards(communityCardSlots, gameState.communityCards);
@@ -2647,7 +2858,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-04-09-v1";
+const SERVICE_WORKER_VERSION = "2026-04-13-v2";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

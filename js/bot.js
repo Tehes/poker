@@ -81,6 +81,11 @@ const RERAISE_TOP_PAIR_RATIO = 0.36;
 // Tie-breaker thresholds for close decisions
 const STRENGTH_TIE_DELTA = 0.25; // Threshold for treating strength close to the raise threshold as a tie
 const ODDS_TIE_DELTA = 0.02; // Threshold for treating pot odds close to expected value as a tie
+const MDF_MAX_CALL_CHANCE = 0.8;
+const MDF_TURN_UPPER_BAND_START = 0.02;
+const MDF_TURN_UPPER_BAND_END = 0.04;
+const MDF_TURN_UPPER_BAND_FLOOR = 0.75;
+const MDF_TURN_UPPER_BAND_SLOPE = 0.25;
 // Opponent-aware aggression tuning
 const OPPONENT_THRESHOLD = 3; // Consider "few" opponents when fewer than this
 const AGG_FACTOR = 0.1; // Aggressiveness increase per missing opponent
@@ -430,11 +435,10 @@ function buildAggregateRead(opponents) {
 					(opponent.stats.showdowns + 2),
 			0,
 		) / count,
-		showdowns:
-			opponents.reduce(
-				(sum, opponent) => sum + opponent.stats.showdowns,
-				0,
-			) / count,
+		showdowns: opponents.reduce(
+			(sum, opponent) => sum + opponent.stats.showdowns,
+			0,
+		) / count,
 		weight,
 	};
 }
@@ -464,14 +468,13 @@ function buildSpotReadProfile(
 			currentPlayer !== player
 		);
 	const streetAggressorSeatIndex = handContext?.streetAggressorSeatIndex;
-	const streetAggressor =
-		streetAggressorSeatIndex === null ||
+	const streetAggressor = streetAggressorSeatIndex === null ||
 			streetAggressorSeatIndex === undefined
-			? null
-			: players.find((currentPlayer) =>
-				currentPlayer.seatIndex === streetAggressorSeatIndex &&
-				!currentPlayer.folded
-			) || null;
+		? null
+		: players.find((currentPlayer) =>
+			currentPlayer.seatIndex === streetAggressorSeatIndex &&
+			!currentPlayer.folded
+		) || null;
 	const previousStreetCheckedThrough = currentPhaseIndex === 2
 		? Boolean(handContext?.flopCheckedThrough)
 		: currentPhaseIndex === 3
@@ -875,7 +878,94 @@ function shouldBlockRiverLowEdgeCall({
 	if (isMarginalEdgeHand && (activeOpponents > 1 || raiseLevel >= 2)) {
 		return true;
 	}
-	return !hasPrivateRaiseEdge;
+	if (!hasPrivateRaiseEdge && (activeOpponents > 1 || raiseLevel >= 2)) {
+		return true;
+	}
+	return false;
+}
+
+function getMdfMarginWindow(streetIndex) {
+	if (streetIndex <= 1) {
+		return 0.06;
+	}
+	if (streetIndex === 2) {
+		return 0.04;
+	}
+	if (streetIndex === 3) {
+		return 0.04;
+	}
+	return 0;
+}
+
+function getMdfCurveParams(streetIndex) {
+	if (streetIndex <= 1) {
+		return { floor: 0.35, slope: 0.7 };
+	}
+	if (streetIndex === 2) {
+		return { floor: 0.4, slope: 0.65 };
+	}
+	if (streetIndex === 3) {
+		return { floor: 0.65, slope: 0.4 };
+	}
+	return { floor: 0, slope: 0 };
+}
+
+function getRequiredFoldRate(needToCall, potBefore) {
+	if (!(needToCall > 0) || !(potBefore > 0)) {
+		return 0;
+	}
+	return Math.max(0, Math.min(1, needToCall / potBefore));
+}
+
+function getTurnUpperBandMdfFactor(marginToCall) {
+	if (marginToCall <= MDF_TURN_UPPER_BAND_START) {
+		return 0;
+	}
+
+	const bandRange = MDF_TURN_UPPER_BAND_END - MDF_TURN_UPPER_BAND_START;
+	const clampedMargin = Math.min(MDF_TURN_UPPER_BAND_END, marginToCall);
+	const upperBandCloseness = 1 - (
+		(clampedMargin - MDF_TURN_UPPER_BAND_START) / bandRange
+	);
+
+	return MDF_TURN_UPPER_BAND_FLOOR +
+		(MDF_TURN_UPPER_BAND_SLOPE * upperBandCloseness);
+}
+
+function getMdfOverrideChance({
+	streetIndex,
+	marginToCall,
+	marginWindow,
+	requiredFoldRate,
+}) {
+	if (
+		!(marginWindow > 0) ||
+		marginToCall > marginWindow
+	) {
+		return 0;
+	}
+
+	const closeness = 1 - (Math.max(0, marginToCall) / marginWindow);
+	const requiredDefense = 1 - requiredFoldRate;
+	const curve = getMdfCurveParams(streetIndex);
+	let factor = curve.floor + (curve.slope * closeness);
+
+	if (streetIndex === 2) {
+		factor = Math.max(
+			factor,
+			getTurnUpperBandMdfFactor(Math.max(0, marginToCall)),
+		);
+	}
+
+	const chance = requiredDefense * factor;
+
+	return Math.max(
+		0,
+		Math.min(
+			MDF_MAX_CALL_CHANCE,
+			chance,
+		),
+	);
 }
 
 function classifyNoBetOpportunity({
@@ -1197,16 +1287,16 @@ export function chooseBotAction(player, gameState) {
 		player.holeCards[0],
 		player.holeCards[1],
 	);
-		const liveOpponents = spotReadProfile.liveOpponents;
-		const activeSizingOpponents = liveOpponents.filter((currentPlayer) =>
-			!currentPlayer.allIn && currentPlayer.chips > 0
-		);
-		const activeOpponentStacks = activeSizingOpponents.map((currentPlayer) =>
-			currentPlayer.chips
-		);
-		const playersBehind = spotReadProfile.playersBehind;
-		const previousStreetCheckedThrough =
-			spotReadProfile.previousStreetCheckedThrough;
+	const liveOpponents = spotReadProfile.liveOpponents;
+	const activeSizingOpponents = liveOpponents.filter((currentPlayer) =>
+		!currentPlayer.allIn && currentPlayer.chips > 0
+	);
+	const activeOpponentStacks = activeSizingOpponents.map((currentPlayer) =>
+		currentPlayer.chips
+	);
+	const playersBehind = spotReadProfile.playersBehind;
+	const previousStreetCheckedThrough =
+		spotReadProfile.previousStreetCheckedThrough;
 	const liveRead = spotReadProfile.live;
 	const behindRead = spotReadProfile.behind;
 	const aggressorRead = spotReadProfile.aggressor;
@@ -1333,17 +1423,17 @@ export function chooseBotAction(player, gameState) {
 		: communityCards.length === 4
 		? 1
 		: 0;
-		const { commitmentPressure, commitmentPenalty } = computeCommitmentMetrics(
-			needToCall,
-			player,
-			spr,
-			remainingStreets,
-		);
-		const handInvestmentRatio = player.totalBet /
-			Math.max(1, player.totalBet + player.chips);
-		const { eliminationRisk, eliminationPenalty } = needsToCall
-			? computeEliminationRisk(
-				stackRatio,
+	const { commitmentPressure, commitmentPenalty } = computeCommitmentMetrics(
+		needToCall,
+		player,
+		spr,
+		remainingStreets,
+	);
+	const handInvestmentRatio = player.totalBet /
+		Math.max(1, player.totalBet + player.chips);
+	const { eliminationRisk, eliminationPenalty } = needsToCall
+		? computeEliminationRisk(
+			stackRatio,
 			preflop ? ELIMINATION_RISK_FULL : POSTFLOP_ELIMINATION_RISK_FULL,
 			preflop
 				? ELIMINATION_PENALTY_MAX
@@ -1370,6 +1460,7 @@ export function chooseBotAction(player, gameState) {
 	let callBarrier = preflop
 		? Math.min(1, callBarrierBase + commitmentPenalty)
 		: callBarrierBase;
+	let marginalCallPenalty = 0;
 	if (!preflop) {
 		let callBarrierAdj = 0;
 		if (hasPrivateContribution) {
@@ -1435,18 +1526,25 @@ export function chooseBotAction(player, gameState) {
 			}
 			if (raiseLevel >= 1) {
 				marginalCallAdj += 0.03;
+				marginalCallPenalty += 0.03;
 			}
 			if (!spotContext.headsUp) {
 				marginalCallAdj += 0.02;
+				marginalCallPenalty += 0.02;
 			}
 			if (textureRisk > 0.6) {
 				marginalCallAdj += 0.02;
+				marginalCallPenalty += 0.02;
 			}
 			if (streetIndex === 3) {
 				marginalCallAdj += 0.03;
+				marginalCallPenalty += 0.03;
 			}
-			if (isMarginalMadeHand && streetIndex === 2 && !spotContext.headsUp) {
+			if (
+				isMarginalMadeHand && streetIndex === 2 && !spotContext.headsUp
+			) {
 				marginalCallAdj += 0.02;
+				marginalCallPenalty += 0.02;
 			}
 			if (
 				isMarginalMadeHand && streetIndex >= 2 &&
@@ -1454,6 +1552,7 @@ export function chooseBotAction(player, gameState) {
 				edge < 0.55
 			) {
 				marginalCallAdj += 0.02;
+				marginalCallPenalty += 0.02;
 			}
 		}
 
@@ -1494,6 +1593,21 @@ export function chooseBotAction(player, gameState) {
 	const eliminationBarrier = needsToCall
 		? Math.min(1, callBarrier + eliminationPenalty)
 		: callBarrier;
+	const mdfRequiredFoldRate = !preflop && needToCall > 0
+		? getRequiredFoldRate(needToCall, pot)
+		: 0;
+	const mdfRequiredDefense = !preflop && needToCall > 0
+		? 1 - mdfRequiredFoldRate
+		: 0;
+	const mdfMarginWindow = !preflop ? getMdfMarginWindow(streetIndex) : 0;
+	const mdfMarginToCall = !preflop && needToCall > 0
+		? eliminationBarrier - gateStrengthRatio
+		: 0;
+	let mdfEligible = false;
+	let mdfCallChance = 0;
+	let mdfApplied = false;
+	let marginalDefenseBlocked = false;
+	let riverLowEdgeBlocked = false;
 
 	// Base thresholds for raising depend on stage and pot size
 	// When only a few opponents remain, play slightly more aggressively
@@ -1522,322 +1636,325 @@ export function chooseBotAction(player, gameState) {
 	const decisionStrength = preflop ? strength : gateStrengthRatio * 10;
 
 	let bluffChance = 0;
+	let bluffAlpha = 0;
+	let bluffDecisionChance = 0;
 	let foldRate = 0;
 	let statsWeight = 0;
 	let avgVPIP = 0;
 	let avgAgg = 0;
 
-		function capGreenNonPremium(amount) {
-			if (!isGreenZone || premiumHand) return amount;
-			const capRatio = spr < 3 ? 0.3 : spr > 6 ? 0.2 : GREEN_MAX_STACK_BET;
-			const rawCap = Math.floor(player.chips * capRatio);
-			const cap = floorTo10(rawCap);
-			const capped = Math.min(amount, cap);
-			return Math.max(0, floorTo10(capped));
-		}
+	function capGreenNonPremium(amount) {
+		if (!isGreenZone || premiumHand) return amount;
+		const capRatio = spr < 3 ? 0.3 : spr > 6 ? 0.2 : GREEN_MAX_STACK_BET;
+		const rawCap = Math.floor(player.chips * capRatio);
+		const cap = floorTo10(rawCap);
+		const capped = Math.min(amount, cap);
+		return Math.max(0, floorTo10(capped));
+	}
 
-		function getPostflopEdgeBaseFactor(edgeValue) {
-			if (edgeValue <= 0) return 0.28;
-			if (edgeValue <= 0.5) return 0.38;
-			if (edgeValue <= 1.0) return 0.52;
-			if (edgeValue <= 2.0) return 0.68;
-			return 0.82;
-		}
+	function getPostflopEdgeBaseFactor(edgeValue) {
+		if (edgeValue <= 0) return 0.28;
+		if (edgeValue <= 0.5) return 0.38;
+		if (edgeValue <= 1.0) return 0.52;
+		if (edgeValue <= 2.0) return 0.68;
+		return 0.82;
+	}
 
-		function getPostflopIntentMod(intent) {
-			if (intent === "protection") return 1.06;
-			if (intent === "probe") return 0.84;
+	function getPostflopIntentMod(intent) {
+		if (intent === "protection") return 1.06;
+		if (intent === "probe") return 0.84;
+		return 1.0;
+	}
+
+	function getPostflopOpponentMod(opponentCount) {
+		if (opponentCount <= 1) return 1.0;
+		if (opponentCount === 2) return 0.9;
+		if (opponentCount === 3) return 0.8;
+		return 0.72;
+	}
+
+	function getPostflopTextureMod(textureRiskValue) {
+		if (textureRiskValue >= 0.75) return 1.12;
+		if (textureRiskValue >= 0.5) return 1.05;
+		if (textureRiskValue >= 0.25) return 1.0;
+		return 0.94;
+	}
+
+	function getPostflopDrawMod(drawOutsValue, drawEquityValue, rawRankValue) {
+		const hasStrongDraw = drawOutsValue >= 8 || drawEquityValue > 0.18;
+		const mediumMadeHand = rawRankValue >= 2 && rawRankValue <= 3;
+
+		if (hasStrongDraw && mediumMadeHand) return 1.08;
+		if (hasStrongDraw) return 1.05;
+		return 1.0;
+	}
+
+	function getPostflopRaiseLevelMod(raiseLevelValue) {
+		if (raiseLevelValue <= 0) return 1.0;
+		if (raiseLevelValue === 1) return 0.78;
+		return 0.62;
+	}
+
+	function getPostflopSprMod(sprValue) {
+		if (sprValue < 1.5) return 0.88;
+		if (sprValue < 3) return 0.94;
+		if (sprValue < 6) return 1.0;
+		return 1.04;
+	}
+
+	function getPostflopCoverComfortMod(
+		playerChips,
+		activeOpponentStacksValue,
+	) {
+		if (activeOpponentStacksValue.length === 0) {
 			return 1.0;
 		}
 
-		function getPostflopOpponentMod(opponentCount) {
-			if (opponentCount <= 1) return 1.0;
-			if (opponentCount === 2) return 0.9;
-			if (opponentCount === 3) return 0.8;
-			return 0.72;
-		}
-
-		function getPostflopTextureMod(textureRiskValue) {
-			if (textureRiskValue >= 0.75) return 1.12;
-			if (textureRiskValue >= 0.5) return 1.05;
-			if (textureRiskValue >= 0.25) return 1.0;
-			return 0.94;
-		}
-
-		function getPostflopDrawMod(drawOutsValue, drawEquityValue, rawRankValue) {
-			const hasStrongDraw = drawOutsValue >= 8 || drawEquityValue > 0.18;
-			const mediumMadeHand = rawRankValue >= 2 && rawRankValue <= 3;
-
-			if (hasStrongDraw && mediumMadeHand) return 1.08;
-			if (hasStrongDraw) return 1.05;
+		const maxActive = Math.max(...activeOpponentStacksValue);
+		if (maxActive <= 0) {
 			return 1.0;
 		}
-
-		function getPostflopRaiseLevelMod(raiseLevelValue) {
-			if (raiseLevelValue <= 0) return 1.0;
-			if (raiseLevelValue === 1) return 0.78;
-			return 0.62;
+		if (playerChips <= maxActive) {
+			return 0.92;
 		}
 
-		function getPostflopSprMod(sprValue) {
-			if (sprValue < 1.5) return 0.88;
-			if (sprValue < 3) return 0.94;
-			if (sprValue < 6) return 1.0;
-			return 1.04;
-		}
+		const relLead = (playerChips - maxActive) / maxActive;
+		if (relLead >= 1.0) return 1.08;
+		if (relLead >= 0.5) return 1.05;
+		if (relLead >= 0.2) return 1.02;
+		return 1.0;
+	}
 
-		function getPostflopCoverComfortMod(
-			playerChips,
-			activeOpponentStacksValue,
-		) {
-			if (activeOpponentStacksValue.length === 0) {
-				return 1.0;
-			}
-
-			const maxActive = Math.max(...activeOpponentStacksValue);
-			if (maxActive <= 0) {
-				return 1.0;
-			}
-			if (playerChips <= maxActive) {
-				return 0.92;
-			}
-
-			const relLead = (playerChips - maxActive) / maxActive;
-			if (relLead >= 1.0) return 1.08;
-			if (relLead >= 0.5) return 1.05;
-			if (relLead >= 0.2) return 1.02;
+	function getPostflopInvestmentMod(investmentRatioValue, edgeValue) {
+		if (investmentRatioValue < 0.2) {
 			return 1.0;
 		}
+		if (investmentRatioValue < 0.4) {
+			return 0.97;
+		}
+		if (investmentRatioValue < 0.6) {
+			return edgeValue >= 1.5 ? 0.96 : 0.93;
+		}
+		return edgeValue >= 2.0 ? 0.95 : 0.9;
+	}
 
-		function getPostflopInvestmentMod(investmentRatioValue, edgeValue) {
-			if (investmentRatioValue < 0.2) {
-				return 1.0;
-			}
-			if (investmentRatioValue < 0.4) {
-				return 0.97;
-			}
-			if (investmentRatioValue < 0.6) {
-				return edgeValue >= 1.5 ? 0.96 : 0.93;
-			}
-			return edgeValue >= 2.0 ? 0.95 : 0.9;
+	function getReraiseInvestmentThresholdAdj(
+		investmentRatioValue,
+		edgeValue,
+	) {
+		if (investmentRatioValue < 0.2) {
+			return 0;
+		}
+		if (investmentRatioValue < 0.35) {
+			return edgeValue >= 2.0 ? 0.12 : 0.28;
+		}
+		if (investmentRatioValue < 0.5) {
+			if (edgeValue >= 2.0) return 0.22;
+			if (edgeValue >= 1.0) return 0.38;
+			return 0.58;
+		}
+		if (investmentRatioValue < 0.65) {
+			if (edgeValue >= 2.5) return 0.3;
+			if (edgeValue >= 1.5) return 0.5;
+			return 0.78;
+		}
+		if (edgeValue >= 3.0) return 0.4;
+		if (edgeValue >= 2.0) return 0.62;
+		return 0.95;
+	}
+
+	function getPostflopReraiseThresholdAdj(
+		raiseLevelValue,
+		edgeValue,
+	) {
+		if (raiseLevelValue < 2) {
+			return 0;
+		}
+		if (edgeValue >= 3.5) {
+			return 0.02;
+		}
+		if (edgeValue >= 2.5) {
+			return 0.04;
+		}
+		return 0.06;
+	}
+
+	function getPostflopReraiseGateRatio(
+		baseRatio,
+		raiseLevelValue,
+		edgeValue,
+	) {
+		if (raiseLevelValue < 2) {
+			return baseRatio;
 		}
 
-		function getReraiseInvestmentThresholdAdj(
-			investmentRatioValue,
-			edgeValue,
-		) {
-			if (investmentRatioValue < 0.2) {
-				return 0;
-			}
-			if (investmentRatioValue < 0.35) {
-				return edgeValue >= 2.0 ? 0.12 : 0.28;
-			}
-			if (investmentRatioValue < 0.5) {
-				if (edgeValue >= 2.0) return 0.22;
-				if (edgeValue >= 1.0) return 0.38;
-				return 0.58;
-			}
-			if (investmentRatioValue < 0.65) {
-				if (edgeValue >= 2.5) return 0.3;
-				if (edgeValue >= 1.5) return 0.5;
-				return 0.78;
-			}
-			if (edgeValue >= 3.0) return 0.4;
-			if (edgeValue >= 2.0) return 0.62;
-			return 0.95;
+		let bonus = 0.06;
+		if (edgeValue >= 3.5) {
+			bonus = 0.02;
+		} else if (edgeValue >= 2.5) {
+			bonus = 0.04;
+		}
+		return Math.min(0.6, baseRatio + bonus);
+	}
+
+	function getPostflopMaxStackFrac(edgeValue, rawRankValue, canBust) {
+		let cap = canBust ? 0.28 : 0.36;
+
+		if (edgeValue >= 0.5) {
+			cap += canBust ? 0.04 : 0.06;
+		}
+		if (edgeValue >= 1.0) {
+			cap += canBust ? 0.05 : 0.07;
+		}
+		if (edgeValue >= 2.0) {
+			cap += canBust ? 0.08 : 0.12;
+		}
+		if (edgeValue >= 3.5) {
+			cap += canBust ? 0.1 : 0.15;
 		}
 
-		function getPostflopReraiseThresholdAdj(
-			raiseLevelValue,
-			edgeValue,
-		) {
-			if (raiseLevelValue < 2) {
-				return 0;
-			}
-			if (edgeValue >= 3.5) {
-				return 0.02;
-			}
-			if (edgeValue >= 2.5) {
-				return 0.04;
-			}
-			return 0.06;
+		if (rawRankValue >= 7) {
+			cap += 0.2;
+		} else if (rawRankValue >= 5) {
+			cap += 0.1;
+		} else if (rawRankValue >= 3) {
+			cap += 0.04;
 		}
 
-		function getPostflopReraiseGateRatio(
-			baseRatio,
-			raiseLevelValue,
-			edgeValue,
-		) {
-			if (raiseLevelValue < 2) {
-				return baseRatio;
-			}
+		return Math.min(1, cap);
+	}
 
-            let bonus = 0.06;
-			if (edgeValue >= 3.5) {
-				bonus = 0.02;
-			} else if (edgeValue >= 2.5) {
-				bonus = 0.04;
-			}
-			return Math.min(0.6, baseRatio + bonus);
+	function getPostflopReraiseMaxStackFrac(
+		edgeValue,
+		rawRankValue,
+		canBust,
+		raiseLevelValue,
+	) {
+		let cap = canBust ? 0.2 : 0.26;
+
+		if (edgeValue >= 0.5) {
+			cap += canBust ? 0.03 : 0.05;
+		}
+		if (edgeValue >= 1.0) {
+			cap += canBust ? 0.04 : 0.06;
+		}
+		if (edgeValue >= 2.0) {
+			cap += canBust ? 0.06 : 0.1;
+		}
+		if (edgeValue >= 3.5) {
+			cap += canBust ? 0.08 : 0.12;
 		}
 
-		function getPostflopMaxStackFrac(edgeValue, rawRankValue, canBust) {
-			let cap = canBust ? 0.28 : 0.36;
-
-			if (edgeValue >= 0.5) {
-				cap += canBust ? 0.04 : 0.06;
-			}
-			if (edgeValue >= 1.0) {
-				cap += canBust ? 0.05 : 0.07;
-			}
-			if (edgeValue >= 2.0) {
-				cap += canBust ? 0.08 : 0.12;
-			}
-			if (edgeValue >= 3.5) {
-				cap += canBust ? 0.1 : 0.15;
-			}
-
-			if (rawRankValue >= 7) {
-				cap += 0.2;
-			} else if (rawRankValue >= 5) {
-				cap += 0.1;
-			} else if (rawRankValue >= 3) {
-				cap += 0.04;
-			}
-
-			return Math.min(1, cap);
+		if (rawRankValue >= 7) {
+			cap += 0.16;
+		} else if (rawRankValue >= 5) {
+			cap += 0.08;
+		} else if (rawRankValue >= 3) {
+			cap += 0.03;
 		}
 
-		function getPostflopReraiseMaxStackFrac(
-			edgeValue,
-			rawRankValue,
+		if (raiseLevelValue >= 2) {
+			cap -= canBust ? 0.03 : 0.04;
+		}
+
+		const floor = canBust ? 0.16 : 0.2;
+		return Math.max(floor, Math.min(0.72, cap));
+	}
+
+	function getPostflopBetSize(intent) {
+		const edgeBase = getPostflopEdgeBaseFactor(edge);
+		const intentMod = getPostflopIntentMod(intent);
+		const opponentMod = getPostflopOpponentMod(activeOpponents);
+		const textureMod = getPostflopTextureMod(textureRisk);
+		const drawMod = getPostflopDrawMod(drawOuts, drawEquity, rawHandRank);
+		const raiseLevelMod = getPostflopRaiseLevelMod(raiseLevel);
+		const sprMod = getPostflopSprMod(spr);
+		const coverMod = getPostflopCoverComfortMod(
+			player.chips,
+			activeOpponentStacks,
+		);
+		const investmentMod = getPostflopInvestmentMod(
+			handInvestmentRatio,
+			edge,
+		);
+		const factor = edgeBase * intentMod * opponentMod * textureMod *
+			drawMod * raiseLevelMod * sprMod * coverMod * investmentMod;
+		const normalizedFactor = Math.max(0.18, Math.min(1.15, factor));
+		const potBasedBet = (pot + needToCall) * normalizedFactor;
+		const maxActiveStack = activeOpponentStacks.length > 0
+			? Math.max(...activeOpponentStacks)
+			: 0;
+		const canBust = maxActiveStack >= player.chips;
+		let stackCap = player.chips * getPostflopMaxStackFrac(
+			edge,
+			rawHandRank,
 			canBust,
-			raiseLevelValue,
-		) {
-			let cap = canBust ? 0.2 : 0.26;
-
-			if (edgeValue >= 0.5) {
-				cap += canBust ? 0.03 : 0.05;
-			}
-			if (edgeValue >= 1.0) {
-				cap += canBust ? 0.04 : 0.06;
-			}
-			if (edgeValue >= 2.0) {
-				cap += canBust ? 0.06 : 0.1;
-			}
-			if (edgeValue >= 3.5) {
-				cap += canBust ? 0.08 : 0.12;
-			}
-
-			if (rawRankValue >= 7) {
-				cap += 0.16;
-			} else if (rawRankValue >= 5) {
-				cap += 0.08;
-			} else if (rawRankValue >= 3) {
-				cap += 0.03;
-			}
-
-			if (raiseLevelValue >= 2) {
-				cap -= canBust ? 0.03 : 0.04;
-			}
-
-			const floor = canBust ? 0.16 : 0.2;
-			return Math.max(floor, Math.min(0.72, cap));
-		}
-
-		function getPostflopBetSize(intent) {
-			const edgeBase = getPostflopEdgeBaseFactor(edge);
-			const intentMod = getPostflopIntentMod(intent);
-			const opponentMod = getPostflopOpponentMod(activeOpponents);
-			const textureMod = getPostflopTextureMod(textureRisk);
-			const drawMod = getPostflopDrawMod(drawOuts, drawEquity, rawHandRank);
-			const raiseLevelMod = getPostflopRaiseLevelMod(raiseLevel);
-			const sprMod = getPostflopSprMod(spr);
-			const coverMod = getPostflopCoverComfortMod(
-				player.chips,
-				activeOpponentStacks,
-			);
-			const investmentMod = getPostflopInvestmentMod(
-				handInvestmentRatio,
-				edge,
-			);
-			const factor = edgeBase * intentMod * opponentMod * textureMod *
-				drawMod * raiseLevelMod * sprMod * coverMod * investmentMod;
-			const normalizedFactor = Math.max(0.18, Math.min(1.15, factor));
-			const potBasedBet = (pot + needToCall) * normalizedFactor;
-			const maxActiveStack = activeOpponentStacks.length > 0
-				? Math.max(...activeOpponentStacks)
-				: 0;
-			const canBust = maxActiveStack >= player.chips;
-			let stackCap = player.chips * getPostflopMaxStackFrac(
-				edge,
-				rawHandRank,
-				canBust,
-			);
-			if (raiseLevel > 0) {
-				const reraiseStackCap = player.chips * getPostflopReraiseMaxStackFrac(
+		);
+		if (raiseLevel > 0) {
+			const reraiseStackCap = player.chips *
+				getPostflopReraiseMaxStackFrac(
 					edge,
 					rawHandRank,
 					canBust,
 					raiseLevel,
 				);
-				stackCap = Math.min(stackCap, reraiseStackCap);
-			}
-			return Math.max(
-				0,
-				floorTo10(Math.min(player.chips, potBasedBet, stackCap)),
-			);
+			stackCap = Math.min(stackCap, reraiseStackCap);
 		}
+		return Math.max(
+			0,
+			floorTo10(Math.min(player.chips, potBasedBet, stackCap)),
+		);
+	}
 
-		function valueBetSize() {
-			if (!preflop) {
-				return getPostflopBetSize("value");
-			}
-			let base = 0.55;
-			if (strengthRatio >= 0.9) base += 0.15;
-			base += activeOpponents * 0.04;
-			base += (1 - positionFactor) * 0.05;
-			if (positionFactor < 0.3 && strengthRatio >= 0.8) {
-				base += 0.1; // bigger open from early position
-			}
-			if (spr < 2) base += 0.1;
-			else if (spr < 4) base += 0.05;
-			else if (spr > 6) base -= 0.05;
-			const rand = Math.random() * 0.2 - 0.1;
-			const factor = Math.min(1, Math.max(0.35, base + rand));
-			const sized = floorTo10(
-				Math.min(player.chips, (pot + needToCall) * factor * betAggFactor),
-			);
-			return capGreenNonPremium(sized);
+	function valueBetSize() {
+		if (!preflop) {
+			return getPostflopBetSize("value");
 		}
+		let base = 0.55;
+		if (strengthRatio >= 0.9) base += 0.15;
+		base += activeOpponents * 0.04;
+		base += (1 - positionFactor) * 0.05;
+		if (positionFactor < 0.3 && strengthRatio >= 0.8) {
+			base += 0.1; // bigger open from early position
+		}
+		if (spr < 2) base += 0.1;
+		else if (spr < 4) base += 0.05;
+		else if (spr > 6) base -= 0.05;
+		const rand = Math.random() * 0.2 - 0.1;
+		const factor = Math.min(1, Math.max(0.35, base + rand));
+		const sized = floorTo10(
+			Math.min(player.chips, (pot + needToCall) * factor * betAggFactor),
+		);
+		return capGreenNonPremium(sized);
+	}
 
-		function bluffBetSize() {
-			return getPostflopBetSize("probe");
-		}
+	function bluffBetSize() {
+		return getPostflopBetSize("probe");
+	}
 
-		function protectionBetSize() {
-			if (!preflop) {
-				return getPostflopBetSize("protection");
-			}
-			let base = 0.45 + textureRisk * 0.25;
-			base += activeOpponents * 0.03;
-			base += (1 - positionFactor) * 0.04;
-			if (spr < 3) base += 0.1;
-			else if (spr > 5) base -= 0.05;
-			const rand = Math.random() * 0.1 - 0.05;
-			const factor = Math.min(0.8, Math.max(0.35, base + rand));
-			const sized = floorTo10(
-				Math.min(player.chips, (pot + needToCall) * factor * betAggFactor),
-			);
-			return capGreenNonPremium(sized);
+	function protectionBetSize() {
+		if (!preflop) {
+			return getPostflopBetSize("protection");
 		}
+		let base = 0.45 + textureRisk * 0.25;
+		base += activeOpponents * 0.03;
+		base += (1 - positionFactor) * 0.04;
+		if (spr < 3) base += 0.1;
+		else if (spr > 5) base -= 0.05;
+		const rand = Math.random() * 0.1 - 0.05;
+		const factor = Math.min(0.8, Math.max(0.35, base + rand));
+		const sized = floorTo10(
+			Math.min(player.chips, (pot + needToCall) * factor * betAggFactor),
+		);
+		return capGreenNonPremium(sized);
+	}
 
-		function yellowRaiseSize() {
-			const base = bigBlind * (2.5 + Math.random() * 0.5);
-			const sized = floorTo10(base * betAggFactor);
-			const normalizedMinRaise = ceilTo10(minRaiseAmount);
-			return Math.min(player.chips, Math.max(normalizedMinRaise, sized));
-		}
+	function yellowRaiseSize() {
+		const base = bigBlind * (2.5 + Math.random() * 0.5);
+		const sized = floorTo10(base * betAggFactor);
+		const normalizedMinRaise = ceilTo10(minRaiseAmount);
+		return Math.min(player.chips, Math.max(normalizedMinRaise, sized));
+	}
 
 	function decideCbetIntent(lineAbort) {
 		if (lineAbort) return false;
@@ -2142,11 +2259,10 @@ export function chooseBotAction(player, gameState) {
 					Math.abs(decisionStrength - raiseThreshold) <=
 						STRENGTH_TIE_DELTA
 				) {
-					const alt =
-						(gateStrengthRatio >= eliminationBarrier &&
-								passesPreflopCallLimit)
-							? { action: "call", amount: callAmt }
-							: { action: "fold" };
+					const alt = (gateStrengthRatio >= eliminationBarrier &&
+							passesPreflopCallLimit)
+						? { action: "call", amount: callAmt }
+						: { action: "fold" };
 					decision = Math.random() < 0.5
 						? { action: "raise", amount: raiseAmt }
 						: alt;
@@ -2215,11 +2331,20 @@ export function chooseBotAction(player, gameState) {
 			!facingAllIn &&
 			!nonValueAggressionMade && canUsePureBluffLine
 		) {
-			if (Math.random() < bluffChance) {
-				const bluffAmt = Math.max(
-					ceilTo10(minRaiseAmount),
-					bluffBetSize(),
-				);
+			const bluffAmt = Math.max(
+				ceilTo10(minRaiseAmount),
+				bluffBetSize(),
+			);
+			const bluffSpotChanceCap = preflop ? 0.3 : 0.22;
+			const bluffSpotWeight = bluffSpotChanceCap > 0
+				? Math.max(0, Math.min(1, bluffChance / bluffSpotChanceCap))
+				: 0;
+			bluffAlpha = getRequiredFoldRate(bluffAmt, pot + bluffAmt);
+			bluffDecisionChance = Math.max(
+				0,
+				Math.min(1, bluffAlpha * bluffSpotWeight),
+			);
+			if (Math.random() < bluffDecisionChance) {
 				decision = { action: "raise", amount: bluffAmt };
 				isBluff = true;
 			}
@@ -2451,6 +2576,20 @@ export function chooseBotAction(player, gameState) {
 	}
 
 	if (
+		!preflop &&
+		needsToCall &&
+		decision.action === "fold" &&
+		marginalCallPenalty > 0 &&
+		gateStrengthRatio < eliminationBarrier &&
+		gateStrengthRatio >= Math.max(
+				0,
+				eliminationBarrier - marginalCallPenalty,
+			)
+	) {
+		marginalDefenseBlocked = true;
+	}
+
+	if (
 		shouldBlockRiverLowEdgeCall({
 			decision,
 			needsToCall,
@@ -2463,7 +2602,38 @@ export function chooseBotAction(player, gameState) {
 			publicHandRank,
 		})
 	) {
+		riverLowEdgeBlocked = true;
 		decision = { action: "fold" };
+	}
+
+	// Rescue a narrow band of near-threshold folds so postflop defense does not
+	// collapse below the required defense frequency against common bluff sizes.
+	if (
+		!preflop &&
+		needsToCall &&
+		needToCall < player.chips &&
+		decision.action === "fold" &&
+		mdfMarginToCall <= mdfMarginWindow &&
+		(
+			mdfMarginToCall > 0 ||
+			marginalDefenseBlocked ||
+			riverLowEdgeBlocked
+		)
+	) {
+		mdfEligible = true;
+		mdfCallChance = getMdfOverrideChance({
+			streetIndex,
+			marginToCall: mdfMarginToCall,
+			marginWindow: mdfMarginWindow,
+			requiredFoldRate: mdfRequiredFoldRate,
+		});
+		if (mdfCallChance > 0 && Math.random() < mdfCallChance) {
+			decision = {
+				action: "call",
+				amount: Math.min(player.chips, needToCall),
+			};
+			mdfApplied = true;
+		}
 	}
 
 	const boardCtx = overPair
@@ -2582,6 +2752,16 @@ export function chooseBotAction(player, gameState) {
 		mZone,
 		potOdds: toRoundedNumber(potOdds),
 		callBarrier: toRoundedNumber(eliminationBarrier),
+		mdfRequiredFoldRate: toRoundedNumber(mdfRequiredFoldRate, 4),
+		mdfRequiredDefense: toRoundedNumber(mdfRequiredDefense, 4),
+		mdfMarginToCall: toRoundedNumber(mdfMarginToCall, 4),
+		mdfMarginWindow: toRoundedNumber(mdfMarginWindow, 4),
+		mdfEligible,
+		mdfCallChance: toRoundedNumber(mdfCallChance, 4),
+		mdfApplied,
+		bluffChance: toRoundedNumber(bluffChance, 4),
+		bluffAlpha: toRoundedNumber(bluffAlpha, 4),
+		bluffDecisionChance: toRoundedNumber(bluffDecisionChance, 4),
 		rawStackRatio: toRoundedNumber(rawStackRatio),
 		stackRatio: toRoundedNumber(stackRatio),
 		commitmentPressure: toRoundedNumber(commitmentPressure),
@@ -2638,6 +2818,8 @@ export function chooseBotAction(player, gameState) {
 		marginalReason,
 		edge: toRoundedNumber(edge, 4),
 		hasPrivateRaiseEdge,
+		marginalDefenseBlocked,
+		riverLowEdgeBlocked,
 		nonValueBlocked: nonValueAggressionBlocked,
 		publicScore: toRoundedNumber(publicScore, 4),
 		rawScore: toRoundedNumber(rawScore, 4),
@@ -2660,6 +2842,10 @@ export function chooseBotAction(player, gameState) {
 				`M:${mRatio.toFixed(2)} Z:${mZone} | ` +
 				`PO:${potOdds.toFixed(2)} CB:${
 					eliminationBarrier.toFixed(2)
+				} MDFa:${mdfRequiredFoldRate.toFixed(2)} MDFm:${
+					mdfMarginToCall.toFixed(2)
+				} MDFc:${mdfCallChance.toFixed(2)} MDF:${
+					mdfApplied ? "Y" : "N"
 				} ` +
 				`SR:${stackRatio.toFixed(2)} SRaw:${
 					rawStackRatio.toFixed(2)
@@ -2700,7 +2886,9 @@ export function chooseBotAction(player, gameState) {
 					edge.toFixed(4)
 				} ` +
 				`PRE:${hasPrivateRaiseEdge ? "Y" : "N"} ` +
-				`ME:${isMarginalEdgeHand ? "Y" : "N"} MR:${marginalReason ?? "-"} | ` +
+				`ME:${isMarginalEdgeHand ? "Y" : "N"} MR:${
+					marginalReason ?? "-"
+				} | ` +
 				`NVB:${nonValueAggressionBlocked ? "Y" : "N"} | ` +
 				`CL:${amChipleader ? "Y" : "N"} SS:${
 					shortstackRelative ? "Y" : "N"
