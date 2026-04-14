@@ -1,6 +1,17 @@
-export const APP_VERSION = "1.0.20";
+export const APP_VERSION = "1.0.21";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.21",
+		date: "2026-04-14",
+		title: "Slowplay and bustout-call tightening",
+		notes: [
+			"Restricted postflop slowplay to clearer trap spots so strong value hands no longer check back rivers, multiway spots, or other thin-delay situations.",
+			"Added an edge-scaled postflop elimination-relief path for heads-up tournament-life calls with strong private made hands on unpaired boards.",
+			"Kept paired-board all-in folds structurally tighter so dangerous trips and full-house runouts still respect the tougher stackoff context.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.20",
 		date: "2026-04-13",

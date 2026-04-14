@@ -1590,8 +1590,24 @@ export function chooseBotAction(player, gameState) {
 		}
 		callBarrier = Math.min(1, Math.max(0.10, callBarrier));
 	}
+	let adjustedEliminationPenalty = eliminationPenalty;
+	if (
+		!preflop && needsToCall &&
+		eliminationRisk === 1 &&
+		spotContext.headsUp &&
+		liftType === "structural" &&
+		rawHandRank >= 3 &&
+		publicHandRank <= 1
+	) {
+		const edgeRelief = Math.max(0, Math.min(1, (edge - 0.8) / 1.2));
+		let penaltyScale = 1 - edgeRelief * 0.5;
+		if (raiseLevel >= 2) {
+			penaltyScale = Math.max(penaltyScale, 0.75);
+		}
+		adjustedEliminationPenalty *= penaltyScale;
+	}
 	const eliminationBarrier = needsToCall
-		? Math.min(1, callBarrier + eliminationPenalty)
+		? Math.min(1, callBarrier + adjustedEliminationPenalty)
 		: callBarrier;
 	const mdfRequiredFoldRate = !preflop && needToCall > 0
 		? getRequiredFoldRate(needToCall, pot)
