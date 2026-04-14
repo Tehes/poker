@@ -2401,7 +2401,13 @@ export function chooseBotAction(player, gameState) {
 		}
 
 		if (
-			!preflop && !needsToCall && gateStrengthRatio >= 0.9 &&
+			!preflop && communityCards.length < 5 && !needsToCall &&
+			gateStrengthRatio >= 0.9 &&
+			edge > 1 &&
+			spotContext.headsUp &&
+			!isLastToAct &&
+			!previousStreetCheckedThrough &&
+			textureRisk < 0.4 &&
 			decision.action === "raise" &&
 			Math.random() < 0.3
 		) {
