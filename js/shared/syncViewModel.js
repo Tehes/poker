@@ -75,16 +75,26 @@ function getLivePlayerWinnerReactionState(player, now = Date.now()) {
 	};
 }
 
+function shouldForceShowdownHoleCards(player, gameState) {
+	return getCurrentPhase(gameState?.currentPhaseIndex) === "showdown" &&
+		player.folded !== true &&
+		player.holeCards.every(Boolean);
+}
+
+function areTableHoleCardsVisible(player, gameState) {
+	return areHoleCardsFaceUp(player) || shouldForceShowdownHoleCards(player, gameState);
+}
+
 function shouldShowTableHandStrength(player, communityCards, gameState) {
 	return gameState.currentPhaseIndex > 0 &&
 		communityCards.length >= 3 &&
-		areHoleCardsFaceUp(player);
+		areTableHoleCardsVisible(player, gameState);
 }
 
 function shouldShowTableWinProbability(player, gameState) {
 	return (gameState.spectatorMode || isAllInRunout(gameState.players, gameState.currentBet)) &&
 		gameState.currentPhaseIndex > 0 &&
-		areHoleCardsFaceUp(player) &&
+		areTableHoleCardsVisible(player, gameState) &&
 		typeof player.winProbability === "number";
 }
 
@@ -136,6 +146,7 @@ function buildPublicChipTransferState(gameState) {
 }
 
 export function buildPublicPlayerView(player, communityCards, gameState, now = Date.now()) {
+	const forceShowdownHoleCards = shouldForceShowdownHoleCards(player, gameState);
 	return {
 		seatIndex: player.seatIndex,
 		seatSlot: player.seatSlot,
@@ -148,7 +159,7 @@ export function buildPublicPlayerView(player, communityCards, gameState, now = D
 		smallBlind: player.smallBlind,
 		bigBlind: player.bigBlind,
 		publicHoleCards: player.holeCards.map((cardCode, index) =>
-			player.visibleHoleCards[index] ? cardCode : null
+			(forceShowdownHoleCards || player.visibleHoleCards[index]) ? cardCode : null
 		),
 		handStrengthLabel: shouldShowTableHandStrength(player, communityCards, gameState)
 			? getPlayerHandStrengthLabel(player, communityCards)
