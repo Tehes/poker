@@ -226,6 +226,7 @@ const WINNER_REACTION_EMOJIS = {
 	reveal: ["😉", "😜", "🤭"],
 	uncontested: ["😎", "😏", "😌"],
 	split: ["🤝"],
+	lucky: ["🥹", "😆", "😮‍💨"],
 	comeback: ["💪", "😅"],
 	monsterHand: ["🤩", "🥳"],
 	strongHand: ["😁", "😄", "😬"],
@@ -238,6 +239,7 @@ const WINNER_REACTION_MONSTER_HANDS = new Set([
 	"Straight Flush",
 ]);
 const WINNER_REACTION_STRONG_HANDS = new Set(["Straight", "Flush"]);
+const WINNER_REACTION_LUCKY_MIN_GAP = 15;
 const CARD_SUIT_SYMBOLS = {
 	C: "♣",
 	D: "♦",
@@ -1349,6 +1351,35 @@ function applyBotReveal(player, revealDecision) {
 	updateHandStrengthDisplays();
 }
 
+function getLuckyWinnerReactionGap(player, showdownPlayers = []) {
+	const playerSnapshot = player?.lastNonFinalWinProbability;
+	if (typeof playerSnapshot !== "number" || !Array.isArray(showdownPlayers)) {
+		return null;
+	}
+
+	let hasOtherSnapshot = false;
+	let highestSnapshot = playerSnapshot;
+	showdownPlayers.forEach((showdownPlayer) => {
+		if (showdownPlayer === player) {
+			return;
+		}
+		const showdownSnapshot = showdownPlayer?.lastNonFinalWinProbability;
+		if (typeof showdownSnapshot !== "number") {
+			return;
+		}
+		hasOtherSnapshot = true;
+		if (showdownSnapshot > highestSnapshot) {
+			highestSnapshot = showdownSnapshot;
+		}
+	});
+
+	if (!hasOtherSnapshot || playerSnapshot === highestSnapshot) {
+		return null;
+	}
+
+	return highestSnapshot - playerSnapshot;
+}
+
 function getWinnerReactionEmoji(player, context) {
 	if (context.revealedPlayers.has(player)) {
 		return getRandomItem(WINNER_REACTION_EMOJIS.reveal);
@@ -1360,6 +1391,19 @@ function getWinnerReactionEmoji(player, context) {
 
 	if (context.mainPotWinnerCount > 1) {
 		return getRandomItem(WINNER_REACTION_EMOJIS.split);
+	}
+
+	if (context.hadShowdown) {
+		const luckyGap = getLuckyWinnerReactionGap(
+			player,
+			context.showdownPlayers,
+		);
+		if (
+			luckyGap !== null &&
+			luckyGap >= WINNER_REACTION_LUCKY_MIN_GAP
+		) {
+			return getRandomItem(WINNER_REACTION_EMOJIS.lucky);
+		}
 	}
 
 	const totalPayout = context.totalPayout;
@@ -1506,6 +1550,9 @@ function computeSpectatorWinProbabilities(reason = "") {
 
 	result.activePlayers.forEach((player) => {
 		player.winProbability = result.probabilities.get(player) ?? null;
+		if (missingCount > 0 && typeof player.winProbability === "number") {
+			player.lastNonFinalWinProbability = player.winProbability;
+		}
 	});
 
 	updateWinProbabilityDisplays();
@@ -1606,6 +1653,7 @@ function createPlayers() {
 			isWinner: false,
 			actionState: null,
 			winProbability: null,
+			lastNonFinalWinProbability: null,
 			seatIndex,
 			holeCards: [null, null],
 			visibleHoleCards: [false, false],
@@ -1682,7 +1730,9 @@ function updateBlindLevelForCurrentHand() {
 
 	let nextBigBlind = gameState.bigBlind;
 	for (
-		let level = gameState.blindLevel + 1; level <= nextBlindLevel; level++
+		let level = gameState.blindLevel + 1;
+		level <= nextBlindLevel;
+		level++
 	) {
 		nextBigBlind = getBigBlindForLevel(level, nextBigBlind);
 	}
@@ -1799,6 +1849,7 @@ function preFlop() {
 		p.allIn = false;
 		p.totalBet = 0;
 		p.winProbability = null;
+		p.lastNonFinalWinProbability = null;
 		p.isWinner = false;
 		clearPlayerWinnerReaction(p);
 		renderPlayerWinnerState(p, false);
@@ -2673,6 +2724,7 @@ function doShowdown() {
 			mainPotWinnerCount: mainPotWinners.length,
 			mainPotWinners,
 			revealedPlayers,
+			showdownPlayers: activePlayers,
 			totalPayoutByPlayer,
 		});
 		enqueueNotification(`${uncontestedWinner.name} wins ${totalPot}!`);
@@ -2725,6 +2777,7 @@ function doShowdown() {
 		mainPotWinnerCount: mainPotWinners.length,
 		mainPotWinners,
 		revealedPlayers: new Set(),
+		showdownPlayers: activePlayers,
 		totalPayoutByPlayer,
 	});
 
@@ -2858,7 +2911,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-04-18-v1";
+const SERVICE_WORKER_VERSION = "2026-04-18-v2";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
