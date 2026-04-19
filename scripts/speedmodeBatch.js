@@ -77,8 +77,7 @@ const START_CAPTURE_EXPRESSION = `(() => {
 	startButton.click();
 	return true;
 })()`;
-const PAGE_READY_EXPRESSION =
-	`(() => !!window.poker && !!document.getElementById("start-button"))()`;
+const PAGE_READY_EXPRESSION = `(() => !!window.poker && !!document.getElementById("start-button"))()`;
 const RUN_STATE_EXPRESSION = `(() => {
 	const poker = window.poker;
 	const players = poker?.players ?? [];
@@ -720,9 +719,10 @@ function formatDecisionExample(decision) {
 	const formatFixed = (value, digits) => typeof value === "number" ? value.toFixed(digits) : "-";
 	const toFlag = (value) => value ? "Y" : "N";
 	const noBetClass = typeof decision.noBetClass === "string" ? decision.noBetClass : "-";
-	const noBetInitialAction = typeof decision.noBetInitialAction === "string"
-		? decision.noBetInitialAction
-		: "-";
+	const noBetInitialAction = typeof decision.noBetInitialAction === "string" ? decision.noBetInitialAction : "-";
+	const sizingKind = typeof decision.sizingKind === "string" ? decision.sizingKind : "-";
+	const targetSizeBucket = typeof decision.targetSizeBucket === "string" ? decision.targetSizeBucket : "-";
+	const offBucketReason = typeof decision.offBucketReason === "string" ? decision.offBucketReason : "-";
 
 	return `${decision.player} → ${decision.action} | ` +
 		`H:${decision.handName} Amt:${decision.amount ?? 0} | ` +
@@ -741,9 +741,12 @@ function formatDecisionExample(decision) {
 		`MDFc:${formatFixed(decision.mdfCallChance, 3)} ` +
 		`MDF:${toFlag(decision.mdfApplied)} | ` +
 		`NVB:${toFlag(decision.nonValueBlocked)} | ` +
+		`ERC:${toFlag(decision.eliminationReliefCandidate)} ` +
+		`ERA:${toFlag(decision.eliminationReliefApplied)} | ` +
 		`Line:${decision.lineTag} CP:${decision.cbetPlan} BP:${decision.barrelPlan} ` +
 		`CM:${decision.cbetMade} BM:${decision.barrelMade} LA:${decision.lineAbort} | ` +
 		`NBCls:${noBetClass} NBInit:${noBetInitialAction} | ` +
+		`SZ:${sizingKind} TB:${targetSizeBucket} OB:${toFlag(decision.offBucket)} OBR:${offBucketReason} | ` +
 		`Stab:${toFlag(decision.stab)} Bluff:${toFlag(decision.bluff)}`;
 }
 
@@ -767,12 +770,8 @@ function normalizeStructuredDecision(decision) {
 	const openLimpScore = decision.openLimpScore ?? 0;
 	const flatScore = decision.flatScore ?? 0;
 	const lineTag = decision.lineTag ?? "-";
-	const mdfRequiredFoldRate = typeof decision.mdfRequiredFoldRate === "number"
-		? decision.mdfRequiredFoldRate
-		: null;
-	const mdfMarginToCall = typeof decision.mdfMarginToCall === "number"
-		? decision.mdfMarginToCall
-		: null;
+	const mdfRequiredFoldRate = typeof decision.mdfRequiredFoldRate === "number" ? decision.mdfRequiredFoldRate : null;
+	const mdfMarginToCall = typeof decision.mdfMarginToCall === "number" ? decision.mdfMarginToCall : null;
 
 	return {
 		...decision,
@@ -785,30 +784,25 @@ function normalizeStructuredDecision(decision) {
 		barrelMade: flagToState(decision.barrelMade),
 		lineAbort: flagToState(decision.lineAbort),
 		noBetClass: typeof decision.noBetClass === "string" ? decision.noBetClass : null,
-		noBetInitialAction: typeof decision.noBetInitialAction === "string"
-			? decision.noBetInitialAction
-			: null,
+		noBetInitialAction: typeof decision.noBetInitialAction === "string" ? decision.noBetInitialAction : null,
 		noBetFilterApplied: decision.noBetFilterApplied === true,
-		noBetBlockReason: typeof decision.noBetBlockReason === "string"
-			? decision.noBetBlockReason
-			: null,
+		noBetBlockReason: typeof decision.noBetBlockReason === "string" ? decision.noBetBlockReason : null,
+		eliminationReliefCandidate: decision.eliminationReliefCandidate === true,
+		eliminationReliefApplied: decision.eliminationReliefApplied === true,
 		marginalEdge: decision.marginalEdge === true,
-		marginalReason: typeof decision.marginalReason === "string"
-			? decision.marginalReason
-			: null,
+		marginalReason: typeof decision.marginalReason === "string" ? decision.marginalReason : null,
 		mdfEligible: decision.mdfEligible === true,
 		mdfApplied: decision.mdfApplied === true,
 		mdfRequiredFoldRate,
-		mdfRequiredDefense: typeof decision.mdfRequiredDefense === "number"
-			? decision.mdfRequiredDefense
-			: null,
+		mdfRequiredDefense: typeof decision.mdfRequiredDefense === "number" ? decision.mdfRequiredDefense : null,
 		mdfMarginToCall,
-		mdfMarginWindow: typeof decision.mdfMarginWindow === "number"
-			? decision.mdfMarginWindow
-			: null,
-		mdfCallChance: typeof decision.mdfCallChance === "number"
-			? decision.mdfCallChance
-			: null,
+		mdfMarginWindow: typeof decision.mdfMarginWindow === "number" ? decision.mdfMarginWindow : null,
+		mdfCallChance: typeof decision.mdfCallChance === "number" ? decision.mdfCallChance : null,
+		sizingKind: typeof decision.sizingKind === "string" ? decision.sizingKind : null,
+		targetSizeBucket: typeof decision.targetSizeBucket === "string" ? decision.targetSizeBucket : null,
+		expectedRaiseAmount: typeof decision.expectedRaiseAmount === "number" ? decision.expectedRaiseAmount : null,
+		offBucket: decision.offBucket === true,
+		offBucketReason: typeof decision.offBucketReason === "string" ? decision.offBucketReason : null,
 		lineRole: lineTag === "PFA" ? "pfa" : "other",
 		positionBucket: bucketPositionFactor(positionFactor),
 		eliminationRiskBucket: bucketEliminationRisk(eliminationRisk),
@@ -821,9 +815,7 @@ function normalizeStructuredDecision(decision) {
 		openRaiseScoreBucket: bucketDecisionScore(openRaiseScore),
 		openLimpScoreBucket: bucketDecisionScore(openLimpScore),
 		flatScoreBucket: bucketDecisionScore(flatScore),
-		mdfRequiredFoldRateBucket: mdfRequiredFoldRate === null
-			? "n/a"
-			: bucketRequiredFoldRate(mdfRequiredFoldRate),
+		mdfRequiredFoldRateBucket: mdfRequiredFoldRate === null ? "n/a" : bucketRequiredFoldRate(mdfRequiredFoldRate),
 		mdfBetSizeBucket: bucketBetToPotRatio(decision.toCall ?? 0, decision.potBefore ?? 0),
 		mdfMarginBucket: bucketMarginToCall(mdfMarginToCall),
 	};
@@ -883,6 +875,46 @@ function analyzeBlockedNoBetRaiseFollowups(decisions, metrics) {
 	}
 }
 
+function isAutoValueCheckDecision(decision) {
+	return decision.phase === "postflop" &&
+		decision.noBet === true &&
+		decision.canRaiseOpportunity === true &&
+		decision.noBetClass === "auto-value" &&
+		decision.action === "check";
+}
+
+function analyzeAutoValueCheckFollowups(decisions, metrics) {
+	const decisionsByHandId = groupDecisionsByHandId(decisions);
+
+	for (const handDecisions of decisionsByHandId.values()) {
+		for (const decision of handDecisions) {
+			if (!isAutoValueCheckDecision(decision)) {
+				continue;
+			}
+
+			const laterFacingBetDecision = handDecisions.find((laterDecision) =>
+				laterDecision.seatIndex === decision.seatIndex &&
+				(laterDecision.decisionId ?? 0) > (decision.decisionId ?? 0) &&
+				laterDecision.phase === "postflop" &&
+				laterDecision.toCall > 0
+			);
+
+			if (!laterFacingBetDecision) {
+				continue;
+			}
+
+			metrics.postflop.autoValueCheckLaterFacingBetCount += 1;
+			if (laterFacingBetDecision.action === "fold") {
+				metrics.postflop.autoValueCheckLaterFacingBetFolds += 1;
+				pushExample(
+					metrics.examples.postflopAutoValueCheckLaterFacingBetFold,
+					`${decision.line} -> ${laterFacingBetDecision.line}`,
+				);
+			}
+		}
+	}
+}
+
 function analyzePreflopTransitions(decisions, hands, metrics) {
 	const decisionsByHandId = groupDecisionsByHandId(decisions);
 
@@ -930,9 +962,7 @@ function analyzePreflopTransitions(decisions, hands, metrics) {
 			}
 
 			if (seatKey === "smallBlind" && openDecision.activePlayers === 2) {
-				const bbResponse = remainingPreflopDecisions.find((decision) =>
-					decision.preflopSeat === "bigBlind"
-				);
+				const bbResponse = remainingPreflopDecisions.find((decision) => decision.preflopSeat === "bigBlind");
 				metrics.preflop.transitions.sbHuOpen.attempts += 1;
 				if (bbResponse) {
 					incrementTrackedBlindResponse(
@@ -953,12 +983,8 @@ function analyzePreflopTransitions(decisions, hands, metrics) {
 			}
 
 			if (seatKey === "button" && openDecision.activePlayers === 3) {
-				const sbResponse = remainingPreflopDecisions.find((decision) =>
-					decision.preflopSeat === "smallBlind"
-				);
-				const bbResponse = remainingPreflopDecisions.find((decision) =>
-					decision.preflopSeat === "bigBlind"
-				);
+				const sbResponse = remainingPreflopDecisions.find((decision) => decision.preflopSeat === "smallBlind");
+				const bbResponse = remainingPreflopDecisions.find((decision) => decision.preflopSeat === "bigBlind");
 				const blindsDefended = [sbResponse, bbResponse].some((decision) =>
 					decision && (decision.action === "call" || decision.action === "raise")
 				);
@@ -1018,9 +1044,7 @@ function analyzePreflopTransitions(decisions, hands, metrics) {
 		}
 
 		if (callSeatKey === "smallBlind" && openCallDecision.activePlayers === 2) {
-			const bbResponse = remainingAfterOpenCall.find((decision) =>
-				decision.preflopSeat === "bigBlind"
-			);
+			const bbResponse = remainingAfterOpenCall.find((decision) => decision.preflopSeat === "bigBlind");
 			metrics.preflop.transitions.sbHuLimp.attempts += 1;
 			if (bbResponse) {
 				incrementTrackedBlindResponse(
@@ -1035,12 +1059,8 @@ function analyzePreflopTransitions(decisions, hands, metrics) {
 		}
 
 		if (callSeatKey === "button" && openCallDecision.activePlayers === 3) {
-			const sbResponse = remainingAfterOpenCall.find((decision) =>
-				decision.preflopSeat === "smallBlind"
-			);
-			const bbResponse = remainingAfterOpenCall.find((decision) =>
-				decision.preflopSeat === "bigBlind"
-			);
+			const sbResponse = remainingAfterOpenCall.find((decision) => decision.preflopSeat === "smallBlind");
+			const bbResponse = remainingAfterOpenCall.find((decision) => decision.preflopSeat === "bigBlind");
 			const blindRaised = sbResponse?.action === "raise" || bbResponse?.action === "raise";
 
 			metrics.preflop.transitions.btn3Limp.attempts += 1;
@@ -1077,9 +1097,7 @@ function classifyMadeHandFold(decision) {
 	const isPublicMadeHand = hasPublicMadeHand && decision.publicHand === decision.rawHand;
 	const isBoardMadeLift = hasPublicMadeHand && decision.publicHand !== decision.rawHand;
 	const isPrivateMadeHand = !hasPublicMadeHand;
-	const ownWinProbability = typeof decision.ownWinProbability === "number"
-		? decision.ownWinProbability
-		: null;
+	const ownWinProbability = typeof decision.ownWinProbability === "number" ? decision.ownWinProbability : null;
 	const isDeadOrNearDead = ownWinProbability !== null &&
 		ownWinProbability <= DEAD_PRIVATE_MADE_HAND_EQ_THRESHOLD;
 
@@ -1178,7 +1196,7 @@ function isProtectiveFoldDecision(decision) {
 		typeof decision.potOdds === "number" &&
 		decision.callBarrier >= decision.potOdds + 0.03;
 	const survivalPressure = (typeof decision.eliminationRisk === "number" &&
-			decision.eliminationRisk >= 0.33) ||
+		decision.eliminationRisk >= 0.33) ||
 		(typeof decision.stackRatio === "number" && decision.stackRatio >= 0.25) ||
 		(typeof decision.commitmentPressure === "number" &&
 			decision.commitmentPressure >= 0.25);
@@ -1238,9 +1256,7 @@ function analyzeOutcomeLogs(logs) {
 	}
 
 	const metrics = createEmptyOutcomeMetricsAccumulator();
-	const handIds = Array.from(new Set([...handStarts.keys(), ...handResults.keys()])).sort((a, b) =>
-		a - b
-	);
+	const handIds = Array.from(new Set([...handStarts.keys(), ...handResults.keys()])).sort((a, b) => a - b);
 	const hands = handIds.map((handId) =>
 		buildJoinedHandRecord(handId, handStarts.get(handId) ?? null, handResults.get(handId) ?? null)
 	);
@@ -1577,9 +1593,7 @@ function createStaticHandler(rootUrl) {
 		const extension = getExtension(pathname);
 		const headers = new Headers();
 		headers.set("content-type", CONTENT_TYPES[extension] || "application/octet-stream");
-		return request.method === "HEAD"
-			? new Response(null, { headers })
-			: new Response(file, { headers });
+		return request.method === "HEAD" ? new Response(null, { headers }) : new Response(file, { headers });
 	};
 }
 
@@ -1723,6 +1737,8 @@ function createEmptyPreflopMetrics() {
 		decisions: 0,
 		premiumFoldCount: 0,
 		unopenedCallCount: 0,
+		fixedSizeOffBucketCount: 0,
+		fixedSizeOffBucketByKind: {},
 		actions: {},
 		actionsBySpotType: {},
 		actionsByStructure: {},
@@ -1800,6 +1816,9 @@ function createEmptyPostflopMetrics() {
 			overrideCallByStreetAndPressure: {},
 			overrideCallByStreetAndLift: {},
 			overrideCallByStreetAndRawHand: {},
+			overrideCallAfterRiverLowEdgeBlockCount: 0,
+			overrideCallAfterMarginalDefenseBlockCount: 0,
+			overrideCallAfterNonValueBlockCount: 0,
 		},
 		pairKickerActions: {},
 		pfaDecisionCount: 0,
@@ -1837,6 +1856,14 @@ function createEmptyPostflopMetrics() {
 		blockedNoBetRaiseLaterFacingBetCount: 0,
 		blockedNoBetRaiseLaterFacingBetActions: {},
 		blockedNoBetRaiseWithoutLaterFacingBetCount: 0,
+		autoValueCheckCount: 0,
+		autoValueCheckLaterFacingBetCount: 0,
+		autoValueCheckLaterFacingBetFolds: 0,
+		eliminationReliefCandidateCount: 0,
+		eliminationReliefAppliedCount: 0,
+		eliminationReliefCallCount: 0,
+		normalBetOffBucketCount: 0,
+		normalBetOffBucketByKind: {},
 		weakNoBetOpportunityCount: 0,
 		weakNoBetOpportunityActions: {},
 		weakNoBetOpportunityByWeakClass: {},
@@ -1906,6 +1933,7 @@ function createEmptyMetrics() {
 		examples: {
 			preflopPremiumFold: [],
 			preflopUnopenedCall: [],
+			preflopFixedSizeOffBucket: [],
 			postflopPublicMadeHandFold: [],
 			postflopBoardMadeLiftFold: [],
 			postflopPrivateMadeHandFold: [],
@@ -1929,8 +1957,15 @@ function createEmptyMetrics() {
 			meaningful: [],
 			structural: [],
 			mdfOverrideCall: [],
+			mdfOverrideAfterRiverLowEdgeBlock: [],
+			mdfOverrideAfterMarginalDefenseBlock: [],
+			mdfOverrideAfterNonValueBlock: [],
 			postflopNoBetRaise: [],
 			postflopNoBetCheck: [],
+			postflopAutoValueCheck: [],
+			postflopAutoValueCheckLaterFacingBetFold: [],
+			postflopEliminationReliefCall: [],
+			postflopNormalBetOffBucket: [],
 			postflopWeakNoBetRaise: [],
 			postflopWeakNoBetCheck: [],
 		},
@@ -2113,6 +2148,16 @@ function analyzeRunDecisions(decisions, hands) {
 				metrics.preflop.unopenedCallCount += 1;
 				pushExample(metrics.examples.preflopUnopenedCall, line);
 			}
+			if (
+				decision.action === "raise" &&
+				decision.offBucket &&
+				decision.sizingKind !== null &&
+				decision.sizingKind !== "preflop-harrington"
+			) {
+				metrics.preflop.fixedSizeOffBucketCount += 1;
+				incrementCount(metrics.preflop.fixedSizeOffBucketByKind, decision.sizingKind);
+				pushExample(metrics.examples.preflopFixedSizeOffBucket, line);
+			}
 			if (decision.spotType === "UO" && decision.preflopSeat !== "-") {
 				incrementNestedCount(
 					metrics.preflop.uoActionsBySeat,
@@ -2173,6 +2218,26 @@ function analyzeRunDecisions(decisions, hands) {
 			decision.nonValueBlocked ? "yes" : "no",
 			decision.action,
 		);
+		if (decision.eliminationReliefCandidate) {
+			metrics.postflop.eliminationReliefCandidateCount += 1;
+			if (decision.eliminationReliefApplied) {
+				metrics.postflop.eliminationReliefAppliedCount += 1;
+				if (decision.action === "call") {
+					metrics.postflop.eliminationReliefCallCount += 1;
+					pushExample(metrics.examples.postflopEliminationReliefCall, line);
+				}
+			}
+		}
+		if (
+			decision.action === "raise" &&
+			decision.offBucket &&
+			decision.sizingKind !== null &&
+			decision.sizingKind.startsWith("postflop-")
+		) {
+			metrics.postflop.normalBetOffBucketCount += 1;
+			incrementCount(metrics.postflop.normalBetOffBucketByKind, decision.sizingKind);
+			pushExample(metrics.examples.postflopNormalBetOffBucket, line);
+		}
 		if (isPostflopReraise(decision)) {
 			const street = getPostflopStreet(decision);
 			const activePlayers = decision.activePlayers ?? 0;
@@ -2455,6 +2520,18 @@ function analyzeRunDecisions(decisions, hands) {
 						street,
 						decision.rawHand,
 					);
+					if (decision.riverLowEdgeBlocked) {
+						metrics.postflop.mdf.overrideCallAfterRiverLowEdgeBlockCount += 1;
+						pushExample(metrics.examples.mdfOverrideAfterRiverLowEdgeBlock, line);
+					}
+					if (decision.marginalDefenseBlocked) {
+						metrics.postflop.mdf.overrideCallAfterMarginalDefenseBlockCount += 1;
+						pushExample(metrics.examples.mdfOverrideAfterMarginalDefenseBlock, line);
+					}
+					if (decision.nonValueBlocked) {
+						metrics.postflop.mdf.overrideCallAfterNonValueBlockCount += 1;
+						pushExample(metrics.examples.mdfOverrideAfterNonValueBlock, line);
+					}
 					pushExample(metrics.examples.mdfOverrideCall, line);
 				}
 			}
@@ -2505,6 +2582,10 @@ function analyzeRunDecisions(decisions, hands) {
 				pushExample(metrics.examples.postflopNoBetRaise, line);
 			} else if (decision.action === "check") {
 				pushExample(metrics.examples.postflopNoBetCheck, line);
+			}
+			if (noBetClass === "auto-value" && decision.action === "check") {
+				metrics.postflop.autoValueCheckCount += 1;
+				pushExample(metrics.examples.postflopAutoValueCheck, line);
 			}
 		}
 
@@ -2643,6 +2724,7 @@ function analyzeRunDecisions(decisions, hands) {
 	}
 
 	analyzeBlockedNoBetRaiseFollowups(normalizedDecisions, metrics);
+	analyzeAutoValueCheckFollowups(normalizedDecisions, metrics);
 	analyzePreflopTransitions(normalizedDecisions, hands, metrics);
 	return metrics;
 }
@@ -2678,15 +2760,12 @@ function mergeRunMetrics(target, source) {
 	deepMergeCounts(target.publicHandActions, source.publicHandActions);
 	deepMergeCounts(target.pairKickerActions, source.pairKickerActions);
 	source.kickerRaiseExamples.forEach((line) => pushExample(target.kickerRaiseExamples, line));
-	source.meaningfulRaiseExamples.forEach((line) =>
-		pushExample(target.meaningfulRaiseExamples, line)
-	);
+	source.meaningfulRaiseExamples.forEach((line) => pushExample(target.meaningfulRaiseExamples, line));
 	source.structuralExamples.forEach((line) => pushExample(target.structuralExamples, line));
-	source.examples.preflopPremiumFold.forEach((line) =>
-		pushExample(target.examples.preflopPremiumFold, line)
-	);
-	source.examples.preflopUnopenedCall.forEach((line) =>
-		pushExample(target.examples.preflopUnopenedCall, line)
+	source.examples.preflopPremiumFold.forEach((line) => pushExample(target.examples.preflopPremiumFold, line));
+	source.examples.preflopUnopenedCall.forEach((line) => pushExample(target.examples.preflopUnopenedCall, line));
+	source.examples.preflopFixedSizeOffBucket.forEach((line) =>
+		pushExample(target.examples.preflopFixedSizeOffBucket, line)
 	);
 	source.examples.postflopPublicMadeHandFold.forEach((line) =>
 		pushExample(target.examples.postflopPublicMadeHandFold, line)
@@ -2715,12 +2794,8 @@ function mergeRunMetrics(target, source) {
 	source.examples.postflopHighRiskPrivateMadeHandFoldLive.forEach((line) =>
 		pushExample(target.examples.postflopHighRiskPrivateMadeHandFoldLive, line)
 	);
-	source.examples.postflopReraiseLowEdge.forEach((line) =>
-		pushExample(target.examples.postflopReraiseLowEdge, line)
-	);
-	source.examples.postflopReraise4Plus.forEach((line) =>
-		pushExample(target.examples.postflopReraise4Plus, line)
-	);
+	source.examples.postflopReraiseLowEdge.forEach((line) => pushExample(target.examples.postflopReraiseLowEdge, line));
+	source.examples.postflopReraise4Plus.forEach((line) => pushExample(target.examples.postflopReraise4Plus, line));
 	source.examples.postflopFlopReraiseMultiway.forEach((line) =>
 		pushExample(target.examples.postflopFlopReraiseMultiway, line)
 	);
@@ -2730,35 +2805,38 @@ function mergeRunMetrics(target, source) {
 	source.examples.postflopAllInReraiseLowEdge.forEach((line) =>
 		pushExample(target.examples.postflopAllInReraiseLowEdge, line)
 	);
-	source.examples.bluffRaiseAir.forEach((line) =>
-		pushExample(target.examples.bluffRaiseAir, line)
+	source.examples.bluffRaiseAir.forEach((line) => pushExample(target.examples.bluffRaiseAir, line));
+	source.examples.bluffRaiseDraw.forEach((line) => pushExample(target.examples.bluffRaiseDraw, line));
+	source.examples.bluffRaiseMadeHand.forEach((line) => pushExample(target.examples.bluffRaiseMadeHand, line));
+	source.examples.mdfOverrideCall.forEach((line) => pushExample(target.examples.mdfOverrideCall, line));
+	source.examples.mdfOverrideAfterRiverLowEdgeBlock.forEach((line) =>
+		pushExample(target.examples.mdfOverrideAfterRiverLowEdgeBlock, line)
 	);
-	source.examples.bluffRaiseDraw.forEach((line) =>
-		pushExample(target.examples.bluffRaiseDraw, line)
+	source.examples.mdfOverrideAfterMarginalDefenseBlock.forEach((line) =>
+		pushExample(target.examples.mdfOverrideAfterMarginalDefenseBlock, line)
 	);
-	source.examples.bluffRaiseMadeHand.forEach((line) =>
-		pushExample(target.examples.bluffRaiseMadeHand, line)
-	);
-	source.examples.mdfOverrideCall.forEach((line) =>
-		pushExample(target.examples.mdfOverrideCall, line)
+	source.examples.mdfOverrideAfterNonValueBlock.forEach((line) =>
+		pushExample(target.examples.mdfOverrideAfterNonValueBlock, line)
 	);
 	source.examples.stabRaise.forEach((line) => pushExample(target.examples.stabRaise, line));
 	source.examples.lineAbort.forEach((line) => pushExample(target.examples.lineAbort, line));
 	source.examples.kickerRaise.forEach((line) => pushExample(target.examples.kickerRaise, line));
 	source.examples.meaningful.forEach((line) => pushExample(target.examples.meaningful, line));
 	source.examples.structural.forEach((line) => pushExample(target.examples.structural, line));
-	source.examples.postflopNoBetRaise.forEach((line) =>
-		pushExample(target.examples.postflopNoBetRaise, line)
+	source.examples.postflopNoBetRaise.forEach((line) => pushExample(target.examples.postflopNoBetRaise, line));
+	source.examples.postflopNoBetCheck.forEach((line) => pushExample(target.examples.postflopNoBetCheck, line));
+	source.examples.postflopAutoValueCheck.forEach((line) => pushExample(target.examples.postflopAutoValueCheck, line));
+	source.examples.postflopAutoValueCheckLaterFacingBetFold.forEach((line) =>
+		pushExample(target.examples.postflopAutoValueCheckLaterFacingBetFold, line)
 	);
-	source.examples.postflopNoBetCheck.forEach((line) =>
-		pushExample(target.examples.postflopNoBetCheck, line)
+	source.examples.postflopEliminationReliefCall.forEach((line) =>
+		pushExample(target.examples.postflopEliminationReliefCall, line)
 	);
-	source.examples.postflopWeakNoBetRaise.forEach((line) =>
-		pushExample(target.examples.postflopWeakNoBetRaise, line)
+	source.examples.postflopNormalBetOffBucket.forEach((line) =>
+		pushExample(target.examples.postflopNormalBetOffBucket, line)
 	);
-	source.examples.postflopWeakNoBetCheck.forEach((line) =>
-		pushExample(target.examples.postflopWeakNoBetCheck, line)
-	);
+	source.examples.postflopWeakNoBetRaise.forEach((line) => pushExample(target.examples.postflopWeakNoBetRaise, line));
+	source.examples.postflopWeakNoBetCheck.forEach((line) => pushExample(target.examples.postflopWeakNoBetCheck, line));
 }
 
 async function runSingleTournament(
@@ -2970,21 +3048,19 @@ async function main() {
 			`postflop_private_made_hand_folds=${aggregateMetrics.postflop.privateMadeHandFoldCount}`,
 		);
 		console.log(
-			`postflop_private_made_hand_folds_dead_or_near_dead=${
-				aggregateMetrics.postflop.privateMadeHandFoldDeadOrNearDeadCount
-			}`,
+			`postflop_private_made_hand_folds_dead_or_near_dead=${aggregateMetrics.postflop.privateMadeHandFoldDeadOrNearDeadCount}`,
 		);
 		console.log(
-			`postflop_private_made_hand_folds_live=${
-				aggregateMetrics.postflop.privateMadeHandFoldLiveCount
-			}`,
+			`postflop_private_made_hand_folds_live=${aggregateMetrics.postflop.privateMadeHandFoldLiveCount}`,
 		);
 		console.log(
 			`postflop_private_top_tier_made_hand_folds=${aggregateMetrics.postflop.privateTopTierMadeHandFoldCount}`,
 		);
 		console.log(`postflop_reraises=${aggregateMetrics.postflop.reraises.totalCount}`);
 		console.log(
-			`postflop_reraises_edge_lt_${RERAISE_LOW_EDGE_THRESHOLD.toFixed(1)}=${aggregateMetrics.postflop.reraises.lowEdgeCount}`,
+			`postflop_reraises_edge_lt_${
+				RERAISE_LOW_EDGE_THRESHOLD.toFixed(1)
+			}=${aggregateMetrics.postflop.reraises.lowEdgeCount}`,
 		);
 		console.log(
 			`postflop_reraises_active_players_4_plus=${aggregateMetrics.postflop.reraises.activePlayers4PlusCount}`,
@@ -2999,23 +3075,24 @@ async function main() {
 			`postflop_reraises_allin_below_trips=${aggregateMetrics.postflop.reraises.allInBelowTripsCount}`,
 		);
 		console.log(
-			`postflop_reraises_allin_edge_lt_${RERAISE_LOW_EDGE_THRESHOLD.toFixed(1)}=${aggregateMetrics.postflop.reraises.allInLowEdgeCount}`,
+			`postflop_reraises_allin_edge_lt_${
+				RERAISE_LOW_EDGE_THRESHOLD.toFixed(1)
+			}=${aggregateMetrics.postflop.reraises.allInLowEdgeCount}`,
 		);
 		console.log(
 			`postflop_high_risk_private_made_hand_folds=${aggregateMetrics.postflop.highRiskPrivateMadeHandFoldCount}`,
 		);
 		console.log(
-			`postflop_high_risk_private_made_hand_folds_dead_or_near_dead=${
-				aggregateMetrics.postflop.highRiskPrivateMadeHandFoldDeadOrNearDeadCount
-			}`,
+			`postflop_high_risk_private_made_hand_folds_dead_or_near_dead=${aggregateMetrics.postflop.highRiskPrivateMadeHandFoldDeadOrNearDeadCount}`,
 		);
 		console.log(
-			`postflop_high_risk_private_made_hand_folds_live=${
-				aggregateMetrics.postflop.highRiskPrivateMadeHandFoldLiveCount
-			}`,
+			`postflop_high_risk_private_made_hand_folds_live=${aggregateMetrics.postflop.highRiskPrivateMadeHandFoldLiveCount}`,
 		);
 		console.log(`preflop_premium_folds=${aggregateMetrics.preflop.premiumFoldCount}`);
 		console.log(`preflop_unopened_calls=${aggregateMetrics.preflop.unopenedCallCount}`);
+		console.log(
+			`preflop_fixed_size_offbucket=${aggregateMetrics.preflop.fixedSizeOffBucketCount}`,
+		);
 		console.log(
 			`sb_hu_open_uncontested=${aggregateMetrics.preflop.transitions.sbHuOpen.uncontested}/${aggregateMetrics.preflop.transitions.sbHuOpen.attempts}`,
 		);
@@ -3047,17 +3124,13 @@ async function main() {
 			`flop_seen_after_btn_3_limp=${aggregateMetrics.preflop.transitions.btn3Limp.flopSeen}/${aggregateMetrics.preflop.transitions.btn3Limp.attempts}`,
 		);
 		console.log(
-			`bluff_raises_with_made_hand=${
-				aggregateMetrics.postflop.bluffRaiseClassCounts["made-hand"] || 0
-			}`,
+			`bluff_raises_with_made_hand=${aggregateMetrics.postflop.bluffRaiseClassCounts["made-hand"] || 0}`,
 		);
 		console.log(
 			`postflop_no_bet_opportunities=${aggregateMetrics.postflop.noBetOpportunityCount}`,
 		);
 		console.log(
-			`postflop_no_bet_raises=${
-				aggregateMetrics.postflop.noBetOpportunityActions.raise || 0
-			}`,
+			`postflop_no_bet_raises=${aggregateMetrics.postflop.noBetOpportunityActions.raise || 0}`,
 		);
 		console.log(
 			`postflop_blocked_no_bet_raises=${aggregateMetrics.postflop.blockedNoBetRaiseCount}`,
@@ -3084,12 +3157,28 @@ async function main() {
 			`postflop_blocked_no_bet_without_later_facing_bet=${aggregateMetrics.postflop.blockedNoBetRaiseWithoutLaterFacingBetCount}`,
 		);
 		console.log(
+			`postflop_auto_value_checks=${aggregateMetrics.postflop.autoValueCheckCount}`,
+		);
+		console.log(
+			`postflop_auto_value_checks_later_facing_bet=${aggregateMetrics.postflop.autoValueCheckLaterFacingBetCount}`,
+		);
+		console.log(
+			`postflop_auto_value_checks_later_facing_bet_folds=${aggregateMetrics.postflop.autoValueCheckLaterFacingBetFolds}`,
+		);
+		console.log(
+			`postflop_elim_relief_candidates=${aggregateMetrics.postflop.eliminationReliefCandidateCount}`,
+		);
+		console.log(
+			`postflop_elim_relief_calls=${aggregateMetrics.postflop.eliminationReliefCallCount}`,
+		);
+		console.log(
+			`postflop_normal_bet_offbucket=${aggregateMetrics.postflop.normalBetOffBucketCount}`,
+		);
+		console.log(
 			`postflop_weak_no_bet_opportunities=${aggregateMetrics.postflop.weakNoBetOpportunityCount}`,
 		);
 		console.log(
-			`postflop_weak_no_bet_raises=${
-				aggregateMetrics.postflop.weakNoBetOpportunityActions.raise || 0
-			}`,
+			`postflop_weak_no_bet_raises=${aggregateMetrics.postflop.weakNoBetOpportunityActions.raise || 0}`,
 		);
 		console.log(
 			`marginal_actions=${JSON.stringify(aggregateMetrics.postflop.marginalActions)}`,
@@ -3101,6 +3190,15 @@ async function main() {
 		console.log(
 			`marginal_facing_raise_calls=${aggregateMetrics.postflop.marginalFacingRaiseCallCount}`,
 		);
+		console.log(
+			`mdf_override_after_river_low_edge_block=${aggregateMetrics.postflop.mdf.overrideCallAfterRiverLowEdgeBlockCount}`,
+		);
+		console.log(
+			`mdf_override_after_marginal_defense_block=${aggregateMetrics.postflop.mdf.overrideCallAfterMarginalDefenseBlockCount}`,
+		);
+		console.log(
+			`mdf_override_after_non_value_block=${aggregateMetrics.postflop.mdf.overrideCallAfterNonValueBlockCount}`,
+		);
 		console.log(`kicker_raises=${aggregateMetrics.kickerRaiseCount}`);
 		console.log(`meaningful_raises=${aggregateMetrics.meaningfulRaiseCount}`);
 		console.log(
@@ -3110,23 +3208,19 @@ async function main() {
 			const facingBetRow = aggregateMetrics.postflop.mdf.facingBetByStreet[street];
 			const facingBetSummary = summarizeFoldRateRow(facingBetRow);
 			console.log(
-				`mdf_${street}_actual_vs_alpha=${
-					facingBetSummary.actualFoldRate.toFixed(3)
-				}/${facingBetSummary.requiredFoldRate.toFixed(3)} over=${
-					facingBetSummary.overfold.toFixed(3)
-				}`,
+				`mdf_${street}_actual_vs_alpha=${facingBetSummary.actualFoldRate.toFixed(3)}/${
+					facingBetSummary.requiredFoldRate.toFixed(3)
+				} over=${facingBetSummary.overfold.toFixed(3)}`,
 			);
 
 			const candidateRow = aggregateMetrics.postflop.mdf.candidateByStreet[street];
 			const candidateSummary = summarizeFoldRateRow(candidateRow);
 			console.log(
-				`mdf_${street}_candidates=${
-					candidateRow?.total || 0
-				} defends=${candidateRow?.defends || 0} actual_vs_alpha=${
-					candidateSummary.actualFoldRate.toFixed(3)
-				}/${candidateSummary.requiredFoldRate.toFixed(3)} over=${
-					candidateSummary.overfold.toFixed(3)
-				}`,
+				`mdf_${street}_candidates=${candidateRow?.total || 0} defends=${
+					candidateRow?.defends || 0
+				} actual_vs_alpha=${candidateSummary.actualFoldRate.toFixed(3)}/${
+					candidateSummary.requiredFoldRate.toFixed(3)
+				} over=${candidateSummary.overfold.toFixed(3)}`,
 			);
 			console.log(
 				`mdf_${street}_facing_by_margin=${

@@ -1,6 +1,19 @@
-export const APP_VERSION = "1.0.21";
+export const APP_VERSION = "1.0.22";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.22",
+		date: "2026-04-19",
+		title: "Fixed tournament sizing and early deep-stack frequency",
+		notes: [
+			"Replaced preflop sizing with fixed tournament-style opens, 3-bets, squeezes, and 4-bets.",
+			"Made preflop IP/OOP sizing follow the current hand's action order relative to the last aggressor.",
+			"Capped postflop sizing to clear 30, 40, 55, and 75 percent pot buckets.",
+			"Reduced early deep-stack reraises so level 0-1 pots escalate less often before stacks naturally get shallow.",
+			"Kept normal opens, standard checked-to aggression, and Harrington short-stack behavior intact.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.21",
 		date: "2026-04-14",
