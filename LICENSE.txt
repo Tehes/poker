@@ -1,45 +1,52 @@
-MIT License
+Tehes Poker Source-Available License v1.0
 
 Copyright (c) Tino Sabetta
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This software and all associated files in this repository are provided as
+source-available software. You may view, download, and modify the source code
+for personal, educational, and non-commercial purposes, subject to the
+conditions below.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. Attribution
+Any public redistribution of this software, whether modified or unmodified,
+must include a prominent attribution to the original project and a link to the
+original repository:
 
+https://github.com/Tehes/poker
+
+2. Visible in-app attribution is required
+Any public redistribution of this software, whether modified or unmodified,
+must include a visible in-app attribution to the original project and its
+original author, such as “Based on Poker by Tehes”, together with a link to
+the original repository. This must not imply that the redistributed version is the original project.
+
+3. Modified versions must be identified
+If you publish or redistribute a modified version, you must clearly state that
+your version is modified and unofficial. You must not present it as the
+original project.
+
+4. No misleading rebranding
+You may not use the project name, identity, or presentation in a way that
+suggests your version is the original project or officially endorsed by the
+original author.
+
+5. Non-commercial use only
+You may not sell this software, offer it as a paid service, use it in a
+commercial product or service, or otherwise commercially exploit it without
+prior written permission from the copyright holder.
+
+6. No sublicense of broader rights
+You may not grant downstream recipients rights broader than those granted under
+this license.
+
+7. Termination
+Any breach of these terms automatically terminates your rights under this
+license.
+
+8. Warranty disclaimer
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
---------------------------------------------------------------------
-
-"Commons Clause" License Condition v1.0
-
-The Software is provided to you by the Licensor under the License, as defined
-below, subject to the following condition.
-
-Without limiting other conditions in the License, the grant of rights under the
-License will not include, and the License does not grant to you, the right to
-Sell the Software.
-
-For purposes of the foregoing, "Sell" means practicing any or all of the rights
-granted to you under the License to provide to third parties, for a fee or
-other consideration (including without limitation fees for hosting, consulting,
-support services, or commercial use), a product or service whose value derives,
-entirely or substantially, from the functionality of the Software.
-
-Any license notice or attribution required by the License must also include
-this Commons Clause License Condition notice.
-
-Software: All files associated with this project.
-License: MIT
-Licensor: Tino Sabetta
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

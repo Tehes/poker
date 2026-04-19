@@ -7,6 +7,22 @@ joins via QR code or link to use their own device, while the shared table handle
 
 ---
 
+## License and usage
+
+This project is source-available, not open source.
+
+You may view and modify the code for personal, educational, and non-commercial purposes.
+
+If you publicly redistribute this project or a modified version of it, you must:
+
+- link to the original project: [https://github.com/Tehes/poker](https://github.com/Tehes/poker)
+- include a visible in-app attribution such as “Based on Poker by Tehes” with a link to the original project
+- clearly mark your version as modified and unofficial
+
+Commercial use, paid hosting, resale, and misleading rebranding are not allowed without prior written permission.
+
+---
+
 ## 🎯 Key Features
 
 - **No Setup Required**: No app install, no sign-ups, no lobby and no configuration. Just enter
