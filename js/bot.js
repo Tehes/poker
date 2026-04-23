@@ -23,10 +23,18 @@ MODULE BOUNDARY: Bot Decision Engine
 // dampened on purpose.
 // Postflop, protect medium-strength hands from collapsing into automatic folds. Second pair, weak
 // top pair, and reasonable showdown hands must remain playable when the price is sane.
-// Guardrails are non-negotiable: no premium preflop folds, no bluff raises with made hands, no
-// absurd kicker or board-made folds, and no broken multi-raised lines.
+// Core safety guardrails are non-negotiable: no premium preflop folds, no bluff raises with made
+// hands, no absurd kicker or board-made folds, and no broken multi-raised lines.
+//
+// TUNING PRINCIPLE:
+// Prefer adjusting existing numeric thresholds, ratios, caps, and hand-context classification
+// before adding new hard guards or binary filters.
+// New guardrails should be rare and reserved for true safety or coherence failures, not as the
+// default fix for ordinary balance leaks.
+// When a leak appears, first try to solve it by improving continuous evaluation so the bot stays
+// readable, playable, and less fragmented across many spot-specific rules.
 // Batch rule: measure first, then change. One lever per pass. A change is only good if it creates
-// more plausible poker or more real postflop play without breaking the guardrails.
+// more plausible poker or more real postflop play without breaking the core safety guardrails.
 
 import { Card, Hand } from "./pokersolver.js";
 

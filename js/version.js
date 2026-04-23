@@ -1,16 +1,26 @@
+/*
+Version log writing guide:
+- Write from the player's or game's point of view, not from the code's point of view.
+- Describe functional behavior and gameplay impact instead of internal helpers, tags, thresholds, or refactors.
+- Keep titles short, plain-language, and feature-oriented.
+- Keep notes concise and focused on what changed in play, pacing, risk, or clarity.
+- Mention diagnostics or internal reporting only when they meaningfully affect analysis or validation.
+- Group related tuning work into one coherent entry instead of listing every small internal step.
+*/
+
 export const APP_VERSION = "1.0.23";
 
 export const VERSION_LOG = [
 	{
 		version: "1.0.23",
 		date: "2026-04-23",
-		title: "Postflop pair structure tuning",
+		title: "More selective pair play after the flop",
 		notes: [
-			"Kept the no-guard tuning path and tightened existing RL1 and multiway postflop reraise thresholds instead of adding a new hard filter.",
-			"Made checked-to pair value depend more on heads-up versus multiway context, acting order, and previous street weakness.",
-			"Added structural pair classes so overpairs, top pair, second pair, weak pairs, pocket underpairs, board-only pairs, and paired-board private pairs no longer flow through the same postflop value logic.",
-			"Used the new pair context in checked-to value, postflop reraises, and shallow stackoffs so weak or board-derived pair spots stop playing like real value hands.",
-			"Aligned speedmode diagnostics with the new pair tags so weak no-bet spots are counted correctly again.",
+			"Bots now separate strong pair value more clearly from weaker or board-driven pair spots after the flop.",
+			"Checked-to pair bets and reraises became more selective, especially in multiway pots and other thin early-tournament situations.",
+			"Weaker pair hands are less likely to bloat pots, while clear value hands still keep their normal pressure.",
+			"Short-stack postflop decisions stay aggressive with real value but are less eager to stack off with marginal pair strength.",
+			"Internal speedmode reporting was updated so these weaker pair spots stay visible in diagnostics.",
 		],
 		estimated: false,
 	},
