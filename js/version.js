@@ -1,6 +1,19 @@
-export const APP_VERSION = "1.0.22";
+export const APP_VERSION = "1.0.23";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.23",
+		date: "2026-04-23",
+		title: "Postflop pair structure tuning",
+		notes: [
+			"Kept the no-guard tuning path and tightened existing RL1 and multiway postflop reraise thresholds instead of adding a new hard filter.",
+			"Made checked-to pair value depend more on heads-up versus multiway context, acting order, and previous street weakness.",
+			"Added structural pair classes so overpairs, top pair, second pair, weak pairs, pocket underpairs, board-only pairs, and paired-board private pairs no longer flow through the same postflop value logic.",
+			"Used the new pair context in checked-to value, postflop reraises, and shallow stackoffs so weak or board-derived pair spots stop playing like real value hands.",
+			"Aligned speedmode diagnostics with the new pair tags so weak no-bet spots are counted correctly again.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.22",
 		date: "2026-04-19",

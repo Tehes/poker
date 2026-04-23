@@ -36,6 +36,8 @@ const TOP_TIER_POSTFLOP_HANDS = new Set([
 	"Four of a Kind",
 	"Straight Flush",
 ]);
+const PREMIUM_PAIR_BOARD_CONTEXTS = new Set(["TP", "OP"]);
+const WEAK_PAIR_LIKE_BOARD_CONTEXTS = new Set(["SP", "WP", "UP", "BP", "PBP"]);
 const BELOW_TRIPS_POSTFLOP_HANDS = new Set([
 	"High Card",
 	"Pair",
@@ -1115,7 +1117,7 @@ function classifyMadeHandFold(decision) {
 function classifyWeakNoBetOpportunity(decision) {
 	if (
 		decision.phase !== "postflop" || !decision.noBet || !decision.canRaiseOpportunity ||
-		decision.boardContext === "TP" || decision.boardContext === "OP" ||
+		PREMIUM_PAIR_BOARD_CONTEXTS.has(decision.boardContext) ||
 		decision.drawFlag === "S" ||
 		STRONG_POSTFLOP_HANDS.has(decision.publicHand)
 	) {
@@ -1133,8 +1135,13 @@ function classifyWeakNoBetOpportunity(decision) {
 	}
 
 	if (
-		decision.rawHand === "Pair" &&
-		decision.boardContext === "-" &&
+		(
+			WEAK_PAIR_LIKE_BOARD_CONTEXTS.has(decision.boardContext) ||
+			(
+				decision.rawHand === "Pair" &&
+				decision.boardContext === "-"
+			)
+		) &&
 		(decision.publicHand === "High Card" || decision.publicHand === "Pair")
 	) {
 		return "weak-pair";
