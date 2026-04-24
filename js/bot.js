@@ -26,6 +26,48 @@ MODULE BOUNDARY: Bot Decision Engine
 // Core safety guardrails are non-negotiable: no premium preflop folds, no bluff raises with made
 // hands, no absurd kicker or board-made folds, and no broken multi-raised lines.
 //
+// STRATEGIC INVARIANTS:
+// - Dead / Red / Orange zones must preserve real push-fold pressure.
+// - Deep and healthy stacks must not drift into panic shoves or shallow-stack behavior.
+// - Multiway ranges must stay tighter and more value-heavy than heads-up ranges.
+// - Thin raises and loose bluffcatch calls should be rarer multiway.
+// - Position must remain meaningful.
+// - BTN / CO should keep wider profitable opens and more flexible continues than early position or
+//   OOP spots.
+// - Strong value should keep aggression priority over marginal fancy lines.
+// - Fixes must not solve one leak by reducing obvious value betting or obvious value raising.
+//
+// ACCEPTANCE CRITERIA:
+// - Judge changes by decision quality and strategic coherence, not by raw tightness.
+// - A pass is acceptable only if it improves the target leak without pushing the bot into a
+//   clearly overfolding, spewy, or degenerate style.
+// - Hard fails: preflop_premium_folds must stay 0, bluff_raises_with_made_hand must stay 0, and
+//   postflop_reraises_allin_edge_lt_1.0 must stay 0.
+// - Watchpoints: postflop_reraises_edge_lt_1.0 must stay rare and must not materially worsen vs
+//   baseline; non-target regressions such as marginal raises, weak calls, and early large pots
+//   must not clearly rise as a side effect.
+// - Defense guardrails: analysis.postflop.mdf.facingBetOverall.overfold should stay near baseline
+//   and analysis.postflop.mdf.candidateOverall.overfold must not clearly drift upward.
+// - Slight tournament overfold is acceptable; chronic street-wide or overall overfold is not.
+// - As a rule of thumb, sustained overall or street-wide overfold above about +0.10 is too tight.
+// - When the pass targets calls, marginal_river_calls and marginal_facing_raise_calls should
+//   improve.
+// - Good folds are part of playability: the bot should defend enough versus standard pressure,
+//   but still release weak pairs, board-only hands, weak draws, dead hands, and kicker-only hands
+//   in bad contexts.
+// - Weak bluffcatchers and weak pair classes should fold more often in bad contexts.
+// - overpair, top-pair, and good second-pair must remain defendable when price and structure are
+//   reasonable.
+// - Raise / call / fold must all remain live options postflop.
+// - SB heads-up and BTN 3-handed should keep healthy open / defend dynamics.
+// - firstBustAvg, firstBustMedian, early bust share <= 10, and early 800+ pots must not show
+//   clear multi-metric regression versus the latest 100-run baseline.
+// - One noisy metric alone is not enough to fail a pass; clustered regressions are.
+// - Batch rule: speedmode:10 is the required structure check, speedmode:30 is the stability check
+//   for promising passes, and speedmode:100 is the acceptance run against the latest 100-run
+//   baseline; a candidate wins only if target metrics improve and core health metrics remain
+//   stable.
+//
 // TUNING PRINCIPLE:
 // Prefer adjusting existing numeric thresholds, ratios, caps, and hand-context classification
 // before adding new hard guards or binary filters.

@@ -45,6 +45,10 @@ const BELOW_TRIPS_POSTFLOP_HANDS = new Set([
 ]);
 const RERAISE_LOW_EDGE_THRESHOLD = 1.0;
 const DEAD_PRIVATE_MADE_HAND_EQ_THRESHOLD = 5;
+const CARD_RANK_ORDER = "23456789TJQKA";
+const HIGH_BOARD_MIN_RANK_INDEX = CARD_RANK_ORDER.indexOf("T");
+const BAD_PRICE_POT_ODDS = 0.18;
+const LARGE_RIVER_POT_ODDS = 0.2;
 const CONTENT_TYPES = {
 	".css": "text/css; charset=utf-8",
 	".html": "text/html; charset=utf-8",
@@ -545,6 +549,31 @@ function summarizeFoldRateRow(row) {
 	};
 }
 
+function combineFoldRateRows(target) {
+	const combined = createEmptyFoldRateRow();
+	if (!target || typeof target !== "object" || Array.isArray(target)) {
+		return combined;
+	}
+
+	for (const row of Object.values(target)) {
+		if (
+			!row ||
+			typeof row.total !== "number" ||
+			typeof row.folds !== "number" ||
+			typeof row.defends !== "number" ||
+			typeof row.requiredFoldRateSum !== "number"
+		) {
+			continue;
+		}
+		combined.total += row.total;
+		combined.folds += row.folds;
+		combined.defends += row.defends;
+		combined.requiredFoldRateSum += row.requiredFoldRateSum;
+	}
+
+	return combined;
+}
+
 function summarizeFoldRateBreakdownTree(target) {
 	if (!target || typeof target !== "object" || Array.isArray(target)) {
 		return target;
@@ -578,6 +607,9 @@ function summarizeFoldRateBreakdownTree(target) {
 
 function createMdfAnalysis(mdfMetrics) {
 	return {
+		facingBetOverall: summarizeFoldRateBreakdownTree(
+			combineFoldRateRows(mdfMetrics.facingBetByStreet),
+		),
 		facingBetByStreet: summarizeFoldRateBreakdownTree(mdfMetrics.facingBetByStreet),
 		facingBetByStreetAndAlpha: summarizeFoldRateBreakdownTree(
 			mdfMetrics.facingBetByStreetAndAlpha,
@@ -605,6 +637,9 @@ function createMdfAnalysis(mdfMetrics) {
 		),
 		facingBetByStreetAndRawHand: summarizeFoldRateBreakdownTree(
 			mdfMetrics.facingBetByStreetAndRawHand,
+		),
+		candidateOverall: summarizeFoldRateBreakdownTree(
+			combineFoldRateRows(mdfMetrics.candidateByStreet),
 		),
 		candidateByStreet: summarizeFoldRateBreakdownTree(mdfMetrics.candidateByStreet),
 		candidateByStreetAndMargin: summarizeFoldRateBreakdownTree(
@@ -1112,6 +1147,135 @@ function classifyMadeHandFold(decision) {
 		isDeadOrNearDead,
 		isLive: !isDeadOrNearDead,
 	};
+}
+
+function getHighestBoardRankIndex(decision) {
+	const communityCards = Array.isArray(decision.communityCards)
+		? decision.communityCards
+		: [];
+	let highestRankIndex = -1;
+
+	for (const card of communityCards) {
+		if (typeof card !== "string" || card.length === 0) {
+			continue;
+		}
+		const rankIndex = CARD_RANK_ORDER.indexOf(card[0]);
+		if (rankIndex > highestRankIndex) {
+			highestRankIndex = rankIndex;
+		}
+	}
+
+	return highestRankIndex;
+}
+
+function hasHighBoard(decision) {
+	return getHighestBoardRankIndex(decision) >= HIGH_BOARD_MIN_RANK_INDEX;
+}
+
+function hasBadPrice(decision, threshold = BAD_PRICE_POT_ODDS) {
+	return typeof decision.potOdds === "number" && decision.potOdds >= threshold;
+}
+
+function isTurnOrRiverPressureSpot(decision) {
+	const street = getPostflopStreet(decision);
+	if (street !== "turn" && street !== "river") {
+		return false;
+	}
+	return decision.pressureTag === "FR" || decision.raiseLevel > 0 ||
+		hasBadPrice(decision);
+}
+
+function getCallQualityConcernTags(decision) {
+	if (decision.phase !== "postflop" || decision.action !== "call" || !(decision.toCall > 0)) {
+		return [];
+	}
+
+	const street = getPostflopStreet(decision);
+	const tags = [];
+	if (decision.rawHand === "High Card" && decision.drawFlag === "-") {
+		tags.push("deadHand");
+	}
+	if (street === "turn" && decision.drawFlag === "W" && hasBadPrice(decision)) {
+		tags.push("weakDrawTurnBadPrice");
+	}
+	if (decision.pairClass === "board-pair-only" && isTurnOrRiverPressureSpot(decision)) {
+		tags.push("boardPairOnlyTurnRiverPressure");
+	}
+	if (decision.pairClass === "weak-pair" && decision.pressureTag === "FR") {
+		tags.push("weakPairFacingRaise");
+	}
+	if (decision.pairClass === "pocket-underpair" && hasHighBoard(decision)) {
+		tags.push("pocketUnderpairHighBoard");
+	}
+	if (decision.liftType === "kicker" && isTurnOrRiverPressureSpot(decision)) {
+		tags.push("kickerOnlyStrongLine");
+	}
+	return tags;
+}
+
+function getFoldQualityTags(decision) {
+	if (decision.phase !== "postflop" || decision.action !== "fold" || !(decision.toCall > 0)) {
+		return [];
+	}
+
+	const street = getPostflopStreet(decision);
+	const tags = [];
+	if (decision.pairClass === "board-pair-only" && isTurnOrRiverPressureSpot(decision)) {
+		tags.push("boardPairOnlyTurnRiverPressure");
+	}
+	if (
+		decision.pairClass === "weak-pair" &&
+		(decision.activeOpponents >= 2 || decision.pressureTag === "FR")
+	) {
+		tags.push("weakPairMultiwayOrFacingRaise");
+	}
+	if (decision.pairClass === "pocket-underpair" && hasHighBoard(decision)) {
+		tags.push("pocketUnderpairHighBoard");
+	}
+	if (
+		decision.pairClass === "second-pair" &&
+		street === "river" &&
+		(decision.activeOpponents >= 2 || decision.pressureTag === "FR" ||
+			hasBadPrice(decision, LARGE_RIVER_POT_ODDS))
+	) {
+		tags.push("secondPairRiverPressure");
+	}
+	if (decision.rawHand === "High Card" && decision.drawFlag === "-") {
+		tags.push("highCardNoDraw");
+	}
+	if (street === "turn" && decision.drawFlag === "W" && hasBadPrice(decision)) {
+		tags.push("weakDrawTurnBadPrice");
+	}
+	if (decision.liftType === "kicker" && isTurnOrRiverPressureSpot(decision)) {
+		tags.push("kickerOnlyStrongLine");
+	}
+	return tags;
+}
+
+function getFoldWatchTags(decision) {
+	if (decision.phase !== "postflop" || decision.action !== "fold" || !(decision.toCall > 0)) {
+		return [];
+	}
+
+	if (
+		decision.activeOpponents === 1 &&
+		(decision.pairClass === "overpair" || decision.pairClass === "top-pair")
+	) {
+		return ["goodPairHu"];
+	}
+
+	return [];
+}
+
+function incrementTaggedDecisionCounts(totalKey, byTagKey, target, tags) {
+	if (tags.length === 0) {
+		return;
+	}
+
+	target[totalKey] += 1;
+	for (const tag of tags) {
+		incrementCount(target[byTagKey], tag);
+	}
 }
 
 function classifyWeakNoBetOpportunity(decision) {
@@ -1895,6 +2059,12 @@ function createEmptyPostflopMetrics() {
 		highRiskPrivateMadeHandFoldDeadOrNearDeadCount: 0,
 		highRiskPrivateMadeHandFoldLiveCount: 0,
 		highRiskPrivateTopTierMadeHandFoldCount: 0,
+		callQualityConcernCount: 0,
+		callQualityConcernByTag: {},
+		foldQualityCount: 0,
+		foldQualityByTag: {},
+		foldWatchCount: 0,
+		foldWatchByTag: {},
 		reraises: {
 			totalCount: 0,
 			lowEdgeCount: 0,
@@ -2671,6 +2841,25 @@ function analyzeRunDecisions(decisions, hands) {
 			pushExample(metrics.examples.structural, line);
 		}
 
+		incrementTaggedDecisionCounts(
+			"callQualityConcernCount",
+			"callQualityConcernByTag",
+			metrics.postflop,
+			getCallQualityConcernTags(decision),
+		);
+		incrementTaggedDecisionCounts(
+			"foldQualityCount",
+			"foldQualityByTag",
+			metrics.postflop,
+			getFoldQualityTags(decision),
+		);
+		incrementTaggedDecisionCounts(
+			"foldWatchCount",
+			"foldWatchByTag",
+			metrics.postflop,
+			getFoldWatchTags(decision),
+		);
+
 		const madeHandFold = classifyMadeHandFold(decision);
 		if (madeHandFold) {
 			metrics.postflop.madeHandFoldCount += 1;
@@ -3198,6 +3387,15 @@ async function main() {
 			`marginal_facing_raise_calls=${aggregateMetrics.postflop.marginalFacingRaiseCallCount}`,
 		);
 		console.log(
+			`postflop_call_quality_concerns=${JSON.stringify(aggregateMetrics.postflop.callQualityConcernByTag)}`,
+		);
+		console.log(
+			`postflop_fold_quality=${JSON.stringify(aggregateMetrics.postflop.foldQualityByTag)}`,
+		);
+		console.log(
+			`postflop_fold_watch=${JSON.stringify(aggregateMetrics.postflop.foldWatchByTag)}`,
+		);
+		console.log(
 			`mdf_override_after_river_low_edge_block=${aggregateMetrics.postflop.mdf.overrideCallAfterRiverLowEdgeBlockCount}`,
 		);
 		console.log(
@@ -3210,6 +3408,18 @@ async function main() {
 		console.log(`meaningful_raises=${aggregateMetrics.meaningfulRaiseCount}`);
 		console.log(
 			`public_made_non_structural_raises=${aggregateMetrics.publicMadeNonStructuralRaiseCount}`,
+		);
+		console.log(
+			`mdf_overall_actual_vs_alpha=${mdfAnalysis.facingBetOverall.actualFoldRate.toFixed(3)}/${
+				mdfAnalysis.facingBetOverall.requiredFoldRate.toFixed(3)
+			} over=${mdfAnalysis.facingBetOverall.overfold.toFixed(3)}`,
+		);
+		console.log(
+			`mdf_overall_candidates=${mdfAnalysis.candidateOverall.total} defends=${
+				mdfAnalysis.candidateOverall.defends
+			} actual_vs_alpha=${mdfAnalysis.candidateOverall.actualFoldRate.toFixed(3)}/${
+				mdfAnalysis.candidateOverall.requiredFoldRate.toFixed(3)
+			} over=${mdfAnalysis.candidateOverall.overfold.toFixed(3)}`,
 		);
 		for (const street of ["flop", "turn", "river"]) {
 			const facingBetRow = aggregateMetrics.postflop.mdf.facingBetByStreet[street];
