@@ -48,6 +48,9 @@ MODULE BOUNDARY: Bot Decision Engine
 //   must not clearly rise as a side effect.
 // - Defense guardrails: analysis.postflop.mdf.facingBetOverall.overfold should stay near baseline
 //   and analysis.postflop.mdf.candidateOverall.overfold must not clearly drift upward.
+// - Call quality must be judged by range defense and context, not only by showdown win rate.
+// - Not every profitable defense call is a pure value call; some marginal calls are strategically
+//   required heads-up versus polarized aggression to prevent exploitable overfolding.
 // - Slight tournament overfold is acceptable; chronic street-wide or overall overfold is not.
 // - As a rule of thumb, sustained overall or street-wide overfold above about +0.10 is too tight.
 // - When the pass targets calls, marginal_river_calls and marginal_facing_raise_calls should
