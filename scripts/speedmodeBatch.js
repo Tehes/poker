@@ -149,6 +149,31 @@ function incrementTripleNestedCount(target, firstKey, secondKey, thirdKey, amoun
 		amount;
 }
 
+function incrementQualityClassOutcome(target, qualityClass, decision) {
+	if (!target[qualityClass]) {
+		target[qualityClass] = {
+			total: 0,
+			winner: 0,
+			loser: 0,
+			unknown: 0,
+			net: 0,
+		};
+	}
+
+	const row = target[qualityClass];
+	row.total += 1;
+	if (decision.winnerSide === "winner") {
+		row.winner += 1;
+	} else if (decision.winnerSide === "loser") {
+		row.loser += 1;
+	} else {
+		row.unknown += 1;
+	}
+	if (typeof decision.netChipDelta === "number") {
+		row.net += decision.netChipDelta;
+	}
+}
+
 function deepMergeCounts(target, source) {
 	for (const [key, value] of Object.entries(source)) {
 		if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -638,6 +663,9 @@ function createMdfAnalysis(mdfMetrics) {
 		facingBetByStreetAndRawHand: summarizeFoldRateBreakdownTree(
 			mdfMetrics.facingBetByStreetAndRawHand,
 		),
+		facingBetByQualityClass: summarizeFoldRateBreakdownTree(
+			mdfMetrics.facingBetByQualityClass,
+		),
 		candidateOverall: summarizeFoldRateBreakdownTree(
 			combineFoldRateRows(mdfMetrics.candidateByStreet),
 		),
@@ -666,6 +694,9 @@ function createMdfAnalysis(mdfMetrics) {
 		candidateByStreetAndRawHand: summarizeFoldRateBreakdownTree(
 			mdfMetrics.candidateByStreetAndRawHand,
 		),
+		candidateByQualityClass: summarizeFoldRateBreakdownTree(
+			mdfMetrics.candidateByQualityClass,
+		),
 		overrideCallCount: mdfMetrics.overrideCallCount,
 		overrideCallByStreet: structuredClone(mdfMetrics.overrideCallByStreet),
 		overrideCallByStreetAndMargin: structuredClone(mdfMetrics.overrideCallByStreetAndMargin),
@@ -682,6 +713,8 @@ function createMdfAnalysis(mdfMetrics) {
 		overrideCallByStreetAndPressure: structuredClone(mdfMetrics.overrideCallByStreetAndPressure),
 		overrideCallByStreetAndLift: structuredClone(mdfMetrics.overrideCallByStreetAndLift),
 		overrideCallByStreetAndRawHand: structuredClone(mdfMetrics.overrideCallByStreetAndRawHand),
+		overrideCallByQualityClass: structuredClone(mdfMetrics.overrideCallByQualityClass),
+		overrideCallByQualityReason: structuredClone(mdfMetrics.overrideCallByQualityReason),
 	};
 }
 
@@ -809,6 +842,7 @@ function normalizeStructuredDecision(decision) {
 	const lineTag = decision.lineTag ?? "-";
 	const mdfRequiredFoldRate = typeof decision.mdfRequiredFoldRate === "number" ? decision.mdfRequiredFoldRate : null;
 	const mdfMarginToCall = typeof decision.mdfMarginToCall === "number" ? decision.mdfMarginToCall : null;
+	const quality = classifyPostflopQuality(decision);
 
 	return {
 		...decision,
@@ -855,6 +889,8 @@ function normalizeStructuredDecision(decision) {
 		mdfRequiredFoldRateBucket: mdfRequiredFoldRate === null ? "n/a" : bucketRequiredFoldRate(mdfRequiredFoldRate),
 		mdfBetSizeBucket: bucketBetToPotRatio(decision.toCall ?? 0, decision.potBefore ?? 0),
 		mdfMarginBucket: bucketMarginToCall(mdfMarginToCall),
+		qualityClass: quality.qualityClass,
+		qualityReason: quality.qualityReason,
 	};
 }
 
@@ -1183,6 +1219,78 @@ function isTurnOrRiverPressureSpot(decision) {
 	}
 	return decision.pressureTag === "FR" || decision.raiseLevel > 0 ||
 		hasBadPrice(decision);
+}
+
+function classifyPostflopQuality(decision) {
+	if (decision.phase !== "postflop") {
+		return { qualityClass: "n/a", qualityReason: "preflop" };
+	}
+
+	if (decision.rawHand === "High Card" && decision.drawFlag === "-") {
+		return { qualityClass: "trash", qualityReason: "highCardNoDraw" };
+	}
+	if (decision.pairClass === "board-pair-only" && isTurnOrRiverPressureSpot(decision)) {
+		return { qualityClass: "trash", qualityReason: "boardPairOnlyTurnRiverPressure" };
+	}
+	if (decision.liftType === "kicker" && isTurnOrRiverPressureSpot(decision)) {
+		return { qualityClass: "trash", qualityReason: "kickerOnlyStrongLine" };
+	}
+	if (decision.drawFlag === "W" && hasBadPrice(decision)) {
+		return { qualityClass: "trash", qualityReason: "weakDrawBadPrice" };
+	}
+	if (
+		decision.pairClass === "weak-pair" &&
+		decision.activeOpponents >= 2 &&
+		decision.pressureTag === "FR" &&
+		decision.drawFlag !== "S"
+	) {
+		return { qualityClass: "trash", qualityReason: "weakPairMwFacingRaise" };
+	}
+
+	if (decision.pairClass === "top-pair") {
+		return { qualityClass: "defendable", qualityReason: "topPair" };
+	}
+	if (decision.pairClass === "overpair") {
+		return { qualityClass: "defendable", qualityReason: "overpair" };
+	}
+	if (decision.pairClass === "second-pair") {
+		return { qualityClass: "defendable", qualityReason: "secondPairPrivate" };
+	}
+	if (decision.drawFlag === "S") {
+		return { qualityClass: "defendable", qualityReason: "strongDraw" };
+	}
+	if (decision.liftType === "structural" && decision.edge >= 1) {
+		return { qualityClass: "defendable", qualityReason: "structuralEdgeGte1" };
+	}
+	if (STRONG_POSTFLOP_HANDS.has(decision.rawHand)) {
+		return { qualityClass: "defendable", qualityReason: "twoPairPlus" };
+	}
+
+	if (decision.pairClass === "weak-pair" && decision.activeOpponents === 1) {
+		return { qualityClass: "thin", qualityReason: "weakPairHu" };
+	}
+	if (decision.pairClass === "pocket-underpair" && !hasBadPrice(decision)) {
+		return { qualityClass: "thin", qualityReason: "pocketUnderpairGoodPrice" };
+	}
+	if (
+		decision.liftType === "kicker" &&
+		decision.activeOpponents === 1 &&
+		decision.raiseLevel <= 1
+	) {
+		return { qualityClass: "thin", qualityReason: "kickerEdgeHuSimpleLine" };
+	}
+	if (decision.liftType === "structural" && decision.edge > 0 && decision.edge < 1) {
+		return { qualityClass: "thin", qualityReason: "weakStructuralEdge" };
+	}
+	if (
+		decision.marginalEdge === true ||
+		decision.marginalReason === "made" ||
+		PUBLIC_MADE_HANDS.has(decision.rawHand)
+	) {
+		return { qualityClass: "thin", qualityReason: "marginalMadeHand" };
+	}
+
+	return { qualityClass: "thin", qualityReason: "otherCandidate" };
 }
 
 function getCallQualityConcernTags(decision) {
@@ -1950,6 +2058,11 @@ function createEmptyPostflopMetrics() {
 		boardContextActions: {},
 		drawCounts: {},
 		drawActions: {},
+		qualityClassActions: {},
+		qualityClassByStreet: {},
+		qualityClassByStreetAndAction: {},
+		qualityClassByStreetAndMdfApplied: {},
+		qualityClassOutcome: {},
 		marginalDecisionCount: 0,
 		marginalActions: {},
 		marginalReasonCounts: {},
@@ -1968,6 +2081,7 @@ function createEmptyPostflopMetrics() {
 			facingBetByStreetAndPressure: {},
 			facingBetByStreetAndLift: {},
 			facingBetByStreetAndRawHand: {},
+			facingBetByQualityClass: {},
 			candidateByStreet: {},
 			candidateByStreetAndMargin: {},
 			candidateByStreetAndBetSize: {},
@@ -1977,6 +2091,7 @@ function createEmptyPostflopMetrics() {
 			candidateByStreetAndPressure: {},
 			candidateByStreetAndLift: {},
 			candidateByStreetAndRawHand: {},
+			candidateByQualityClass: {},
 			overrideCallCount: 0,
 			overrideCallByStreet: {},
 			overrideCallByStreetAndMargin: {},
@@ -1987,6 +2102,8 @@ function createEmptyPostflopMetrics() {
 			overrideCallByStreetAndPressure: {},
 			overrideCallByStreetAndLift: {},
 			overrideCallByStreetAndRawHand: {},
+			overrideCallByQualityClass: {},
+			overrideCallByQualityReason: {},
 			overrideCallAfterRiverLowEdgeBlockCount: 0,
 			overrideCallAfterMarginalDefenseBlockCount: 0,
 			overrideCallAfterNonValueBlockCount: 0,
@@ -2061,8 +2178,12 @@ function createEmptyPostflopMetrics() {
 		highRiskPrivateTopTierMadeHandFoldCount: 0,
 		callQualityConcernCount: 0,
 		callQualityConcernByTag: {},
+		callQualityConcernByQualityClass: {},
+		callQualityConcernByTagAndMdfApplied: {},
 		foldQualityCount: 0,
 		foldQualityByTag: {},
+		foldQualityByQualityClass: {},
+		foldQualityByTagAndMdfEligible: {},
 		foldWatchCount: 0,
 		foldWatchByTag: {},
 		reraises: {
@@ -2357,11 +2478,39 @@ function analyzeRunDecisions(decisions, hands) {
 
 		metrics.postflopSpots += 1;
 		metrics.postflop.decisions += 1;
+		const postflopStreet = getPostflopStreet(decision);
 		incrementCount(metrics.postflop.actions, decision.action);
 		incrementCount(metrics.liftCounts, decision.liftType);
 		incrementCount(metrics.postflop.liftCounts, decision.liftType);
 		incrementNestedCount(metrics.actionByLift, decision.liftType, decision.action);
 		incrementNestedCount(metrics.postflop.actionByLift, decision.liftType, decision.action);
+		incrementNestedCount(
+			metrics.postflop.qualityClassActions,
+			decision.qualityClass,
+			decision.action,
+		);
+		incrementNestedCount(
+			metrics.postflop.qualityClassByStreet,
+			postflopStreet,
+			decision.qualityClass,
+		);
+		incrementTripleNestedCount(
+			metrics.postflop.qualityClassByStreetAndAction,
+			postflopStreet,
+			decision.qualityClass,
+			decision.action,
+		);
+		incrementTripleNestedCount(
+			metrics.postflop.qualityClassByStreetAndMdfApplied,
+			postflopStreet,
+			decision.qualityClass,
+			decision.mdfApplied ? "yes" : "no",
+		);
+		incrementQualityClassOutcome(
+			metrics.postflop.qualityClassOutcome,
+			decision.qualityClass,
+			decision,
+		);
 
 		if (decision.publicHand !== "-") {
 			incrementCount(metrics.publicHandCounts, decision.publicHand);
@@ -2588,6 +2737,12 @@ function analyzeRunDecisions(decisions, hands) {
 				decision.action,
 				decision.mdfRequiredFoldRate,
 			);
+			incrementFoldRateBreakdown(
+				metrics.postflop.mdf.facingBetByQualityClass,
+				decision.qualityClass,
+				decision.action,
+				decision.mdfRequiredFoldRate,
+			);
 
 			if (decision.mdfEligible) {
 				incrementFoldRateBreakdown(
@@ -2653,6 +2808,12 @@ function analyzeRunDecisions(decisions, hands) {
 					decision.action,
 					decision.mdfRequiredFoldRate,
 				);
+				incrementFoldRateBreakdown(
+					metrics.postflop.mdf.candidateByQualityClass,
+					decision.qualityClass,
+					decision.action,
+					decision.mdfRequiredFoldRate,
+				);
 				if (decision.mdfApplied) {
 					metrics.postflop.mdf.overrideCallCount += 1;
 					incrementCount(metrics.postflop.mdf.overrideCallByStreet, street);
@@ -2696,6 +2857,15 @@ function analyzeRunDecisions(decisions, hands) {
 						metrics.postflop.mdf.overrideCallByStreetAndRawHand,
 						street,
 						decision.rawHand,
+					);
+					incrementCount(
+						metrics.postflop.mdf.overrideCallByQualityClass,
+						decision.qualityClass,
+					);
+					incrementNestedCount(
+						metrics.postflop.mdf.overrideCallByQualityReason,
+						decision.qualityClass,
+						decision.qualityReason,
 					);
 					if (decision.riverLowEdgeBlocked) {
 						metrics.postflop.mdf.overrideCallAfterRiverLowEdgeBlockCount += 1;
@@ -2841,18 +3011,42 @@ function analyzeRunDecisions(decisions, hands) {
 			pushExample(metrics.examples.structural, line);
 		}
 
+		const callQualityConcernTags = getCallQualityConcernTags(decision);
 		incrementTaggedDecisionCounts(
 			"callQualityConcernCount",
 			"callQualityConcernByTag",
 			metrics.postflop,
-			getCallQualityConcernTags(decision),
+			callQualityConcernTags,
 		);
+		if (callQualityConcernTags.length > 0) {
+			incrementCount(metrics.postflop.callQualityConcernByQualityClass, decision.qualityClass);
+			for (const tag of callQualityConcernTags) {
+				incrementNestedCount(
+					metrics.postflop.callQualityConcernByTagAndMdfApplied,
+					tag,
+					decision.mdfApplied ? "yes" : "no",
+				);
+			}
+		}
+
+		const foldQualityTags = getFoldQualityTags(decision);
 		incrementTaggedDecisionCounts(
 			"foldQualityCount",
 			"foldQualityByTag",
 			metrics.postflop,
-			getFoldQualityTags(decision),
+			foldQualityTags,
 		);
+		if (foldQualityTags.length > 0) {
+			incrementCount(metrics.postflop.foldQualityByQualityClass, decision.qualityClass);
+			for (const tag of foldQualityTags) {
+				incrementNestedCount(
+					metrics.postflop.foldQualityByTagAndMdfEligible,
+					tag,
+					decision.mdfEligible ? "yes" : "no",
+				);
+			}
+		}
+
 		incrementTaggedDecisionCounts(
 			"foldWatchCount",
 			"foldWatchByTag",

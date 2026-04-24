@@ -47,14 +47,19 @@ MODULE BOUNDARY: Bot Decision Engine
 //   baseline; non-target regressions such as marginal raises, weak calls, and early large pots
 //   must not clearly rise as a side effect.
 // - Defense guardrails: analysis.postflop.mdf.facingBetOverall.overfold should stay near baseline
-//   and analysis.postflop.mdf.candidateOverall.overfold must not clearly drift upward.
+//   and must not show chronic street-wide regression.
+// - candidateOverall.overfold is diagnostic only. It must be interpreted by hand-quality class;
+//   defendable and thin candidates should not collapse, while trash candidates may overfold.
 // - Call quality must be judged by range defense and context, not only by showdown win rate.
 // - Not every profitable defense call is a pure value call; some marginal calls are strategically
 //   required heads-up versus polarized aggression to prevent exploitable overfolding.
+// - MDF / range-defense analysis is a measurement layer, not a second hand-evaluation engine.
+//   Hand quality should be handled in the normal call path before any frequency rescue logic.
 // - Slight tournament overfold is acceptable; chronic street-wide or overall overfold is not.
-// - As a rule of thumb, sustained overall or street-wide overfold above about +0.10 is too tight.
-// - When the pass targets calls, marginal_river_calls and marginal_facing_raise_calls should
-//   improve.
+// - As a rule of thumb, sustained facing-bet or street-wide overfold above about +0.10 is too
+//   tight; trash-heavy candidate buckets may overfold if the defended range remains plausible.
+// - When the pass targets calls, marginal_river_calls and marginal_facing_raise_calls should be
+//   monitored, but not improved at the cost of more trash calls.
 // - Good folds are part of playability: the bot should defend enough versus standard pressure,
 //   but still release weak pairs, board-only hands, weak draws, dead hands, and kicker-only hands
 //   in bad contexts.
