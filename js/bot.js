@@ -995,6 +995,22 @@ function shouldBlockRiverLowEdgeCall({
 	return false;
 }
 
+function hasOpponentWhoCanCallRaise(players, player, currentBet) {
+	return players.some((currentPlayer) => {
+		if (
+			currentPlayer === player ||
+			currentPlayer.folded ||
+			currentPlayer.allIn ||
+			currentPlayer.chips <= 0
+		) {
+			return false;
+		}
+
+		const amountToMatchCurrentBet = Math.max(0, currentBet - currentPlayer.roundBet);
+		return currentPlayer.chips > amountToMatchCurrentBet;
+	});
+}
+
 function getMdfMarginWindow(streetIndex) {
 	if (streetIndex <= 1) {
 		return 0.06;
@@ -1436,10 +1452,6 @@ export function chooseBotAction(player, gameState) {
 	const blindLevel = { small: smallBlind, big: bigBlind };
 	const mRatio = player.chips / (smallBlind + bigBlind);
 	const facingRaise = currentPhaseIndex === 0 ? currentBet > blindLevel.big : currentBet > 0;
-	// Check if bot is allowed to raise this round
-	const canRaise = raisesThisRound < MAX_RAISES_PER_ROUND &&
-		player.chips > blindLevel.big;
-	const canShove = raisesThisRound < MAX_RAISES_PER_ROUND;
 
 	// Compute positional factor dynamically based on active players
 	const active = players.filter((p) => !p.folded);
@@ -1488,6 +1500,15 @@ export function chooseBotAction(player, gameState) {
 		player.holeCards[0],
 		player.holeCards[1],
 	);
+	const hasCallableRaiseOpponent = hasOpponentWhoCanCallRaise(players, player, currentBet);
+	// A raise must create action for at least one opponent; otherwise the bot should only call/check.
+	const canRaise = raisesThisRound < MAX_RAISES_PER_ROUND &&
+		player.chips > needToCall &&
+		player.chips > blindLevel.big &&
+		hasCallableRaiseOpponent;
+	const canShove = raisesThisRound < MAX_RAISES_PER_ROUND &&
+		player.chips > needToCall &&
+		hasCallableRaiseOpponent;
 	const liveOpponents = spotReadProfile.liveOpponents;
 	const activeSizingOpponents = liveOpponents.filter((currentPlayer) =>
 		!currentPlayer.allIn && currentPlayer.chips > 0
@@ -2553,12 +2574,14 @@ export function chooseBotAction(player, gameState) {
 			Math.min(1, 0.75 - shoveAggAdj),
 		);
 		if (
+			canShove &&
 			spr <= 1.2 &&
 			(preflop || hasPrivateRaiseEdge) &&
 			gateStrengthRatio >= shallowShoveThreshold
 		) {
 			decision = { action: "raise", amount: player.chips };
 		} else if (
+			canShove &&
 			preflop && player.chips <= blindLevel.big * 10 &&
 			strengthRatio >= shortstackShoveThreshold
 		) {

@@ -8,9 +8,20 @@ Version log writing guide:
 - Group related tuning work into one coherent entry instead of listing every small internal step.
 */
 
-export const APP_VERSION = "1.0.23";
+export const APP_VERSION = "1.0.24";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.24",
+		date: "2026-04-24",
+		title: "Cleaner side-pot all-ins",
+		notes: [
+			"Bots no longer turn all-in side-pot calls into raises when no opponent can call extra chips.",
+			"Late-hand all-ins now stay closer to the real available action, reducing misleading reraise pressure.",
+			"Strong value can still raise normally when at least one live opponent can call the extra amount.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.23",
 		date: "2026-04-23",
