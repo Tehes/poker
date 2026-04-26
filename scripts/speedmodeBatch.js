@@ -149,6 +149,20 @@ function incrementTripleNestedCount(target, firstKey, secondKey, thirdKey, amoun
 		amount;
 }
 
+function incrementNestedPathCount(target, keys, amount = 1) {
+	let current = target;
+	for (let index = 0; index < keys.length - 1; index += 1) {
+		const key = keys[index];
+		if (!current[key]) {
+			current[key] = {};
+		}
+		current = current[key];
+	}
+
+	const finalKey = keys.at(-1);
+	current[finalKey] = (current[finalKey] || 0) + amount;
+}
+
 function incrementQualityClassOutcome(target, qualityClass, decision) {
 	if (!target[qualityClass]) {
 		target[qualityClass] = {
@@ -666,6 +680,12 @@ function createMdfAnalysis(mdfMetrics) {
 		facingBetByQualityClass: summarizeFoldRateBreakdownTree(
 			mdfMetrics.facingBetByQualityClass,
 		),
+		facingBetActionsByStreetAndBetSizeAndQualityReason: structuredClone(
+			mdfMetrics.facingBetActionsByStreetAndBetSizeAndQualityReason,
+		),
+		facingBetActionsByStreetAndMarginAndBetSizeAndQualityReason: structuredClone(
+			mdfMetrics.facingBetActionsByStreetAndMarginAndBetSizeAndQualityReason,
+		),
 		candidateOverall: summarizeFoldRateBreakdownTree(
 			combineFoldRateRows(mdfMetrics.candidateByStreet),
 		),
@@ -841,7 +861,11 @@ function normalizeStructuredDecision(decision) {
 	const flatScore = decision.flatScore ?? 0;
 	const lineTag = decision.lineTag ?? "-";
 	const mdfRequiredFoldRate = typeof decision.mdfRequiredFoldRate === "number" ? decision.mdfRequiredFoldRate : null;
-	const mdfMarginToCall = typeof decision.mdfMarginToCall === "number" ? decision.mdfMarginToCall : null;
+	const mdfMarginToCall = typeof decision.mdfMarginToCall === "number"
+		? decision.mdfMarginToCall
+		: typeof decision.callBarrier === "number" && typeof decision.privateAwareStrength === "number"
+		? decision.callBarrier - decision.privateAwareStrength
+		: null;
 	const quality = classifyPostflopQuality(decision);
 
 	return {
@@ -2082,6 +2106,8 @@ function createEmptyPostflopMetrics() {
 			facingBetByStreetAndLift: {},
 			facingBetByStreetAndRawHand: {},
 			facingBetByQualityClass: {},
+			facingBetActionsByStreetAndBetSizeAndQualityReason: {},
+			facingBetActionsByStreetAndMarginAndBetSizeAndQualityReason: {},
 			candidateByStreet: {},
 			candidateByStreetAndMargin: {},
 			candidateByStreetAndBetSize: {},
@@ -2742,6 +2768,25 @@ function analyzeRunDecisions(decisions, hands) {
 				decision.qualityClass,
 				decision.action,
 				decision.mdfRequiredFoldRate,
+			);
+			incrementNestedPathCount(
+				metrics.postflop.mdf.facingBetActionsByStreetAndBetSizeAndQualityReason,
+				[
+					street,
+					decision.mdfBetSizeBucket,
+					decision.qualityReason,
+					decision.action,
+				],
+			);
+			incrementNestedPathCount(
+				metrics.postflop.mdf.facingBetActionsByStreetAndMarginAndBetSizeAndQualityReason,
+				[
+					street,
+					decision.mdfMarginBucket,
+					decision.mdfBetSizeBucket,
+					decision.qualityReason,
+					decision.action,
+				],
 			);
 
 			if (decision.mdfEligible) {
@@ -3636,6 +3681,28 @@ async function main() {
 			console.log(
 				`mdf_${street}_facing_by_margin=${
 					JSON.stringify(mdfAnalysis.facingBetByStreetAndMargin[street] || {})
+				}`,
+			);
+			console.log(
+				`mdf_${street}_facing_by_betsize=${
+					JSON.stringify(mdfAnalysis.facingBetByStreetAndBetSize[street] || {})
+				}`,
+			);
+			console.log(
+				`mdf_${street}_facing_by_margin_and_betsize=${
+					JSON.stringify(mdfAnalysis.facingBetByStreetAndMarginAndBetSize[street] || {})
+				}`,
+			);
+			console.log(
+				`mdf_${street}_facing_actions_by_betsize_and_reason=${
+					JSON.stringify(mdfAnalysis.facingBetActionsByStreetAndBetSizeAndQualityReason[street] || {})
+				}`,
+			);
+			console.log(
+				`mdf_${street}_facing_actions_by_margin_betsize_reason=${
+					JSON.stringify(
+						mdfAnalysis.facingBetActionsByStreetAndMarginAndBetSizeAndQualityReason[street] || {},
+					)
 				}`,
 			);
 			console.log(

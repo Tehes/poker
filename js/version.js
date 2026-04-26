@@ -4,13 +4,24 @@ Version log writing guide:
 - Describe functional behavior and gameplay impact instead of internal helpers, tags, thresholds, or refactors.
 - Keep titles short, plain-language, and feature-oriented.
 - Keep notes concise and focused on what changed in play, pacing, risk, or clarity.
-- Mention diagnostics or internal reporting only when they meaningfully affect analysis or validation.
+- Do not mention log, speedmode, or internal diagnostics changes in public version entries.
 - Group related tuning work into one coherent entry instead of listing every small internal step.
 */
 
-export const APP_VERSION = "1.0.24";
+export const APP_VERSION = "1.0.25";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.25",
+		date: "2026-04-26",
+		title: "More credible postflop defense",
+		notes: [
+			"Bots now defend postflop with more emphasis on credible hand quality instead of filling call frequency with weak bluffcatchers.",
+			"Cheap bets are still defended more readily, but weak board-only, kicker-only, and bad-price draw hands are easier to release.",
+			"Flop calls stay selective, with extra defense coming from plausible equity rather than broad weak-pair continues.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.24",
 		date: "2026-04-24",

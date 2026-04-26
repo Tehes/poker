@@ -21,8 +21,9 @@ MODULE BOUNDARY: Bot Decision Engine
 // Prefer playability over sterile tightness: suited hands, connected hands, broadways, and pairs
 // should reach the flop at healthy frequencies, while weak dominated offsuit hands should be
 // dampened on purpose.
-// Postflop, protect medium-strength hands from collapsing into automatic folds. Second pair, weak
-// top pair, and reasonable showdown hands must remain playable when the price is sane.
+// Postflop, protect hands with real equity from collapsing into automatic folds. Defense should be
+// carried by plausible, range-relevant hand classes with credible equity; weak bluffcatchers should
+// not be used merely to fill defense frequency.
 // Core safety guardrails are non-negotiable: no premium preflop folds, no bluff raises with made
 // hands, no absurd kicker or board-made folds, and no broken multi-raised lines.
 //
@@ -46,18 +47,19 @@ MODULE BOUNDARY: Bot Decision Engine
 // - Watchpoints: postflop_reraises_edge_lt_1.0 must stay rare and must not materially worsen vs
 //   baseline; non-target regressions such as marginal raises, weak calls, and early large pots
 //   must not clearly rise as a side effect.
-// - Defense guardrails: analysis.postflop.mdf.facingBetOverall.overfold should stay near baseline
-//   and must not show chronic street-wide regression.
+// - Defense guardrails: range-defense overfold is only a problem when it comes from plausible
+//   defending range segments collapsing, or when street-wide regression remains chronic after
+//   hand-quality review.
 // - candidateOverall.overfold is diagnostic only. It must be interpreted by hand-quality class;
 //   defendable and thin candidates should not collapse, while trash candidates may overfold.
 // - Call quality must be judged by range defense and context, not only by showdown win rate.
 // - Not every profitable defense call is a pure value call; some marginal calls are strategically
 //   required heads-up versus polarized aggression to prevent exploitable overfolding.
-// - MDF / range-defense analysis is a measurement layer, not a second hand-evaluation engine.
-//   Hand quality should be handled in the normal call path before any frequency rescue logic.
+// - MDF / range-defense analysis is a measurement layer, not a decision engine. Hand quality,
+//   price, street, position, and pressure must determine calls in the normal decision path.
 // - Slight tournament overfold is acceptable; chronic street-wide or overall overfold is not.
-// - As a rule of thumb, sustained facing-bet or street-wide overfold above about +0.10 is too
-//   tight; trash-heavy candidate buckets may overfold if the defended range remains plausible.
+//   Higher Flop overfold can be acceptable when the missing defense would otherwise come from
+//   trash, board-only hands, kicker-only hands, weak draws with bad price, or weak bluffcatchers.
 // - When the pass targets calls, marginal_river_calls and marginal_facing_raise_calls should be
 //   monitored, but not improved at the cost of more trash calls.
 // - Good folds are part of playability: the bot should defend enough versus standard pressure,
@@ -139,11 +141,6 @@ const RERAISE_TOP_PAIR_RATIO = 0.40;
 // Tie-breaker thresholds for close decisions
 const STRENGTH_TIE_DELTA = 0.25; // Threshold for treating strength close to the raise threshold as a tie
 const ODDS_TIE_DELTA = 0.02; // Threshold for treating pot odds close to expected value as a tie
-const MDF_MAX_CALL_CHANCE = 0.8;
-const MDF_TURN_UPPER_BAND_START = 0.02;
-const MDF_TURN_UPPER_BAND_END = 0.04;
-const MDF_TURN_UPPER_BAND_FLOOR = 0.75;
-const MDF_TURN_UPPER_BAND_SLOPE = 0.25;
 // Opponent-aware aggression tuning
 const OPPONENT_THRESHOLD = 3; // Consider "few" opponents when fewer than this
 const AGG_FACTOR = 0.1; // Aggressiveness increase per missing opponent
@@ -1016,32 +1013,6 @@ function hasOpponentWhoCanCallRaise(players, player, currentBet) {
 	});
 }
 
-function getMdfMarginWindow(streetIndex) {
-	if (streetIndex <= 1) {
-		return 0.06;
-	}
-	if (streetIndex === 2) {
-		return 0.04;
-	}
-	if (streetIndex === 3) {
-		return 0.04;
-	}
-	return 0;
-}
-
-function getMdfCurveParams(streetIndex) {
-	if (streetIndex <= 1) {
-		return { floor: 0.35, slope: 0.7 };
-	}
-	if (streetIndex === 2) {
-		return { floor: 0.4, slope: 0.65 };
-	}
-	if (streetIndex === 3) {
-		return { floor: 0.65, slope: 0.4 };
-	}
-	return { floor: 0, slope: 0 };
-}
-
 function getRequiredFoldRate(needToCall, potBefore) {
 	if (!(needToCall > 0) || !(potBefore > 0)) {
 		return 0;
@@ -1049,55 +1020,137 @@ function getRequiredFoldRate(needToCall, potBefore) {
 	return Math.max(0, Math.min(1, needToCall / potBefore));
 }
 
-function getTurnUpperBandMdfFactor(marginToCall) {
-	if (marginToCall <= MDF_TURN_UPPER_BAND_START) {
+function getPostflopPriceQualityShift({
+	baseShift,
+	isDeadHand,
+	isWeakDraw,
+	pairClass,
+	liftType,
+	edge,
+	drawOuts,
+	topPair,
+	overPair,
+	spotContext,
+	raiseLevel,
+	streetIndex,
+	potOdds,
+}) {
+	if (baseShift === 0) {
 		return 0;
 	}
 
-	const bandRange = MDF_TURN_UPPER_BAND_END - MDF_TURN_UPPER_BAND_START;
-	const clampedMargin = Math.min(MDF_TURN_UPPER_BAND_END, marginToCall);
-	const upperBandCloseness = 1 - (
-		(clampedMargin - MDF_TURN_UPPER_BAND_START) / bandRange
-	);
+	const turnOrRiverPressure = streetIndex >= 2 &&
+		(raiseLevel > 0 || !spotContext.headsUp || potOdds >= 0.18);
+	let cheapBetFactor = 0.25;
+	let expensiveBetFactor = 1.00;
 
-	return MDF_TURN_UPPER_BAND_FLOOR +
-		(MDF_TURN_UPPER_BAND_SLOPE * upperBandCloseness);
+	if (isDeadHand) {
+		cheapBetFactor = 0.05;
+		expensiveBetFactor = 1.20;
+	} else if (
+		pairClass === "board-pair-only" &&
+		turnOrRiverPressure
+	) {
+		cheapBetFactor = 0.10;
+		expensiveBetFactor = 1.15;
+	} else if (
+		liftType === "kicker" &&
+		turnOrRiverPressure
+	) {
+		cheapBetFactor = 0.15;
+		expensiveBetFactor = 1.10;
+	} else if (isWeakDraw) {
+		cheapBetFactor = 0.25;
+		expensiveBetFactor = 1.10;
+	} else if (
+		drawOuts >= 8 ||
+		topPair ||
+		overPair ||
+		pairClass === "second-pair" ||
+		(liftType === "structural" && edge >= 1)
+	) {
+		cheapBetFactor = 0.80;
+		expensiveBetFactor = 0.90;
+	} else if (
+		(pairClass === "weak-pair" && spotContext.headsUp && raiseLevel <= 1) ||
+		(liftType === "structural" && edge > 0 && edge < 1)
+	) {
+		cheapBetFactor = 0.45;
+		expensiveBetFactor = 1.00;
+	}
+
+	return baseShift < 0
+		? baseShift * cheapBetFactor
+		: baseShift * expensiveBetFactor;
 }
 
-function getMdfOverrideChance({
-	streetIndex,
+function getFlopEquityCallRelief({
+	drawOuts,
+	isDeadHand,
+	isWeakDraw,
+	hasPrivateMadeHand,
+	pairClass,
+	liftType,
+	edge,
+	topPair,
+	overPair,
+	spotContext,
+	isLastToAct,
+	raiseLevel,
+	potOdds,
 	marginToCall,
-	marginWindow,
-	requiredFoldRate,
 }) {
-	if (
-		!(marginWindow > 0) ||
-		marginToCall > marginWindow
-	) {
+	const priceFactor = potOdds <= 0.25
+		? 1
+		: potOdds <= 0.35
+		? 0.65
+		: potOdds <= 0.45
+		? 0.35
+		: 0;
+	if (priceFactor === 0) {
+		return 0;
+	}
+	if (!(marginToCall > 0)) {
 		return 0;
 	}
 
-	const closeness = 1 - (Math.max(0, marginToCall) / marginWindow);
-	const requiredDefense = 1 - requiredFoldRate;
-	const curve = getMdfCurveParams(streetIndex);
-	let factor = curve.floor + (curve.slope * closeness);
-
-	if (streetIndex === 2) {
-		factor = Math.max(
-			factor,
-			getTurnUpperBandMdfFactor(Math.max(0, marginToCall)),
-		);
+	const pressureFactor = raiseLevel === 0 ? 1 : 0.5;
+	const nearThresholdMargin = marginToCall <= 0.045;
+	if (drawOuts >= 8) {
+		const strongDrawPressureFactor = raiseLevel === 1 ? 0.9 : pressureFactor;
+		return 0.065 * priceFactor * strongDrawPressureFactor;
 	}
-
-	const chance = requiredDefense * factor;
-
-	return Math.max(
-		0,
-		Math.min(
-			MDF_MAX_CALL_CHANCE,
-			chance,
-		),
-	);
+	if (isDeadHand || isWeakDraw || pairClass === "board-pair-only") {
+		return 0;
+	}
+	if (
+		(topPair || overPair) &&
+		nearThresholdMargin
+	) {
+		return 0.04 * priceFactor * pressureFactor;
+	}
+	if (
+		pairClass === "second-pair" &&
+		hasPrivateMadeHand &&
+		nearThresholdMargin
+	) {
+		return 0.036 * priceFactor * pressureFactor;
+	}
+	if (
+		liftType === "structural" &&
+		edge > 0 &&
+		edge < 1 &&
+		hasPrivateMadeHand &&
+		pairClass !== "weak-pair" &&
+		pairClass !== "pocket-underpair" &&
+		pairClass !== "board-pair-only" &&
+		(spotContext.headsUp || isLastToAct) &&
+		nearThresholdMargin
+	) {
+		const structuralPressureFactor = raiseLevel === 1 ? 0.75 : pressureFactor;
+		return 0.035 * priceFactor * structuralPressureFactor;
+	}
+	return 0;
 }
 
 function classifyNoBetOpportunity({
@@ -1759,18 +1812,47 @@ export function chooseBotAction(player, gameState) {
 		}
 
 		const potOddsAdj = needsToCall ? Math.max(-0.12, Math.min(0.08, (0.25 - potOdds) * 0.6)) : 0;
-		let potOddsShift = -potOddsAdj;
-		if (needsToCall && isDeadHand) {
-			potOddsShift *= 0.35;
-		} else if (needsToCall && isWeakDraw) {
-			potOddsShift *= 0.5;
-		}
+		const potOddsShift = needsToCall
+			? getPostflopPriceQualityShift({
+				baseShift: -potOddsAdj,
+				isDeadHand,
+				isWeakDraw,
+				pairClass,
+				liftType,
+				edge,
+				drawOuts,
+				topPair,
+				overPair,
+				spotContext,
+				raiseLevel,
+				streetIndex,
+				potOdds,
+			})
+			: 0;
 		const commitmentShift = needsToCall ? commitmentPenalty * 0.8 : 0;
+		const preReliefCallBarrier = callBarrierBase + callBarrierAdj + marginalCallAdj +
+			potOddsShift + commitmentShift + streetPressure + weakDrawPressure +
+			deadHandPressure + barrelPressure;
+		const flopEquityCallRelief = needsToCall && streetIndex === 1
+			? getFlopEquityCallRelief({
+				drawOuts,
+				isDeadHand,
+				isWeakDraw,
+				hasPrivateMadeHand,
+				pairClass,
+				liftType,
+				edge,
+				topPair,
+				overPair,
+				spotContext,
+				isLastToAct,
+				raiseLevel,
+				potOdds,
+				marginToCall: preReliefCallBarrier - gateStrengthRatio,
+			})
+			: 0;
 
-		callBarrier = callBarrierBase + callBarrierAdj + marginalCallAdj +
-			potOddsShift + commitmentShift;
-		callBarrier += streetPressure + weakDrawPressure + deadHandPressure +
-			barrelPressure;
+		callBarrier = preReliefCallBarrier - flopEquityCallRelief;
 		if (needsToCall && isDeadHand) {
 			const deadHandFloor = streetIndex === 1 ? 0.2 : streetIndex === 2 ? 0.22 : 0.24;
 			callBarrier = Math.max(callBarrier, deadHandFloor);
@@ -1805,12 +1887,6 @@ export function chooseBotAction(player, gameState) {
 	}
 	const eliminationBarrier = needsToCall ? Math.min(1, callBarrier + adjustedEliminationPenalty) : callBarrier;
 	const mdfRequiredFoldRate = !preflop && needToCall > 0 ? getRequiredFoldRate(needToCall, pot) : 0;
-	const mdfRequiredDefense = !preflop && needToCall > 0 ? 1 - mdfRequiredFoldRate : 0;
-	const mdfMarginWindow = !preflop ? getMdfMarginWindow(streetIndex) : 0;
-	const mdfMarginToCall = !preflop && needToCall > 0 ? eliminationBarrier - gateStrengthRatio : 0;
-	let mdfEligible = false;
-	let mdfCallChance = 0;
-	let mdfApplied = false;
 	let marginalDefenseBlocked = false;
 	let riverLowEdgeBlocked = false;
 
@@ -2970,36 +3046,6 @@ export function chooseBotAction(player, gameState) {
 		decision = { action: "fold" };
 	}
 
-	// Rescue a narrow band of near-threshold folds so postflop defense does not
-	// collapse below the required defense frequency against common bluff sizes.
-	if (
-		!preflop &&
-		needsToCall &&
-		needToCall < player.chips &&
-		decision.action === "fold" &&
-		mdfMarginToCall <= mdfMarginWindow &&
-		(
-			mdfMarginToCall > 0 ||
-			marginalDefenseBlocked ||
-			riverLowEdgeBlocked
-		)
-	) {
-		mdfEligible = true;
-		mdfCallChance = getMdfOverrideChance({
-			streetIndex,
-			marginToCall: mdfMarginToCall,
-			marginWindow: mdfMarginWindow,
-			requiredFoldRate: mdfRequiredFoldRate,
-		});
-		if (mdfCallChance > 0 && Math.random() < mdfCallChance) {
-			decision = {
-				action: "call",
-				amount: Math.min(player.chips, needToCall),
-			};
-			mdfApplied = true;
-		}
-	}
-
 	const boardCtx = overPair
 		? "OP"
 		: topPair
@@ -3115,12 +3161,6 @@ export function chooseBotAction(player, gameState) {
 		potOdds: toRoundedNumber(potOdds),
 		callBarrier: toRoundedNumber(eliminationBarrier),
 		mdfRequiredFoldRate: toRoundedNumber(mdfRequiredFoldRate, 4),
-		mdfRequiredDefense: toRoundedNumber(mdfRequiredDefense, 4),
-		mdfMarginToCall: toRoundedNumber(mdfMarginToCall, 4),
-		mdfMarginWindow: toRoundedNumber(mdfMarginWindow, 4),
-		mdfEligible,
-		mdfCallChance: toRoundedNumber(mdfCallChance, 4),
-		mdfApplied,
 		bluffChance: toRoundedNumber(bluffChance, 4),
 		bluffAlpha: toRoundedNumber(bluffAlpha, 4),
 		bluffDecisionChance: toRoundedNumber(bluffDecisionChance, 4),
@@ -3209,7 +3249,7 @@ export function chooseBotAction(player, gameState) {
 				`M:${mRatio.toFixed(2)} Z:${mZone} | ` +
 				`PO:${potOdds.toFixed(2)} CB:${eliminationBarrier.toFixed(2)} MDFa:${
 					mdfRequiredFoldRate.toFixed(2)
-				} MDFm:${mdfMarginToCall.toFixed(2)} MDFc:${mdfCallChance.toFixed(2)} MDF:${mdfApplied ? "Y" : "N"} ` +
+				} ` +
 				`SR:${stackRatio.toFixed(2)} SRaw:${rawStackRatio.toFixed(2)} | ` +
 				`CP:${commitmentPressure.toFixed(2)} CPen:${commitmentPenalty.toFixed(2)} | ` +
 				`ER:${eliminationRisk.toFixed(2)} EP:${eliminationPenalty.toFixed(2)} | ` +
