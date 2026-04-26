@@ -2,7 +2,7 @@ const DEFAULT_RUN_COUNT = 1;
 const DEFAULT_SERVER_PORT = 8123;
 const DEFAULT_DEVTOOLS_PORT = 9222;
 const DEFAULT_PAGE_PATH = "index.html?speedmode=1&botdebug=detail";
-const DEFAULT_OUTPUT_BASE = "/tmp";
+const DEFAULT_OUTPUT_BASE = "tmp";
 const DEFAULT_OUTPUT_PREFIX = "poker-speedmode-batch";
 const LOAD_TIMEOUT_MS = 15000;
 const RUN_TIMEOUT_MS = 180000;
@@ -1753,11 +1753,8 @@ function parsePositiveInteger(value, label) {
 }
 
 function resolveOutputDir(outputDir) {
-	if (!outputDir) {
-		return `${DEFAULT_OUTPUT_BASE}/${DEFAULT_OUTPUT_PREFIX}-${formatTimestamp()}`;
-	}
-
-	const normalizedOutputDir = outputDir.replace(/\/+$/, "");
+	const requestedOutputDir = outputDir || `${DEFAULT_OUTPUT_BASE}/${DEFAULT_OUTPUT_PREFIX}-${formatTimestamp()}`;
+	const normalizedOutputDir = requestedOutputDir.replace(/\/+$/, "");
 	if (normalizedOutputDir.startsWith("/")) {
 		return normalizedOutputDir;
 	}

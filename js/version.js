@@ -5,12 +5,24 @@ Version log writing guide:
 - Keep titles short, plain-language, and feature-oriented.
 - Keep notes concise and focused on what changed in play, pacing, risk, or clarity.
 - Do not mention log, speedmode, or internal diagnostics changes in public version entries.
+- Keep internal batch or output-location changes out of the public version log.
 - Group related tuning work into one coherent entry instead of listing every small internal step.
 */
 
-export const APP_VERSION = "1.0.25";
+export const APP_VERSION = "1.0.26";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.26",
+		date: "2026-04-26",
+		title: "Cleaner late-street bluffcatching",
+		notes: [
+			"Bots now release more weak Turn and River bluffcatchers when their hand strength mostly comes from the board.",
+			"Thin public-pair and kicker-only continues are less likely to carry defense against pressure.",
+			"Private made hands, clear pair value, and real drawing equity before the River keep their existing defensive role.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.25",
 		date: "2026-04-26",

@@ -1153,6 +1153,46 @@ function getFlopEquityCallRelief({
 	return 0;
 }
 
+function getWeakPrivateShowdownPressurePenalty({
+	needsToCall,
+	streetIndex,
+	raiseLevel,
+	pairClass,
+	liftType,
+	edge,
+	drawOuts,
+	topPair,
+	overPair,
+	potOdds,
+}) {
+	if (
+		!needsToCall ||
+		streetIndex < 2 ||
+		raiseLevel < 1
+	) {
+		return 0;
+	}
+	if (
+		drawOuts >= 8 ||
+		topPair ||
+		overPair ||
+		pairClass === "second-pair" ||
+		pairClass === "paired-board-private-pair" ||
+		liftType === "structural" ||
+		edge >= 0.20
+	) {
+		return 0;
+	}
+	if (pairClass !== "board-pair-only" && liftType !== "kicker") {
+		return 0;
+	}
+
+	const streetPenalty = streetIndex === 3 ? 0.025 : 0.02;
+	const pricePenalty = potOdds >= 0.25 ? 0.015 : 0;
+
+	return streetPenalty + pricePenalty;
+}
+
 function classifyNoBetOpportunity({
 	rawHandRank,
 	drawOuts,
@@ -1830,9 +1870,21 @@ export function chooseBotAction(player, gameState) {
 			})
 			: 0;
 		const commitmentShift = needsToCall ? commitmentPenalty * 0.8 : 0;
+		const weakPrivateShowdownPressurePenalty = getWeakPrivateShowdownPressurePenalty({
+			needsToCall,
+			streetIndex,
+			raiseLevel,
+			pairClass,
+			liftType,
+			edge,
+			drawOuts,
+			topPair,
+			overPair,
+			potOdds,
+		});
 		const preReliefCallBarrier = callBarrierBase + callBarrierAdj + marginalCallAdj +
 			potOddsShift + commitmentShift + streetPressure + weakDrawPressure +
-			deadHandPressure + barrelPressure;
+			deadHandPressure + barrelPressure + weakPrivateShowdownPressurePenalty;
 		const flopEquityCallRelief = needsToCall && streetIndex === 1
 			? getFlopEquityCallRelief({
 				drawOuts,
