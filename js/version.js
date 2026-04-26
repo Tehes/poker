@@ -9,9 +9,20 @@ Version log writing guide:
 - Group related tuning work into one coherent entry instead of listing every small internal step.
 */
 
-export const APP_VERSION = "1.0.28";
+export const APP_VERSION = "1.0.29";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.29",
+		date: "2026-04-26",
+		title: "Sharper first-in preflop choices",
+		notes: [
+			"Bots now choose first-in raises and limps with more attention to position, hand shape, and short-handed table flow.",
+			"Weak dominated open-limps are less common, while pairs, suited hands, connectors, and stronger broadways keep their playable role.",
+			"Small-blind heads-up and button three-handed spots stay active without turning every first-in hand into raise-or-fold poker.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.28",
 		date: "2026-04-26",
