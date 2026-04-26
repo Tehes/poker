@@ -828,6 +828,145 @@ function preflopHandScore(cardA, cardB) {
 	return Math.min(10, score);
 }
 
+function classifyPreflopHandFamily(cardA, cardB) {
+	const rankA = cardA[0];
+	const rankB = cardB[0];
+	const rankIndexA = RANK_ORDER.indexOf(rankA);
+	const rankIndexB = RANK_ORDER.indexOf(rankB);
+	const suited = cardA[1] === cardB[1];
+	const pair = rankA === rankB;
+	const highRank = rankIndexA >= rankIndexB ? rankA : rankB;
+	const highIndex = Math.max(rankIndexA, rankIndexB);
+	const lowIndex = Math.min(rankIndexA, rankIndexB);
+	const gap = highIndex - lowIndex - 1;
+	const broadway = highIndex >= RANK_ORDER.indexOf("T") &&
+		lowIndex >= RANK_ORDER.indexOf("T");
+	const weakAce = highRank === "A" && lowIndex <= RANK_ORDER.indexOf("9");
+	const weakKing = highRank === "K" && lowIndex <= RANK_ORDER.indexOf("9");
+
+	if (pair) {
+		return "pair";
+	}
+	if (suited && broadway) {
+		return "suitedBroadway";
+	}
+	if (!suited && broadway) {
+		return "offsuitBroadway";
+	}
+	if (weakAce) {
+		return suited ? "weakAxs" : "weakAxo";
+	}
+	if (weakKing) {
+		return suited ? "weakKxs" : "weakKxo";
+	}
+	if (suited && gap <= 0) {
+		return "suitedConnector";
+	}
+	if (suited && gap <= 2) {
+		return "suitedGapper";
+	}
+	if (suited) {
+		return "suitedJunk";
+	}
+	return "offsuitJunk";
+}
+
+function isProblematicOffsuitBroadway(cardA, cardB) {
+	if (classifyPreflopHandFamily(cardA, cardB) !== "offsuitBroadway") {
+		return false;
+	}
+
+	const rankA = cardA[0];
+	const rankB = cardB[0];
+	const rankIndexA = RANK_ORDER.indexOf(rankA);
+	const rankIndexB = RANK_ORDER.indexOf(rankB);
+	const highRank = rankIndexA >= rankIndexB ? rankA : rankB;
+	const lowRank = rankIndexA >= rankIndexB ? rankB : rankA;
+
+	return !(
+		(highRank === "A" && (lowRank === "K" || lowRank === "Q")) ||
+		(highRank === "K" && lowRank === "Q")
+	);
+}
+
+function getPreflopPassiveLeakPenalty({
+	cardA,
+	cardB,
+	player,
+	spotContext,
+	positionFactor,
+	preflopRaiseCount,
+}) {
+	const family = classifyPreflopHandFamily(cardA, cardB);
+	const targetFamily = family === "offsuitJunk" || family === "weakAxo" ||
+		family === "weakKxo" || isProblematicOffsuitBroadway(cardA, cardB);
+	if (!targetFamily) {
+		return 0;
+	}
+
+	const spotState = player.spotState || {};
+	const passiveReentry = spotState.enteredPreflop && !spotState.aggressiveThisStreet;
+	const outOfPosition = spotContext.actingSlotIndex < spotContext.actingSlotCount - 1;
+	const livelyShortHanded = spotContext.headsUp || positionFactor >= 0.75;
+	let penalty = 0;
+
+	if (spotContext.singleRaised || spotContext.multiRaised) {
+		if (family === "offsuitJunk") {
+			penalty = 0.15;
+		} else if (family === "weakAxo" || family === "weakKxo") {
+			penalty = 0.12;
+		} else {
+			penalty = 0.11;
+		}
+		if (passiveReentry) {
+			penalty += 0.04;
+		}
+		if (!spotContext.headsUp) {
+			penalty += 0.03;
+		}
+		if (outOfPosition) {
+			penalty += 0.03;
+		}
+		if (spotContext.multiRaised || preflopRaiseCount > 1) {
+			penalty += 0.03;
+		}
+	} else if (spotContext.limped) {
+		if (family === "offsuitJunk") {
+			penalty = 0.12;
+		} else if (family === "weakAxo" || family === "weakKxo") {
+			penalty = 0.10;
+		} else {
+			penalty = 0.08;
+		}
+		if (!spotContext.headsUp) {
+			penalty += 0.03;
+		}
+		if (outOfPosition) {
+			penalty += 0.02;
+		}
+	} else if (spotContext.unopened) {
+		if (family === "offsuitJunk") {
+			penalty = 0.13;
+		} else if (family === "weakAxo" || family === "weakKxo") {
+			penalty = 0.11;
+		} else {
+			penalty = 0.10;
+		}
+		if (!spotContext.headsUp && outOfPosition) {
+			penalty += 0.02;
+		}
+	}
+
+	if (livelyShortHanded) {
+		penalty -= spotContext.headsUp ? 0.05 : 0.03;
+	}
+	if (player.smallBlind && spotContext.headsUp) {
+		penalty -= 0.03;
+	}
+
+	return Math.max(0, Math.min(0.22, penalty));
+}
+
 function isPremiumPreflopHand(cardA, cardB) {
 	return preflopHandScore(cardA, cardB) > PREMIUM_PREFLOP_SCORE;
 }
@@ -1754,11 +1893,23 @@ export function chooseBotAction(player, gameState) {
 		yellowCallThreshold + eliminationPenalty,
 	);
 	const passesPreflopCallLimit = !preflop || stackRatio <= 0.5;
+	const preflopPassiveLeakPenalty = preflop && needsToCall && !useHarringtonStrategy
+		? getPreflopPassiveLeakPenalty({
+			cardA: player.holeCards[0],
+			cardB: player.holeCards[1],
+			player,
+			spotContext,
+			positionFactor,
+			preflopRaiseCount,
+		})
+		: 0;
 
 	const callBarrierBase = preflop
 		? Math.min(1, Math.max(0, potOdds + callTightAdj))
 		: Math.min(1, Math.max(0, POSTFLOP_CALL_BARRIER + callTightAdj));
-	let callBarrier = preflop ? Math.min(1, callBarrierBase + commitmentPenalty) : callBarrierBase;
+	let callBarrier = preflop
+		? Math.min(1, callBarrierBase + commitmentPenalty + preflopPassiveLeakPenalty)
+		: callBarrierBase;
 	let marginalCallPenalty = 0;
 	if (!preflop) {
 		let callBarrierAdj = 0;

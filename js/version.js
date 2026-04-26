@@ -9,9 +9,20 @@ Version log writing guide:
 - Group related tuning work into one coherent entry instead of listing every small internal step.
 */
 
-export const APP_VERSION = "1.0.26";
+export const APP_VERSION = "1.0.27";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.27",
+		date: "2026-04-26",
+		title: "Cleaner passive preflop calls",
+		notes: [
+			"Bots now avoid more weak offsuit hands in passive preflop call and limp spots.",
+			"Playable suited hands, pairs, and stronger broadways remain active, while dominated junk reaches the flop less often.",
+			"Flop defense is now supported by cleaner preflop inputs instead of rescuing too many weak missed hands later.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.26",
 		date: "2026-04-26",

@@ -686,6 +686,39 @@ function createMdfAnalysis(mdfMetrics) {
 		facingBetActionsByStreetAndMarginAndBetSizeAndQualityReason: structuredClone(
 			mdfMetrics.facingBetActionsByStreetAndMarginAndBetSizeAndQualityReason,
 		),
+		flopFacingBetByPreflopRoute: summarizeFoldRateBreakdownTree(
+			mdfMetrics.flopFacingBetByPreflopRoute,
+		),
+		flopFacingBetByFinalPreflopRoute: summarizeFoldRateBreakdownTree(
+			mdfMetrics.flopFacingBetByFinalPreflopRoute,
+		),
+		flopFacingBetByPreflopRouteAndReason: summarizeFoldRateBreakdownTree(
+			mdfMetrics.flopFacingBetByPreflopRouteAndReason,
+		),
+		flopFacingBetByPreflopRouteAndHandFamily: summarizeFoldRateBreakdownTree(
+			mdfMetrics.flopFacingBetByPreflopRouteAndHandFamily,
+		),
+		flopFacingBetByPreflopRouteAndStructure: summarizeFoldRateBreakdownTree(
+			mdfMetrics.flopFacingBetByPreflopRouteAndStructure,
+		),
+		flopFacingBetByPreflopRouteAndPosition: summarizeFoldRateBreakdownTree(
+			mdfMetrics.flopFacingBetByPreflopRouteAndPosition,
+		),
+		flopFacingBetByPreflopRouteAndLineRole: summarizeFoldRateBreakdownTree(
+			mdfMetrics.flopFacingBetByPreflopRouteAndLineRole,
+		),
+		flopFacingBetHighCardNoDrawByPreflopRoute: summarizeFoldRateBreakdownTree(
+			mdfMetrics.flopFacingBetHighCardNoDrawByPreflopRoute,
+		),
+		flopFacingBetWeakDrawBadPriceByPreflopRoute: summarizeFoldRateBreakdownTree(
+			mdfMetrics.flopFacingBetWeakDrawBadPriceByPreflopRoute,
+		),
+		flopFacingBetByEntryRoute: summarizeFoldRateBreakdownTree(
+			mdfMetrics.flopFacingBetByEntryRoute,
+		),
+		flopFacingBetByEntryRouteAndFinalPreflopRoute: summarizeFoldRateBreakdownTree(
+			mdfMetrics.flopFacingBetByEntryRouteAndFinalPreflopRoute,
+		),
 		candidateOverall: summarizeFoldRateBreakdownTree(
 			combineFoldRateRows(mdfMetrics.candidateByStreet),
 		),
@@ -936,6 +969,167 @@ function groupDecisionsByHandId(decisions) {
 	}
 
 	return grouped;
+}
+
+function classifyPreflopRoute(decision) {
+	if (!decision || decision.phase !== "preflop") {
+		return "unknown";
+	}
+	if (decision.action === "check") {
+		return "bbFreeCheck";
+	}
+	if (decision.action === "call") {
+		if (decision.spotType === "UO") {
+			return "openLimp";
+		}
+		if (decision.spotType === "L") {
+			return "overlimpOrComplete";
+		}
+		if (decision.spotType === "SR") {
+			return "callVsRaise";
+		}
+		if (decision.spotType === "MR") {
+			return "callVsMultiRaise";
+		}
+		return "unknown";
+	}
+	if (decision.action !== "raise") {
+		return "unknown";
+	}
+	if (decision.sizingKind === "preflop-harrington") {
+		return "harringtonRaise";
+	}
+	if (decision.sizingKind === "preflop-open") {
+		return "openRaise";
+	}
+	if (decision.sizingKind === "preflop-iso") {
+		return "isoRaise";
+	}
+	if (decision.sizingKind === "preflop-3bet") {
+		return "threeBet";
+	}
+	if (decision.sizingKind === "preflop-squeeze") {
+		return "squeeze";
+	}
+	if (
+		decision.sizingKind === "preflop-4bet" ||
+		decision.sizingKind === "preflop-5bet-plus"
+	) {
+		return "fourBetPlus";
+	}
+	if (decision.spotType === "UO") {
+		return "openRaise";
+	}
+	if (decision.spotType === "L") {
+		return "isoRaise";
+	}
+	if (decision.spotType === "SR") {
+		return "threeBet";
+	}
+	if (decision.spotType === "MR") {
+		return "fourBetPlus";
+	}
+	return "unknown";
+}
+
+function classifyPreflopHandFamily(holeCards) {
+	if (!Array.isArray(holeCards) || holeCards.length < 2) {
+		return "unknown";
+	}
+
+	const [cardA, cardB] = holeCards;
+	if (
+		typeof cardA !== "string" ||
+		typeof cardB !== "string" ||
+		cardA.length < 2 ||
+		cardB.length < 2
+	) {
+		return "unknown";
+	}
+
+	const rankA = cardA[0];
+	const rankB = cardB[0];
+	const rankIndexA = CARD_RANK_ORDER.indexOf(rankA);
+	const rankIndexB = CARD_RANK_ORDER.indexOf(rankB);
+	if (rankIndexA === -1 || rankIndexB === -1) {
+		return "unknown";
+	}
+
+	const suited = cardA[1] === cardB[1];
+	const pair = rankA === rankB;
+	const highRank = rankIndexA >= rankIndexB ? rankA : rankB;
+	const lowRank = rankIndexA >= rankIndexB ? rankB : rankA;
+	const highIndex = Math.max(rankIndexA, rankIndexB);
+	const lowIndex = Math.min(rankIndexA, rankIndexB);
+	const gap = highIndex - lowIndex - 1;
+	const broadway = highIndex >= CARD_RANK_ORDER.indexOf("T") &&
+		lowIndex >= CARD_RANK_ORDER.indexOf("T");
+	const weakAce = highRank === "A" && lowIndex <= CARD_RANK_ORDER.indexOf("9");
+	const weakKing = highRank === "K" && lowIndex <= CARD_RANK_ORDER.indexOf("9");
+
+	if (pair) {
+		return "pair";
+	}
+	if (suited && broadway) {
+		return "suitedBroadway";
+	}
+	if (!suited && broadway) {
+		if (
+			(highRank === "A" && (lowRank === "K" || lowRank === "Q")) ||
+			(highRank === "K" && lowRank === "Q")
+		) {
+			return "premiumOffsuitBroadway";
+		}
+		return "dominatedOffsuitBroadway";
+	}
+	if (weakAce) {
+		return suited ? "weakAxs" : "weakAxo";
+	}
+	if (weakKing) {
+		return suited ? "weakKxs" : "weakKxo";
+	}
+	if (suited && gap <= 0) {
+		return "suitedConnector";
+	}
+	if (suited && gap <= 2) {
+		return "suitedGapper";
+	}
+	if (suited) {
+		return "suitedJunk";
+	}
+	return "offsuitJunk";
+}
+
+function getPostflopPositionRole(decision) {
+	return decision.actingSlotIndex === decision.actingSlotCount ? "IP" : "OOP";
+}
+
+function getPostflopLineRole(decision) {
+	return decision.lineTag === "PFA" ? "PFA" : "nonPFA";
+}
+
+function buildPreflopEntryByHandAndSeat(decisions) {
+	const entries = new Map();
+
+	for (const decision of decisions) {
+		if (decision.phase !== "preflop" || decision.action === "fold") {
+			continue;
+		}
+		if (typeof decision.handId !== "number" || typeof decision.seatIndex !== "number") {
+			continue;
+		}
+		const key = `${decision.handId}:${decision.seatIndex}`;
+		const route = classifyPreflopRoute(decision);
+		const handFamily = classifyPreflopHandFamily(decision.holeCards);
+		const currentEntry = entries.get(key);
+		entries.set(key, {
+			entryRoute: currentEntry?.entryRoute ?? route,
+			finalPreflopRoute: route,
+			handFamily,
+		});
+	}
+
+	return entries;
 }
 
 function analyzeBlockedNoBetRaiseFollowups(decisions, metrics) {
@@ -2105,6 +2299,17 @@ function createEmptyPostflopMetrics() {
 			facingBetByQualityClass: {},
 			facingBetActionsByStreetAndBetSizeAndQualityReason: {},
 			facingBetActionsByStreetAndMarginAndBetSizeAndQualityReason: {},
+			flopFacingBetByPreflopRoute: {},
+			flopFacingBetByFinalPreflopRoute: {},
+			flopFacingBetByPreflopRouteAndReason: {},
+			flopFacingBetByPreflopRouteAndHandFamily: {},
+			flopFacingBetByPreflopRouteAndStructure: {},
+			flopFacingBetByPreflopRouteAndPosition: {},
+			flopFacingBetByPreflopRouteAndLineRole: {},
+			flopFacingBetHighCardNoDrawByPreflopRoute: {},
+			flopFacingBetWeakDrawBadPriceByPreflopRoute: {},
+			flopFacingBetByEntryRoute: {},
+			flopFacingBetByEntryRouteAndFinalPreflopRoute: {},
 			candidateByStreet: {},
 			candidateByStreetAndMargin: {},
 			candidateByStreetAndBetSize: {},
@@ -2289,6 +2494,7 @@ function createEmptyMetrics() {
 			postflopNormalBetOffBucket: [],
 			postflopWeakNoBetRaise: [],
 			postflopWeakNoBetCheck: [],
+			flopPreflopMixedRoute: [],
 		},
 		postflopSpots: 0,
 		kickerRaiseCount: 0,
@@ -2310,6 +2516,9 @@ function analyzeRunDecisions(decisions, hands) {
 	const normalizedDecisions = decisions
 		.map((decision) => normalizeStructuredDecision(decision))
 		.filter(Boolean);
+	const preflopEntriesByHandAndSeat = buildPreflopEntryByHandAndSeat(
+		normalizedDecisions,
+	);
 
 	for (const decision of normalizedDecisions) {
 		const line = decision.line;
@@ -2785,6 +2994,101 @@ function analyzeRunDecisions(decisions, hands) {
 					decision.action,
 				],
 			);
+			if (street === "flop") {
+				const preflopEntry = preflopEntriesByHandAndSeat.get(
+					`${decision.handId}:${decision.seatIndex}`,
+				);
+				const entryRoute = preflopEntry?.entryRoute ?? "unknown";
+				const finalPreflopRoute = preflopEntry?.finalPreflopRoute ?? "unknown";
+				const handFamily = preflopEntry?.handFamily ??
+					classifyPreflopHandFamily(decision.holeCards);
+				const positionRole = getPostflopPositionRole(decision);
+				const lineRole = getPostflopLineRole(decision);
+
+				incrementFoldRateBreakdown(
+					metrics.postflop.mdf.flopFacingBetByPreflopRoute,
+					finalPreflopRoute,
+					decision.action,
+					decision.mdfRequiredFoldRate,
+				);
+				incrementFoldRateBreakdown(
+					metrics.postflop.mdf.flopFacingBetByFinalPreflopRoute,
+					finalPreflopRoute,
+					decision.action,
+					decision.mdfRequiredFoldRate,
+				);
+				incrementNestedFoldRateBreakdown(
+					metrics.postflop.mdf.flopFacingBetByPreflopRouteAndReason,
+					finalPreflopRoute,
+					decision.qualityReason,
+					decision.action,
+					decision.mdfRequiredFoldRate,
+				);
+				incrementNestedFoldRateBreakdown(
+					metrics.postflop.mdf.flopFacingBetByPreflopRouteAndHandFamily,
+					finalPreflopRoute,
+					handFamily,
+					decision.action,
+					decision.mdfRequiredFoldRate,
+				);
+				incrementNestedFoldRateBreakdown(
+					metrics.postflop.mdf.flopFacingBetByPreflopRouteAndStructure,
+					finalPreflopRoute,
+					decision.structureTag,
+					decision.action,
+					decision.mdfRequiredFoldRate,
+				);
+				incrementNestedFoldRateBreakdown(
+					metrics.postflop.mdf.flopFacingBetByPreflopRouteAndPosition,
+					finalPreflopRoute,
+					positionRole,
+					decision.action,
+					decision.mdfRequiredFoldRate,
+				);
+				incrementNestedFoldRateBreakdown(
+					metrics.postflop.mdf.flopFacingBetByPreflopRouteAndLineRole,
+					finalPreflopRoute,
+					lineRole,
+					decision.action,
+					decision.mdfRequiredFoldRate,
+				);
+				incrementFoldRateBreakdown(
+					metrics.postflop.mdf.flopFacingBetByEntryRoute,
+					entryRoute,
+					decision.action,
+					decision.mdfRequiredFoldRate,
+				);
+				incrementNestedFoldRateBreakdown(
+					metrics.postflop.mdf.flopFacingBetByEntryRouteAndFinalPreflopRoute,
+					entryRoute,
+					finalPreflopRoute,
+					decision.action,
+					decision.mdfRequiredFoldRate,
+				);
+				if (decision.qualityReason === "highCardNoDraw") {
+					incrementFoldRateBreakdown(
+						metrics.postflop.mdf.flopFacingBetHighCardNoDrawByPreflopRoute,
+						finalPreflopRoute,
+						decision.action,
+						decision.mdfRequiredFoldRate,
+					);
+				}
+				if (decision.qualityReason === "weakDrawBadPrice") {
+					incrementFoldRateBreakdown(
+						metrics.postflop.mdf.flopFacingBetWeakDrawBadPriceByPreflopRoute,
+						finalPreflopRoute,
+						decision.action,
+						decision.mdfRequiredFoldRate,
+					);
+				}
+				if (entryRoute !== finalPreflopRoute) {
+					pushExample(
+						metrics.examples.flopPreflopMixedRoute,
+						`${entryRoute} -> ${finalPreflopRoute} | Fam:${handFamily} Pos:${positionRole} ` +
+							`Line:${lineRole} Reason:${decision.qualityReason} | ${line}`,
+					);
+				}
+			}
 
 			if (decision.mdfEligible) {
 				incrementFoldRateBreakdown(
@@ -3269,6 +3573,7 @@ function mergeRunMetrics(target, source) {
 	);
 	source.examples.postflopWeakNoBetRaise.forEach((line) => pushExample(target.examples.postflopWeakNoBetRaise, line));
 	source.examples.postflopWeakNoBetCheck.forEach((line) => pushExample(target.examples.postflopWeakNoBetCheck, line));
+	source.examples.flopPreflopMixedRoute.forEach((line) => pushExample(target.examples.flopPreflopMixedRoute, line));
 }
 
 async function runSingleTournament(
