@@ -440,50 +440,28 @@ function buildLegacyLogSpotContext({
 	};
 }
 
-function getLegacyPreflopLogScores(cardA, cardB) {
-	const strengthScore = preflopHandScore(cardA, cardB);
-	const suited = cardA[1] === cardB[1];
-	const pair = cardA[0] === cardB[0];
-	const rankA = RANK_ORDER.indexOf(cardA[0]);
-	const rankB = RANK_ORDER.indexOf(cardB[0]);
-	const gap = Math.abs(rankA - rankB) - 1;
-	let playabilityScore = strengthScore;
-
-	if (suited) {
-		playabilityScore += 0.6;
-	}
-	if (pair) {
-		playabilityScore += 0.4;
-	}
-	if (gap <= 0) {
-		playabilityScore += 0.5;
-	} else if (gap === 1) {
-		playabilityScore += 0.25;
-	} else if (gap >= 3) {
-		playabilityScore -= 0.5;
-	}
-
-	playabilityScore = Math.max(0, Math.min(10, playabilityScore));
-	const dominationPenalty = !pair &&
-			(cardA[0] === "A" || cardB[0] === "A" || cardA[0] === "K" ||
-				cardB[0] === "K") &&
-			gap >= 2
-		? 0.25
-		: 0;
+function getLegacyPreflopLogScores(cardA, cardB, context = {}) {
+	const profile = buildPreflopHandProfile(cardA, cardB);
+	const flatScore = context.preflop
+		? getContextualPreflopFlatScore(profile, context)
+		: profile.flatScore;
+	const defendScore = context.preflop
+		? getContextualPreflopDefendScore(profile, context, flatScore)
+		: flatScore;
 
 	return {
-		strengthScore,
-		playabilityScore,
-		dominationPenalty,
-		openRaiseScore: strengthScore,
-		openLimpScore: Math.max(
-			0,
-			Math.min(10, (strengthScore + playabilityScore) / 2),
+		strengthScore: profile.chenScore,
+		playabilityScore: profile.playability,
+		dominationPenalty: profile.dominationRisk,
+		openRaiseScore: profile.chenScore,
+		openLimpScore: clampPreflopScore(
+			(profile.chenScore + profile.playability) / 2,
 		),
-		flatScore: playabilityScore,
-		threeBetValueScore: strengthScore,
-		threeBetBluffScore: playabilityScore,
-		pushScore: strengthScore,
+		flatScore,
+		defendScore,
+		threeBetValueScore: profile.chenScore,
+		threeBetBluffScore: profile.playability,
+		pushScore: profile.chenScore,
 	};
 }
 
@@ -828,7 +806,11 @@ function preflopHandScore(cardA, cardB) {
 	return Math.min(10, score);
 }
 
-function classifyPreflopHandFamily(cardA, cardB) {
+function clampPreflopScore(score) {
+	return Math.max(0, Math.min(10, score));
+}
+
+function buildPreflopHandProfile(cardA, cardB) {
 	const rankA = cardA[0];
 	const rankB = cardB[0];
 	const rankIndexA = RANK_ORDER.indexOf(rankA);
@@ -836,135 +818,324 @@ function classifyPreflopHandFamily(cardA, cardB) {
 	const suited = cardA[1] === cardB[1];
 	const pair = rankA === rankB;
 	const highRank = rankIndexA >= rankIndexB ? rankA : rankB;
+	const lowRank = rankIndexA >= rankIndexB ? rankB : rankA;
 	const highIndex = Math.max(rankIndexA, rankIndexB);
 	const lowIndex = Math.min(rankIndexA, rankIndexB);
 	const gap = highIndex - lowIndex - 1;
 	const broadway = highIndex >= RANK_ORDER.indexOf("T") &&
 		lowIndex >= RANK_ORDER.indexOf("T");
+	const premiumOffsuitBroadway = !suited && broadway &&
+		(
+			(highRank === "A" && (lowRank === "K" || lowRank === "Q")) ||
+			(highRank === "K" && lowRank === "Q")
+		);
+	const dominatedOffsuitBroadway = !suited && broadway && !premiumOffsuitBroadway;
 	const weakAce = highRank === "A" && lowIndex <= RANK_ORDER.indexOf("9");
 	const weakKing = highRank === "K" && lowIndex <= RANK_ORDER.indexOf("9");
+	const smallPair = pair && highIndex <= RANK_ORDER.indexOf("6");
+	const connector = gap <= 0;
+	const wheelAxs = suited && highRank === "A" && lowIndex <= RANK_ORDER.indexOf("5");
+	const chenScore = preflopHandScore(cardA, cardB);
+	let playability = chenScore;
+	let handFamily;
 
 	if (pair) {
-		return "pair";
+		handFamily = "pair";
+	} else if (suited && broadway) {
+		handFamily = "suitedBroadway";
+	} else if (premiumOffsuitBroadway) {
+		handFamily = "premiumOffsuitBroadway";
+	} else if (dominatedOffsuitBroadway) {
+		handFamily = "dominatedOffsuitBroadway";
+	} else if (weakAce) {
+		handFamily = suited ? "weakAxs" : "weakAxo";
+	} else if (weakKing) {
+		handFamily = suited ? "weakKxs" : "weakKxo";
+	} else if (suited && connector) {
+		handFamily = "suitedConnector";
+	} else if (suited && gap <= 2) {
+		handFamily = "suitedGapper";
+	} else if (suited) {
+		handFamily = "suitedJunk";
+	} else {
+		handFamily = "offsuitJunk";
 	}
-	if (suited && broadway) {
-		return "suitedBroadway";
-	}
-	if (!suited && broadway) {
-		return "offsuitBroadway";
-	}
-	if (weakAce) {
-		return suited ? "weakAxs" : "weakAxo";
-	}
-	if (weakKing) {
-		return suited ? "weakKxs" : "weakKxo";
-	}
-	if (suited && gap <= 0) {
-		return "suitedConnector";
-	}
-	if (suited && gap <= 2) {
-		return "suitedGapper";
-	}
+
 	if (suited) {
-		return "suitedJunk";
+		playability += 0.6;
 	}
-	return "offsuitJunk";
+	if (pair) {
+		playability += 0.4;
+	}
+	if (connector) {
+		playability += 0.5;
+	} else if (gap === 1) {
+		playability += 0.25;
+	} else if (gap >= 3) {
+		playability -= 0.5;
+	}
+	playability = clampPreflopScore(playability);
+
+	let dominationRisk = 0;
+	if (handFamily === "weakAxo") {
+		dominationRisk = 0.45;
+	} else if (handFamily === "weakKxo") {
+		dominationRisk = 0.40;
+	} else if (handFamily === "dominatedOffsuitBroadway") {
+		dominationRisk = 0.35;
+	} else if (handFamily === "weakAxs" || handFamily === "weakKxs") {
+		dominationRisk = 0.15;
+	} else if (!pair && (highRank === "A" || highRank === "K") && gap >= 2) {
+		dominationRisk = 0.25;
+	}
+
+	let blockerValue = 0;
+	if (highRank === "A") {
+		blockerValue += 0.45;
+	} else if (highRank === "K") {
+		blockerValue += 0.25;
+	}
+	if (lowRank === "A") {
+		blockerValue += 0.20;
+	} else if (lowRank === "K") {
+		blockerValue += 0.10;
+	}
+	if (premiumOffsuitBroadway || handFamily === "suitedBroadway") {
+		blockerValue += 0.15;
+	}
+	blockerValue = Math.min(0.75, blockerValue);
+
+	let flatScore = playability;
+	if (smallPair) {
+		flatScore += 0.35;
+	}
+	if (wheelAxs) {
+		flatScore += 0.30;
+	}
+	if (handFamily === "suitedBroadway") {
+		flatScore += 0.20;
+	} else if (handFamily === "suitedConnector") {
+		flatScore += 0.25;
+	} else if (handFamily === "suitedGapper") {
+		flatScore += 0.10;
+	} else if (handFamily === "weakAxs") {
+		flatScore += 0.15;
+	} else if (handFamily === "premiumOffsuitBroadway") {
+		flatScore += 0.10;
+	} else if (handFamily === "dominatedOffsuitBroadway") {
+		flatScore -= 0.55;
+	} else if (handFamily === "weakAxo" || handFamily === "weakKxo") {
+		flatScore -= 0.45;
+	} else if (handFamily === "offsuitJunk") {
+		flatScore -= 0.35;
+	} else if (handFamily === "suitedJunk") {
+		flatScore -= 0.10;
+	}
+	flatScore = clampPreflopScore(flatScore - dominationRisk * 0.8);
+
+	return {
+		chenScore,
+		handFamily,
+		legacyHandFamily: dominatedOffsuitBroadway || premiumOffsuitBroadway
+			? "offsuitBroadway"
+			: handFamily,
+		suited,
+		pair,
+		gap,
+		highRank,
+		lowRank,
+		playability,
+		dominationRisk,
+		blockerValue,
+		smallPair,
+		connector,
+		wheelAxs,
+		broadway,
+		flatScore,
+	};
+}
+
+function isPassivePreflopTargetFamily(handFamily) {
+	return handFamily === "offsuitJunk" || handFamily === "weakAxo" ||
+		handFamily === "weakKxo" ||
+		handFamily === "dominatedOffsuitBroadway";
+}
+
+function getContextualPreflopFlatScore(
+	profile,
+	{ player, spotContext, potOdds, positionFactor, preflopRaiseCount },
+) {
+	const context = spotContext || {};
+	const blindDefense = Boolean(player?.bigBlind || player?.smallBlind);
+	const outOfPosition = context.actingSlotIndex < context.actingSlotCount - 1;
+	const passiveReentry = Boolean(
+		player?.spotState?.enteredPreflop && !player.spotState.aggressiveThisStreet,
+	);
+	const targetFamily = isPassivePreflopTargetFamily(profile.handFamily);
+	const playableFamily = profile.pair || profile.handFamily === "suitedBroadway" ||
+		profile.handFamily === "weakAxs" ||
+		profile.handFamily === "suitedConnector" ||
+		profile.handFamily === "suitedGapper";
+	const goodPrice = potOdds <= 0.25;
+	const expensivePrice = potOdds >= 0.36;
+	let flatScore = profile.flatScore;
+
+	if (targetFamily) {
+		if (context.unopened && !context.headsUp) {
+			flatScore -= outOfPosition ? 1.35 : 1.10;
+		}
+		if (context.unopened && context.headsUp) {
+			flatScore -= blindDefense ? 0.70 : 0.45;
+		}
+		if (context.limped && !context.headsUp) {
+			flatScore -= 1.25;
+		}
+		if (context.facingAggression) {
+			flatScore -= 1.00;
+		}
+		if (passiveReentry && context.facingAggression) {
+			flatScore -= 0.65;
+		}
+		if (!context.headsUp && context.facingAggression) {
+			flatScore -= 0.35;
+		}
+		if (outOfPosition && !blindDefense) {
+			flatScore -= 0.30;
+		}
+		if (context.multiRaised || preflopRaiseCount > 1) {
+			flatScore -= 0.50;
+		}
+		if (expensivePrice) {
+			flatScore -= 0.35;
+		}
+		if ((context.headsUp || blindDefense) && goodPrice) {
+			flatScore += 0.15;
+		}
+		if (profile.handFamily === "offsuitJunk") {
+			if (context.unopened && context.headsUp) {
+				flatScore -= 0.65;
+			}
+			if (context.limped && !context.headsUp) {
+				flatScore -= 0.25;
+			}
+			if (context.facingAggression) {
+				flatScore -= context.headsUp && blindDefense && goodPrice
+					? 0.25
+					: 0.40;
+			}
+		}
+	} else {
+		if (context.facingAggression && !context.headsUp) {
+			flatScore -= 0.05;
+		}
+		if (context.multiRaised || preflopRaiseCount > 1) {
+			flatScore -= 0.10;
+		}
+		if (passiveReentry && context.facingAggression) {
+			flatScore -= 0.08;
+		}
+		if (playableFamily && goodPrice) {
+			flatScore += 0.10;
+		}
+	}
+	if (positionFactor >= 0.75 && !context.facingAggression) {
+		flatScore += 0.05;
+	}
+
+	return clampPreflopScore(flatScore);
+}
+
+function getContextualPreflopDefendScore(
+	profile,
+	{ player, spotContext, potOdds, positionFactor, preflopRaiseCount },
+	baseFlatScore = profile.flatScore,
+) {
+	const context = spotContext || {};
+	const blindDefense = Boolean(player?.bigBlind || player?.smallBlind);
+	const outOfPosition = context.actingSlotIndex < context.actingSlotCount - 1;
+	const passiveReentry = Boolean(
+		player?.spotState?.enteredPreflop && !player.spotState.aggressiveThisStreet,
+	);
+	const targetFamily = isPassivePreflopTargetFamily(profile.handFamily);
+	const goodPrice = potOdds <= 0.25;
+	const expensivePrice = potOdds >= 0.36;
+	let defendScore = baseFlatScore + profile.blockerValue * 0.35;
+
+	if (context.headsUp) {
+		defendScore += 0.35;
+	}
+	if (blindDefense) {
+		defendScore += goodPrice ? 0.45 : 0.20;
+	}
+	if (positionFactor >= 0.75) {
+		defendScore += 0.15;
+	}
+	if (!outOfPosition) {
+		defendScore += 0.15;
+	} else if (!blindDefense && !context.headsUp) {
+		defendScore -= 0.15;
+	}
+	if (!context.headsUp && context.facingAggression) {
+		defendScore -= 0.20;
+	}
+	if (context.multiRaised || preflopRaiseCount > 1) {
+		defendScore -= 0.35;
+	}
+	if (targetFamily && passiveReentry && context.facingAggression) {
+		defendScore -= blindDefense || context.headsUp ? 0.20 : 0.35;
+	}
+	if (profile.handFamily === "offsuitJunk" && context.facingAggression) {
+		defendScore -= context.headsUp && blindDefense && goodPrice ? 0.15 : 0.25;
+	}
+	if (goodPrice) {
+		defendScore += 0.20;
+	} else if (expensivePrice) {
+		defendScore -= 0.25;
+	}
+	if (
+		goodPrice &&
+		(profile.pair || profile.handFamily === "weakAxs" ||
+			profile.handFamily === "suitedConnector" ||
+			profile.handFamily === "suitedGapper")
+	) {
+		defendScore += 0.10;
+	}
+
+	if (
+		profile.handFamily === "weakAxo" ||
+		profile.handFamily === "weakKxo" ||
+		profile.handFamily === "dominatedOffsuitBroadway"
+	) {
+		defendScore = Math.min(defendScore, blindDefense || context.headsUp ? 5.40 : 4.90);
+	} else if (profile.handFamily === "offsuitJunk") {
+		defendScore = Math.min(defendScore, blindDefense || context.headsUp ? 4.90 : 4.30);
+	}
+
+	return clampPreflopScore(defendScore);
+}
+
+function getPreflopPassiveCallScore({
+	preflopScores,
+	player,
+	spotContext,
+	potOdds,
+	positionFactor,
+}) {
+	const shortHandedUnopened = spotContext.unopened && spotContext.actingSlotCount <= 3;
+	const pricedLateDefense = potOdds <= 0.22 && positionFactor >= 0.5;
+	const shouldUseDefendScore = player.bigBlind || player.smallBlind ||
+		spotContext.headsUp || shortHandedUnopened || pricedLateDefense;
+
+	return shouldUseDefendScore ? preflopScores.defendScore : preflopScores.flatScore;
+}
+
+function classifyPreflopHandFamily(cardA, cardB) {
+	return buildPreflopHandProfile(cardA, cardB).legacyHandFamily;
 }
 
 function isProblematicOffsuitBroadway(cardA, cardB) {
-	if (classifyPreflopHandFamily(cardA, cardB) !== "offsuitBroadway") {
-		return false;
-	}
-
-	const rankA = cardA[0];
-	const rankB = cardB[0];
-	const rankIndexA = RANK_ORDER.indexOf(rankA);
-	const rankIndexB = RANK_ORDER.indexOf(rankB);
-	const highRank = rankIndexA >= rankIndexB ? rankA : rankB;
-	const lowRank = rankIndexA >= rankIndexB ? rankB : rankA;
-
-	return !(
-		(highRank === "A" && (lowRank === "K" || lowRank === "Q")) ||
-		(highRank === "K" && lowRank === "Q")
-	);
-}
-
-function getPreflopPassiveLeakPenalty({
-	cardA,
-	cardB,
-	player,
-	spotContext,
-	positionFactor,
-	preflopRaiseCount,
-}) {
-	const family = classifyPreflopHandFamily(cardA, cardB);
-	const targetFamily = family === "offsuitJunk" || family === "weakAxo" ||
-		family === "weakKxo" || isProblematicOffsuitBroadway(cardA, cardB);
-	if (!targetFamily) {
-		return 0;
-	}
-
-	const spotState = player.spotState || {};
-	const passiveReentry = spotState.enteredPreflop && !spotState.aggressiveThisStreet;
-	const outOfPosition = spotContext.actingSlotIndex < spotContext.actingSlotCount - 1;
-	const livelyShortHanded = spotContext.headsUp || positionFactor >= 0.75;
-	let penalty = 0;
-
-	if (spotContext.singleRaised || spotContext.multiRaised) {
-		if (family === "offsuitJunk") {
-			penalty = 0.15;
-		} else if (family === "weakAxo" || family === "weakKxo") {
-			penalty = 0.12;
-		} else {
-			penalty = 0.11;
-		}
-		if (passiveReentry) {
-			penalty += 0.04;
-		}
-		if (!spotContext.headsUp) {
-			penalty += 0.03;
-		}
-		if (outOfPosition) {
-			penalty += 0.03;
-		}
-		if (spotContext.multiRaised || preflopRaiseCount > 1) {
-			penalty += 0.03;
-		}
-	} else if (spotContext.limped) {
-		if (family === "offsuitJunk") {
-			penalty = 0.12;
-		} else if (family === "weakAxo" || family === "weakKxo") {
-			penalty = 0.10;
-		} else {
-			penalty = 0.08;
-		}
-		if (!spotContext.headsUp) {
-			penalty += 0.03;
-		}
-		if (outOfPosition) {
-			penalty += 0.02;
-		}
-	} else if (spotContext.unopened) {
-		if (family === "offsuitJunk") {
-			penalty = 0.13;
-		} else if (family === "weakAxo" || family === "weakKxo") {
-			penalty = 0.11;
-		} else {
-			penalty = 0.10;
-		}
-		if (!spotContext.headsUp && outOfPosition) {
-			penalty += 0.02;
-		}
-	}
-
-	if (livelyShortHanded) {
-		penalty -= spotContext.headsUp ? 0.05 : 0.03;
-	}
-	if (player.smallBlind && spotContext.headsUp) {
-		penalty -= 0.03;
-	}
-
-	return Math.max(0, Math.min(0.22, penalty));
+	return buildPreflopHandProfile(cardA, cardB).handFamily ===
+		"dominatedOffsuitBroadway";
 }
 
 function isPremiumPreflopHand(cardA, cardB) {
@@ -1736,6 +1907,14 @@ export function chooseBotAction(player, gameState) {
 	const preflopScores = getLegacyPreflopLogScores(
 		player.holeCards[0],
 		player.holeCards[1],
+		{
+			preflop,
+			player,
+			spotContext,
+			potOdds,
+			positionFactor,
+			preflopRaiseCount,
+		},
 	);
 	const hasCallableRaiseOpponent = hasOpponentWhoCanCallRaise(players, player, currentBet);
 	// A raise must create action for at least one opponent; otherwise the bot should only call/check.
@@ -1893,22 +2072,24 @@ export function chooseBotAction(player, gameState) {
 		yellowCallThreshold + eliminationPenalty,
 	);
 	const passesPreflopCallLimit = !preflop || stackRatio <= 0.5;
-	const preflopPassiveLeakPenalty = preflop && needsToCall && !useHarringtonStrategy
-		? getPreflopPassiveLeakPenalty({
-			cardA: player.holeCards[0],
-			cardB: player.holeCards[1],
+	const preflopPassiveCallScore = preflop && needsToCall && !useHarringtonStrategy
+		? getPreflopPassiveCallScore({
+			preflopScores,
 			player,
 			spotContext,
+			potOdds,
 			positionFactor,
-			preflopRaiseCount,
 		})
-		: 0;
+		: preflopScores.strengthScore;
+	const callGateStrengthRatio = preflop && needsToCall && !useHarringtonStrategy
+		? preflopPassiveCallScore / 10
+		: gateStrengthRatio;
 
 	const callBarrierBase = preflop
 		? Math.min(1, Math.max(0, potOdds + callTightAdj))
 		: Math.min(1, Math.max(0, POSTFLOP_CALL_BARRIER + callTightAdj));
 	let callBarrier = preflop
-		? Math.min(1, callBarrierBase + commitmentPenalty + preflopPassiveLeakPenalty)
+		? Math.min(1, callBarrierBase + commitmentPenalty)
 		: callBarrierBase;
 	let marginalCallPenalty = 0;
 	if (!preflop) {
@@ -2911,7 +3092,7 @@ export function chooseBotAction(player, gameState) {
 					Math.abs(decisionStrength - raiseThreshold) <=
 						STRENGTH_TIE_DELTA
 				) {
-					const alt = (gateStrengthRatio >= eliminationBarrier &&
+					const alt = (callGateStrengthRatio >= eliminationBarrier &&
 							passesPreflopCallLimit)
 						? { action: "call", amount: callAmt }
 						: { action: "fold" };
@@ -2921,11 +3102,11 @@ export function chooseBotAction(player, gameState) {
 				}
 			}
 		} else if (
-			gateStrengthRatio >= eliminationBarrier && passesPreflopCallLimit
+			callGateStrengthRatio >= eliminationBarrier && passesPreflopCallLimit
 		) {
 			const callAmt = Math.min(player.chips, needToCall);
 			if (
-				Math.abs(gateStrengthRatio - eliminationBarrier) <=
+				Math.abs(callGateStrengthRatio - eliminationBarrier) <=
 					ODDS_TIE_DELTA
 			) {
 				decision = Math.random() < 0.5 ? { action: "call", amount: callAmt } : { action: "fold" };
@@ -3411,6 +3592,7 @@ export function chooseBotAction(player, gameState) {
 		openRaiseScore: toRoundedNumber(preflopScores.openRaiseScore),
 		openLimpScore: toRoundedNumber(preflopScores.openLimpScore),
 		flatScore: toRoundedNumber(preflopScores.flatScore),
+		defendScore: toRoundedNumber(preflopScores.defendScore),
 		threeBetValueScore: toRoundedNumber(preflopScores.threeBetValueScore),
 		threeBetBluffScore: toRoundedNumber(preflopScores.threeBetBluffScore),
 		pushScore: toRoundedNumber(preflopScores.pushScore),
@@ -3468,7 +3650,7 @@ export function chooseBotAction(player, gameState) {
 				} | ` +
 				`OR:${preflopScores.openRaiseScore.toFixed(2)} OL:${preflopScores.openLimpScore.toFixed(2)} FL:${
 					preflopScores.flatScore.toFixed(2)
-				} 3V:${preflopScores.threeBetValueScore.toFixed(2)} 3B:${
+				} DF:${preflopScores.defendScore.toFixed(2)} 3V:${preflopScores.threeBetValueScore.toFixed(2)} 3B:${
 					preflopScores.threeBetBluffScore.toFixed(2)
 				} PS:${preflopScores.pushScore.toFixed(2)} | ` +
 				`Ctx:${boardCtx} Pair:${pairClass} Draw:${drawFlag} Tex:${textureRisk.toFixed(2)} LT:${liftType} | ` +
