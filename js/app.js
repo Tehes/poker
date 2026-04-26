@@ -1196,6 +1196,7 @@ function setPendingAction(player) {
 		minAmount: actionState.minAmount,
 		maxAmount: actionState.maxAmount,
 		minRaise: actionState.minRaise,
+		maxRaiseAmount: actionState.maxRaiseAmount,
 		canCheck: actionState.canCheck,
 		buttonLabel: getActionButtonLabel(actionState.minAmount, actionState),
 	};
@@ -2251,8 +2252,25 @@ function applyTurnAction(player, actionRequest) {
 			if (Number.isNaN(bet)) {
 				return null;
 			}
+			if (bet >= player.chips && player.chips > 0) {
+				return applyTurnAction(player, {
+					action: "allin",
+					amount: player.chips,
+				});
+			}
 			if (bet < currentActionState.minRaise && bet < player.chips) {
 				bet = Math.min(player.chips, currentActionState.minRaise);
+			}
+			if (bet > currentActionState.maxRaiseAmount && bet < player.chips) {
+				bet = currentActionState.maxRaiseAmount;
+			}
+			if (bet < currentActionState.minRaise && bet < player.chips) {
+				return applyTurnAction(
+					player,
+					currentActionState.canCheck
+						? { action: "check" }
+						: { action: "call" },
+				);
 			}
 			if (bet >= player.chips && player.chips > 0) {
 				return applyTurnAction(player, {
@@ -2299,8 +2317,22 @@ function normalizeBotActionRequest(player, decision) {
 			if (Number.isNaN(amount)) {
 				return null;
 			}
+			if (amount >= player.chips && player.chips > 0) {
+				return { action: "raise", amount: player.chips };
+			}
 			if (amount < actionState.minRaise && amount < player.chips) {
 				amount = Math.min(player.chips, actionState.minRaise);
+			}
+			if (amount > actionState.maxRaiseAmount && amount < player.chips) {
+				amount = actionState.maxRaiseAmount;
+			}
+			if (amount < actionState.minRaise && amount < player.chips) {
+				return actionState.canCheck
+					? { action: "check" }
+					: {
+						action: "call",
+						amount: Math.min(player.chips, actionState.needToCall),
+					};
 			}
 			return { action: "raise", amount };
 		}
@@ -2911,7 +2943,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-04-26-v5";
+const SERVICE_WORKER_VERSION = "2026-04-26-v6";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

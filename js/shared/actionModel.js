@@ -17,13 +17,33 @@ export function getPlayerActionState(gameState, player) {
 		: Math.min(needToCall, player.chips);
 	const maxAmount = player.chips;
 	const minRaise = needToCall + gameState.lastRaise;
+	const effectiveRaiseCap = getEffectiveRaiseCap(gameState, player);
+	const maxRaiseAmount = Math.min(maxAmount, Math.max(minRaise, effectiveRaiseCap));
 	return {
 		needToCall,
 		minAmount,
 		maxAmount,
 		minRaise,
+		maxRaiseAmount,
 		canCheck: needToCall === 0,
 	};
+}
+
+export function getEffectiveRaiseCap(gameState, player) {
+	const maxOpponentTotal = gameState.players.reduce((maxTotal, currentPlayer) => {
+		if (
+			currentPlayer === player ||
+			currentPlayer.folded ||
+			currentPlayer.allIn ||
+			currentPlayer.chips <= 0
+		) {
+			return maxTotal;
+		}
+
+		return Math.max(maxTotal, currentPlayer.roundBet + currentPlayer.chips);
+	}, 0);
+
+	return Math.max(0, maxOpponentTotal - player.roundBet);
 }
 
 export function getActionButtonLabel(amount, actionState) {
@@ -48,15 +68,23 @@ export function clampActionAmount(amount, actionState) {
 }
 
 export function isInvalidRaiseAmount(amount, actionState) {
+	const maxRaiseAmount = actionState.maxRaiseAmount ?? actionState.maxAmount;
 	return amount > actionState.needToCall &&
-		amount < actionState.minRaise &&
+		(amount < actionState.minRaise || amount > maxRaiseAmount) &&
 		amount < actionState.maxAmount;
 }
 
 export function normalizeActionAmount(amount, actionState) {
 	const clampedAmount = clampActionAmount(amount, actionState);
+	const maxRaiseAmount = actionState.maxRaiseAmount ?? actionState.maxAmount;
+	if (clampedAmount === actionState.maxAmount) {
+		return clampedAmount;
+	}
+	if (clampedAmount > maxRaiseAmount) {
+		return maxRaiseAmount;
+	}
 	if (isInvalidRaiseAmount(clampedAmount, actionState)) {
-		return Math.min(actionState.maxAmount, actionState.minRaise);
+		return Math.min(maxRaiseAmount, actionState.minRaise);
 	}
 	return clampedAmount;
 }

@@ -89,6 +89,7 @@ MODULE BOUNDARY: Bot Decision Engine
 // more plausible poker or more real postflop play without breaking the core safety guardrails.
 
 import { Card, Hand } from "./pokersolver.js";
+import { getPlayerActionState } from "./shared/actionModel.js";
 
 /* ===========================
    Configuration
@@ -2079,6 +2080,7 @@ export function chooseBotAction(player, gameState) {
 	const needToCall = currentBet - player.roundBet;
 	const needsToCall = needToCall > 0;
 	const minRaiseAmount = Math.max(lastRaise, needToCall + lastRaise);
+	const actionState = getPlayerActionState(gameState, player);
 
 	// Calculate pot odds to assess call viability
 	const potOdds = needToCall / (pot + needToCall);
@@ -3670,6 +3672,13 @@ export function chooseBotAction(player, gameState) {
 					}
 					: { action: "check" };
 			}
+		}
+		if (
+			decision.action === "raise" &&
+			decision.amount > actionState.maxRaiseAmount &&
+			decision.amount < player.chips
+		) {
+			decision.amount = actionState.maxRaiseAmount;
 		}
 	}
 
