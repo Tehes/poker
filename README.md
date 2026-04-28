@@ -190,6 +190,15 @@ Core principles:
 - **Balanced bluffing and bluff-catching**  
   Bots do not only wait for value. They mix in bluffs and defend thin bluff-catch spots often enough to avoid becoming trivially exploitable.
 
+- **Uncapped checked ranges**  
+  A bot check after the flop does not automatically mean weakness. Strong value hands can sometimes
+  check, either to continue normally against pressure or to raise when an opponent bets into them on
+  the same street.
+
+- **Bet-size-aware defense**  
+  Bots react to bet size, pot odds, and minimum-defense pressure, so small and medium bets into
+  checked ranges are less automatically profitable.
+
 - **Marginal hands stay playable**  
   Thin showdown hands, small made hands, and weaker draws are handled more carefully instead of
   collapsing into automatic folds or automatic aggression.
@@ -200,6 +209,10 @@ Core principles:
 
 - **Line consistency**  
   Simple betting plans (c-bet, barrel) are carried across streets but can be aborted on bad runouts.
+
+- **Tournament-style preflop ranges and sizing**  
+  Preflop choices use position, hand family, blind context, and fixed tournament-style sizing for
+  opens, 3-bets, squeezes, and short-stack pressure.
 
 - **Strict guardrails**  
   The system prevents unrealistic behavior:

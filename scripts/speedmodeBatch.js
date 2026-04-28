@@ -846,12 +846,27 @@ function formatDecisionExample(decision) {
 	const sizingKind = typeof decision.sizingKind === "string" ? decision.sizingKind : "-";
 	const targetSizeBucket = typeof decision.targetSizeBucket === "string" ? decision.targetSizeBucket : "-";
 	const offBucketReason = typeof decision.offBucketReason === "string" ? decision.offBucketReason : "-";
+	const checkRaiseIntentAction = typeof decision.checkRaiseIntentAction === "string"
+		? decision.checkRaiseIntentAction
+		: "-";
+	const checkRaiseIntentReason = typeof decision.checkRaiseIntentReason === "string"
+		? decision.checkRaiseIntentReason
+		: "-";
+	const passiveValueCheckAction = typeof decision.passiveValueCheckAction === "string"
+		? decision.passiveValueCheckAction
+		: "-";
+	const passiveValueCheckReason = typeof decision.passiveValueCheckReason === "string"
+		? decision.passiveValueCheckReason
+		: "-";
+	const passiveValueCheckBlockReason = typeof decision.passiveValueCheckBlockReason === "string"
+		? decision.passiveValueCheckBlockReason
+		: "-";
 
 	return `${decision.player} → ${decision.action} | ` +
 		`H:${decision.handName} Amt:${decision.amount ?? 0} | ` +
 		`Spot:${decision.spotKey} | ` +
 		`Ctx:${decision.boardContext} Draw:${decision.drawFlag} LT:${decision.liftType} | ` +
-		`PH:${decision.publicHand} RH:${decision.rawHand} | ` +
+		`PH:${decision.publicHand} RH:${decision.rawHand} RHR:${decision.rawHandRank ?? "-"} | ` +
 		`Pub:${formatFixed(decision.publicScore, 4)} Raw:${formatFixed(decision.rawScore, 4)} ` +
 		`PMH:${toFlag(decision.hasPrivateMadeHand)} Edge:${formatFixed(decision.edge, 4)} ` +
 		`PRE:${toFlag(decision.hasPrivateRaiseEdge)} ` +
@@ -868,6 +883,8 @@ function formatDecisionExample(decision) {
 		`ERA:${toFlag(decision.eliminationReliefApplied)} | ` +
 		`Line:${decision.lineTag} CP:${decision.cbetPlan} BP:${decision.barrelPlan} ` +
 		`CM:${decision.cbetMade} BM:${decision.barrelMade} LA:${decision.lineAbort} | ` +
+		`CRI:${checkRaiseIntentAction} CRR:${checkRaiseIntentReason} | ` +
+		`PVC:${passiveValueCheckAction} PVR:${passiveValueCheckReason} PVB:${passiveValueCheckBlockReason} | ` +
 		`NBCls:${noBetClass} NBInit:${noBetInitialAction} | ` +
 		`SZ:${sizingKind} TB:${targetSizeBucket} OB:${toFlag(decision.offBucket)} OBR:${offBucketReason} | ` +
 		`Stab:${toFlag(decision.stab)} Bluff:${toFlag(decision.bluff)}`;
@@ -915,6 +932,27 @@ function normalizeStructuredDecision(decision) {
 		noBetInitialAction: typeof decision.noBetInitialAction === "string" ? decision.noBetInitialAction : null,
 		noBetFilterApplied: decision.noBetFilterApplied === true,
 		noBetBlockReason: typeof decision.noBetBlockReason === "string" ? decision.noBetBlockReason : null,
+		checkRaiseIntentAction: typeof decision.checkRaiseIntentAction === "string"
+			? decision.checkRaiseIntentAction
+			: null,
+		checkRaiseIntentReason: typeof decision.checkRaiseIntentReason === "string"
+			? decision.checkRaiseIntentReason
+			: null,
+		checkRaiseIntentStreet: typeof decision.checkRaiseIntentStreet === "string"
+			? decision.checkRaiseIntentStreet
+			: null,
+		passiveValueCheckAction: typeof decision.passiveValueCheckAction === "string"
+			? decision.passiveValueCheckAction
+			: null,
+		passiveValueCheckReason: typeof decision.passiveValueCheckReason === "string"
+			? decision.passiveValueCheckReason
+			: null,
+		passiveValueCheckBlockReason: typeof decision.passiveValueCheckBlockReason === "string"
+			? decision.passiveValueCheckBlockReason
+			: null,
+		passiveValueCheckStreet: typeof decision.passiveValueCheckStreet === "string"
+			? decision.passiveValueCheckStreet
+			: null,
 		eliminationReliefCandidate: decision.eliminationReliefCandidate === true,
 		eliminationReliefApplied: decision.eliminationReliefApplied === true,
 		marginalEdge: decision.marginalEdge === true,
@@ -931,6 +969,7 @@ function normalizeStructuredDecision(decision) {
 		expectedRaiseAmount: typeof decision.expectedRaiseAmount === "number" ? decision.expectedRaiseAmount : null,
 		offBucket: decision.offBucket === true,
 		offBucketReason: typeof decision.offBucketReason === "string" ? decision.offBucketReason : null,
+		rawHandRank: typeof decision.rawHandRank === "number" ? decision.rawHandRank : null,
 		lineRole: lineTag === "PFA" ? "pfa" : "other",
 		positionBucket: bucketPositionFactor(positionFactor),
 		eliminationRiskBucket: bucketEliminationRisk(eliminationRisk),
@@ -2375,6 +2414,32 @@ function createEmptyPostflopMetrics() {
 		autoValueCheckCount: 0,
 		autoValueCheckLaterFacingBetCount: 0,
 		autoValueCheckLaterFacingBetFolds: 0,
+		checkRaiseIntent: {
+			setCount: 0,
+			firedCount: 0,
+			blockedCannotRaiseCount: 0,
+			inducedCallCount: 0,
+			abandonedCount: 0,
+			firedWonCount: 0,
+			byStreet: {},
+			firedByStreet: {},
+			blockedCannotRaiseByStreet: {},
+			blockedCannotRaiseActions: {},
+			abandonedByReason: {},
+		},
+		passiveValueCheckIntent: {
+			setCount: 0,
+			followupCount: 0,
+			inducedCallCount: 0,
+			inducedRaiseCount: 0,
+			inducedFoldCount: 0,
+			abandonedCount: 0,
+			byStreet: {},
+			followupByStreet: {},
+			followupActions: {},
+			abandonedByReason: {},
+			blockedByReason: {},
+		},
 		eliminationReliefCandidateCount: 0,
 		eliminationReliefAppliedCount: 0,
 		eliminationReliefCallCount: 0,
@@ -2490,6 +2555,13 @@ function createEmptyMetrics() {
 			postflopNoBetCheck: [],
 			postflopAutoValueCheck: [],
 			postflopAutoValueCheckLaterFacingBetFold: [],
+			postflopCheckRaiseIntentSet: [],
+			postflopCheckRaiseIntentFired: [],
+			postflopCheckRaiseBlockedCannotRaise: [],
+			postflopCheckRaiseIntentAbandoned: [],
+			postflopPassiveValueCheckSet: [],
+			postflopPassiveValueCheckFollowup: [],
+			postflopPassiveValueCheckAbandoned: [],
 			postflopEliminationReliefCall: [],
 			postflopNormalBetOffBucket: [],
 			postflopWeakNoBetRaise: [],
@@ -3282,6 +3354,86 @@ function analyzeRunDecisions(decisions, hands) {
 			}
 		}
 
+		if (decision.checkRaiseIntentAction === "set") {
+			metrics.postflop.checkRaiseIntent.setCount += 1;
+			incrementCount(
+				metrics.postflop.checkRaiseIntent.byStreet,
+				decision.checkRaiseIntentStreet ?? postflopStreet,
+			);
+			pushExample(metrics.examples.postflopCheckRaiseIntentSet, line);
+		} else if (decision.checkRaiseIntentAction === "fired") {
+			metrics.postflop.checkRaiseIntent.firedCount += 1;
+			incrementCount(
+				metrics.postflop.checkRaiseIntent.firedByStreet,
+				decision.checkRaiseIntentStreet ?? postflopStreet,
+			);
+			if (decision.wonHand === true) {
+				metrics.postflop.checkRaiseIntent.firedWonCount += 1;
+			}
+			pushExample(metrics.examples.postflopCheckRaiseIntentFired, line);
+		} else if (decision.checkRaiseIntentAction === "blocked_cannot_raise") {
+			metrics.postflop.checkRaiseIntent.blockedCannotRaiseCount += 1;
+			incrementCount(
+				metrics.postflop.checkRaiseIntent.blockedCannotRaiseByStreet,
+				decision.checkRaiseIntentStreet ?? postflopStreet,
+			);
+			incrementCount(
+				metrics.postflop.checkRaiseIntent.blockedCannotRaiseActions,
+				decision.action,
+			);
+			if (decision.action === "call") {
+				metrics.postflop.checkRaiseIntent.inducedCallCount += 1;
+			}
+			pushExample(metrics.examples.postflopCheckRaiseBlockedCannotRaise, line);
+		} else if (decision.checkRaiseIntentAction === "abandoned") {
+			metrics.postflop.checkRaiseIntent.abandonedCount += 1;
+			incrementCount(
+				metrics.postflop.checkRaiseIntent.abandonedByReason,
+				decision.checkRaiseIntentReason ?? "unknown",
+			);
+			pushExample(metrics.examples.postflopCheckRaiseIntentAbandoned, line);
+		}
+
+		if (decision.noBet && decision.canRaiseOpportunity && decision.passiveValueCheckBlockReason) {
+			incrementCount(
+				metrics.postflop.passiveValueCheckIntent.blockedByReason,
+				decision.passiveValueCheckBlockReason,
+			);
+		}
+		if (decision.passiveValueCheckAction === "set") {
+			metrics.postflop.passiveValueCheckIntent.setCount += 1;
+			incrementCount(
+				metrics.postflop.passiveValueCheckIntent.byStreet,
+				decision.passiveValueCheckStreet ?? postflopStreet,
+			);
+			pushExample(metrics.examples.postflopPassiveValueCheckSet, line);
+		} else if (decision.passiveValueCheckAction === "followup") {
+			metrics.postflop.passiveValueCheckIntent.followupCount += 1;
+			incrementCount(
+				metrics.postflop.passiveValueCheckIntent.followupByStreet,
+				decision.passiveValueCheckStreet ?? postflopStreet,
+			);
+			incrementCount(
+				metrics.postflop.passiveValueCheckIntent.followupActions,
+				decision.action,
+			);
+			if (decision.action === "call") {
+				metrics.postflop.passiveValueCheckIntent.inducedCallCount += 1;
+			} else if (decision.action === "raise") {
+				metrics.postflop.passiveValueCheckIntent.inducedRaiseCount += 1;
+			} else if (decision.action === "fold") {
+				metrics.postflop.passiveValueCheckIntent.inducedFoldCount += 1;
+			}
+			pushExample(metrics.examples.postflopPassiveValueCheckFollowup, line);
+		} else if (decision.passiveValueCheckAction === "abandoned") {
+			metrics.postflop.passiveValueCheckIntent.abandonedCount += 1;
+			incrementCount(
+				metrics.postflop.passiveValueCheckIntent.abandonedByReason,
+				decision.passiveValueCheckReason ?? "unknown",
+			);
+			pushExample(metrics.examples.postflopPassiveValueCheckAbandoned, line);
+		}
+
 		const weakNoBetClass = classifyWeakNoBetOpportunity(decision);
 		if (weakNoBetClass) {
 			metrics.postflop.weakNoBetOpportunityCount += 1;
@@ -3564,6 +3716,27 @@ function mergeRunMetrics(target, source) {
 	source.examples.postflopAutoValueCheck.forEach((line) => pushExample(target.examples.postflopAutoValueCheck, line));
 	source.examples.postflopAutoValueCheckLaterFacingBetFold.forEach((line) =>
 		pushExample(target.examples.postflopAutoValueCheckLaterFacingBetFold, line)
+	);
+	source.examples.postflopCheckRaiseIntentSet.forEach((line) =>
+		pushExample(target.examples.postflopCheckRaiseIntentSet, line)
+	);
+	source.examples.postflopCheckRaiseIntentFired.forEach((line) =>
+		pushExample(target.examples.postflopCheckRaiseIntentFired, line)
+	);
+	source.examples.postflopCheckRaiseBlockedCannotRaise.forEach((line) =>
+		pushExample(target.examples.postflopCheckRaiseBlockedCannotRaise, line)
+	);
+	source.examples.postflopCheckRaiseIntentAbandoned.forEach((line) =>
+		pushExample(target.examples.postflopCheckRaiseIntentAbandoned, line)
+	);
+	source.examples.postflopPassiveValueCheckSet.forEach((line) =>
+		pushExample(target.examples.postflopPassiveValueCheckSet, line)
+	);
+	source.examples.postflopPassiveValueCheckFollowup.forEach((line) =>
+		pushExample(target.examples.postflopPassiveValueCheckFollowup, line)
+	);
+	source.examples.postflopPassiveValueCheckAbandoned.forEach((line) =>
+		pushExample(target.examples.postflopPassiveValueCheckAbandoned, line)
 	);
 	source.examples.postflopEliminationReliefCall.forEach((line) =>
 		pushExample(target.examples.postflopEliminationReliefCall, line)

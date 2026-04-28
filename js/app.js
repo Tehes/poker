@@ -332,6 +332,62 @@ function logSpeedmodeEvent(type, payload) {
 	console.log("speedmode_event", { type, ...payload });
 }
 
+function clearBotCheckRaiseIntent(player, reason) {
+	const intent = player.botLine?.checkRaiseIntent;
+	if (!intent) {
+		return;
+	}
+
+	logSpeedmodeEvent("bot_check_raise_intent_clear", {
+		handId: gameState.handId ?? 0,
+		player: player.name,
+		seatIndex: player.seatIndex,
+		reason,
+		street: intent.street,
+		edge: intent.edge,
+		rawHandRank: intent.rawHandRank,
+		rawHand: intent.rawHand,
+		textureRisk: intent.textureRisk,
+		structureTag: intent.structureTag,
+		plannedAmount: intent.plannedAmount,
+	});
+	player.botLine.checkRaiseIntent = null;
+}
+
+function clearBotCheckRaiseIntents(reason) {
+	gameState.players.forEach((player) =>
+		clearBotCheckRaiseIntent(player, reason)
+	);
+}
+
+function clearBotPassiveValueCheckIntent(player, reason) {
+	const intent = player.botLine?.passiveValueCheckIntent;
+	if (!intent) {
+		return;
+	}
+
+	logSpeedmodeEvent("bot_passive_value_check_intent_clear", {
+		handId: gameState.handId ?? 0,
+		player: player.name,
+		seatIndex: player.seatIndex,
+		reason,
+		street: intent.street,
+		edge: intent.edge,
+		rawHandRank: intent.rawHandRank,
+		rawHand: intent.rawHand,
+		textureRisk: intent.textureRisk,
+		structureTag: intent.structureTag,
+		plannedAmount: intent.plannedAmount,
+	});
+	player.botLine.passiveValueCheckIntent = null;
+}
+
+function clearBotPassiveValueCheckIntents(reason) {
+	gameState.players.forEach((player) =>
+		clearBotPassiveValueCheckIntent(player, reason)
+	);
+}
+
 function buildSpeedmodeHandStartPlayers(players) {
 	return players.map((player) => ({
 		name: player.name,
@@ -1688,6 +1744,8 @@ function createPlayers() {
 				cbetMade: false,
 				barrelMade: false,
 				nonValueAggressionMade: false,
+				checkRaiseIntent: null,
+				passiveValueCheckIntent: null,
 			},
 			spotState: createPlayerSpotState(),
 		};
@@ -1903,6 +1961,8 @@ function preFlop() {
 			cbetMade: false,
 			barrelMade: false,
 			nonValueAggressionMade: false,
+			checkRaiseIntent: null,
+			passiveValueCheckIntent: null,
 		};
 		resetPlayerSpotStateForHand(p);
 	});
@@ -2010,6 +2070,10 @@ function setPhase() {
 	// EARLY EXIT: If only one player remains, skip straight to showdown
 	const activePlayers = gameState.players.filter((p) => !p.folded);
 	if (activePlayers.length <= 1) {
+		if (gameState.currentPhaseIndex > 0) {
+			clearBotCheckRaiseIntents("hand_end");
+			clearBotPassiveValueCheckIntents("hand_end");
+		}
 		return doShowdown();
 	}
 
@@ -2017,6 +2081,12 @@ function setPhase() {
 	if (gameState.handContext && gameState.currentPhaseIndex > 0) {
 		const checkedThrough =
 			gameState.handContext.streetAggressorSeatIndex === null;
+		clearBotCheckRaiseIntents(
+			checkedThrough ? "street_end_no_bet" : "street_end_unfired",
+		);
+		clearBotPassiveValueCheckIntents(
+			checkedThrough ? "street_end_no_bet" : "street_end_unfired",
+		);
 		if (completedPhase === "flop") {
 			gameState.handContext.flopCheckedThrough = checkedThrough;
 		} else if (completedPhase === "turn") {
@@ -2327,12 +2397,10 @@ function normalizeBotActionRequest(player, decision) {
 				amount = actionState.maxRaiseAmount;
 			}
 			if (amount < actionState.minRaise && amount < player.chips) {
-				return actionState.canCheck
-					? { action: "check" }
-					: {
-						action: "call",
-						amount: Math.min(player.chips, actionState.needToCall),
-					};
+				return actionState.canCheck ? { action: "check" } : {
+					action: "call",
+					amount: Math.min(player.chips, actionState.needToCall),
+				};
 			}
 			return { action: "raise", amount };
 		}
@@ -2382,6 +2450,8 @@ function startBettingRound() {
 		// Reset state for post-flop rounds before any checks/logging
 		gameState.currentBet = 0;
 		gameState.lastRaise = gameState.bigBlind;
+		clearBotCheckRaiseIntents("street_reset");
+		clearBotPassiveValueCheckIntents("street_reset");
 		gameState.players.forEach((p) => resetPlayerRoundBet(p));
 	}
 	if (!gameState.handContext) {
@@ -2943,7 +3013,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-04-26-v6";
+const SERVICE_WORKER_VERSION = "2026-04-29-v1";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

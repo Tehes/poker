@@ -9,9 +9,20 @@ Version log writing guide:
 - Group related tuning work into one coherent entry instead of listing every small internal step.
 */
 
-export const APP_VERSION = "1.0.29";
+export const APP_VERSION = "1.0.30";
 
 export const VERSION_LOG = [
+	{
+		version: "1.0.30",
+		date: "2026-04-29",
+		title: "Stronger checked postflop ranges",
+		notes: [
+			"Bots can now keep more real value in their checking range after the flop, so a checked street is less automatically weak.",
+			"Some strong value hands now check with the intention of raising if an opponent bets into them.",
+			"Broader value checks can still continue through normal call-or-raise decisions, improving defense without making bots broadly more aggressive.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.29",
 		date: "2026-04-26",

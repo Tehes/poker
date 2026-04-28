@@ -174,6 +174,11 @@ const CHIP_LEADER_RAISE_DELTA = 0.05;
 const SHORTSTACK_CALL_DELTA = 0.05;
 const SHORTSTACK_RELATIVE = 0.6;
 const MIN_PREFLOP_BLUFF_RATIO = 0.45;
+const CHECK_RAISE_INTENT_CHANCE = 0.35;
+const CHECK_RAISE_TWO_PAIR_TRIPS_MAX_TEXTURE = 0.45;
+const CHECK_RAISE_STRAIGHT_PLUS_MAX_TEXTURE = 0.72;
+const PASSIVE_VALUE_CHECK_CHANCE = 0.3;
+const PASSIVE_VALUE_CHECK_MAX_TEXTURE = 0.4;
 // Hand-level commitment tuning to reduce multi-street bleeding
 const COMMIT_SPR_MIN = 1.5;
 const COMMIT_SPR_MAX = 5.5;
@@ -1360,15 +1365,6 @@ function canOpenLimpPreflop({
 	return false;
 }
 
-function classifyPreflopHandFamily(cardA, cardB) {
-	return buildPreflopHandProfile(cardA, cardB).legacyHandFamily;
-}
-
-function isProblematicOffsuitBroadway(cardA, cardB) {
-	return buildPreflopHandProfile(cardA, cardB).handFamily ===
-		"dominatedOffsuitBroadway";
-}
-
 function isPremiumPreflopHand(cardA, cardB) {
 	return preflopHandScore(cardA, cardB) > PREMIUM_PREFLOP_SCORE;
 }
@@ -1536,6 +1532,158 @@ function shouldBlockRiverLowEdgeCall({
 		return true;
 	}
 	return false;
+}
+
+function getCheckRaiseStreetName(streetIndex) {
+	if (streetIndex === 1) {
+		return "flop";
+	}
+	if (streetIndex === 2) {
+		return "turn";
+	}
+	if (streetIndex === 3) {
+		return "river";
+	}
+	return "preflop";
+}
+
+function getCheckRaiseTextureBlockReason(rawHandRank, textureRisk) {
+	if (rawHandRank >= 5) {
+		return textureRisk <= CHECK_RAISE_STRAIGHT_PLUS_MAX_TEXTURE
+			? null
+			: "texture_straight_plus";
+	}
+	if (rawHandRank >= 3) {
+		return textureRisk <= CHECK_RAISE_TWO_PAIR_TRIPS_MAX_TEXTURE
+			? null
+			: "texture_two_pair_trips";
+	}
+	return "below_two_pair";
+}
+
+function getCheckRaiseStreetBlockReason(streetIndex, handContext) {
+	if (streetIndex === 1) {
+		return null;
+	}
+	if (streetIndex === 2) {
+		return handContext?.flopCheckedThrough ? "flop_checked_through" : null;
+	}
+	if (streetIndex === 3) {
+		return handContext?.turnCheckedThrough ? "turn_checked_through" : null;
+	}
+	return "not_postflop";
+}
+
+function getCheckRaiseQualityBlockReason({
+	preflop,
+	streetIndex,
+	handContext,
+	currentBet,
+	needsToCall,
+	isLastToAct,
+	decision,
+	sizingIntent,
+	isBluff,
+	isStab,
+	noBetClass,
+	liftType,
+	edge,
+	rawHandRank,
+	textureRisk,
+	activeOpponents,
+}) {
+	if (preflop || streetIndex === 0) {
+		return "not_postflop";
+	}
+	if (currentBet !== 0 || needsToCall) {
+		return "street_already_bet";
+	}
+	if ((handContext?.streetAggressorSeatIndex ?? null) !== null) {
+		return "street_already_bet";
+	}
+	if (isLastToAct) {
+		return "last_to_act";
+	}
+	if (decision.action !== "raise" || sizingIntent !== "value") {
+		return "not_value_raise";
+	}
+	if (isBluff) {
+		return "bluff";
+	}
+	if (isStab) {
+		return "stab";
+	}
+	if (noBetClass !== "auto-value") {
+		return "not_auto_value";
+	}
+	if (liftType !== "structural") {
+		return "not_structural_lift";
+	}
+	if (edge < 2) {
+		return "edge_lt_2";
+	}
+	if (activeOpponents > 1 && rawHandRank < 5) {
+		return "multiway_below_straight";
+	}
+
+	return getCheckRaiseStreetBlockReason(streetIndex, handContext) ??
+		getCheckRaiseTextureBlockReason(rawHandRank, textureRisk);
+}
+
+function getPassiveValueCheckBlockReason({
+	preflop,
+	streetIndex,
+	handContext,
+	currentBet,
+	needsToCall,
+	isLastToAct,
+	decision,
+	sizingIntent,
+	isBluff,
+	isStab,
+	noBetClass,
+	rawHandRank,
+	hasPrivateMadeHand,
+	textureRisk,
+	checkRaiseBlockReason,
+}) {
+	if (checkRaiseBlockReason === null) {
+		return "reserved_for_check_raise";
+	}
+	if (preflop || streetIndex === 0) {
+		return "not_postflop";
+	}
+	if (currentBet !== 0 || needsToCall) {
+		return "street_already_bet";
+	}
+	if ((handContext?.streetAggressorSeatIndex ?? null) !== null) {
+		return "street_already_bet";
+	}
+	if (isLastToAct) {
+		return "last_to_act";
+	}
+	if (decision.action !== "raise" || sizingIntent !== "value") {
+		return "not_value_raise";
+	}
+	if (isBluff) {
+		return "bluff";
+	}
+	if (isStab) {
+		return "stab";
+	}
+	if (noBetClass !== "auto-value") {
+		return "not_auto_value";
+	}
+	if (rawHandRank <= 1) {
+		return "pure_draw";
+	}
+	if (!hasPrivateMadeHand) {
+		return "no_private_made_hand";
+	}
+	if (textureRisk >= PASSIVE_VALUE_CHECK_MAX_TEXTURE) {
+		return "wet_board";
+	}
+	return getCheckRaiseStreetBlockReason(streetIndex, handContext);
 }
 
 function hasOpponentWhoCanCallRaise(players, player, currentBet) {
@@ -3231,6 +3379,26 @@ export function chooseBotAction(player, gameState) {
 		}
 	}
 
+	const isNoBetOpportunity = isCheckedToSpot && canRaise;
+	const noBetClass = isCheckedToSpot
+		? classifyNoBetOpportunity({
+			rawHandRank,
+			drawOuts,
+			hasPrivateMadeHand,
+			topPair,
+			overPair,
+			pairClass,
+			textureRisk,
+			liftType,
+			edge,
+			headsUp: spotContext.headsUp,
+			isLastToAct,
+			previousStreetCheckedThrough,
+			isMarginalMadeHand,
+			communityCardsLength: communityCards.length,
+		})
+		: null;
+
 	/* -------------------------
        Decision logic with tie-breakers
     ------------------------- */
@@ -3241,6 +3409,73 @@ export function chooseBotAction(player, gameState) {
          the bot randomly resolves between call and fold to break ties.
      */
 	let decision;
+	let checkRaiseIntentAction = null;
+	let checkRaiseIntentReason = null;
+	let passiveValueCheckAction = null;
+	let passiveValueCheckReason = null;
+	let passiveValueCheckBlockReason = null;
+
+	if (botLine?.checkRaiseIntent) {
+		const intent = botLine.checkRaiseIntent;
+		const sameStreet = intent.streetIndex === streetIndex;
+		let triggerBlockReason = null;
+		if (preflop || streetIndex === 0) {
+			triggerBlockReason = "not_postflop";
+		} else if (liftType !== "structural") {
+			triggerBlockReason = "not_structural_lift";
+		} else if (edge < 2) {
+			triggerBlockReason = "edge_lt_2";
+		} else if (activeOpponents > 1 && rawHandRank < 5) {
+			triggerBlockReason = "multiway_below_straight";
+		} else {
+			triggerBlockReason = getCheckRaiseStreetBlockReason(streetIndex, handContext) ??
+				getCheckRaiseTextureBlockReason(rawHandRank, textureRisk);
+		}
+		const canFire = !preflop && sameStreet && needsToCall && canRaise &&
+			triggerBlockReason === null;
+
+		if (canFire) {
+			botLine.checkRaiseIntent = null;
+			checkRaiseIntentAction = "fired";
+			checkRaiseIntentReason = "facing_bet";
+			decision = {
+				action: "raise",
+				amount: Math.max(minRaiseAmount, valueBetSize()),
+			};
+		} else if (
+			!preflop && sameStreet && needsToCall && !canRaise &&
+			triggerBlockReason === null
+		) {
+			botLine.checkRaiseIntent = null;
+			checkRaiseIntentAction = "blocked_cannot_raise";
+			checkRaiseIntentReason = "induced_call";
+		} else if (
+			preflop || !sameStreet ||
+			(needsToCall && triggerBlockReason !== null)
+		) {
+			botLine.checkRaiseIntent = null;
+			checkRaiseIntentAction = "abandoned";
+			checkRaiseIntentReason = !sameStreet
+				? "street_changed"
+				: !needsToCall
+				? "not_facing_bet"
+				: triggerBlockReason;
+		}
+	}
+
+	if (botLine?.passiveValueCheckIntent) {
+		const intent = botLine.passiveValueCheckIntent;
+		const sameStreet = intent.streetIndex === streetIndex;
+		if (!preflop && sameStreet && needsToCall) {
+			botLine.passiveValueCheckIntent = null;
+			passiveValueCheckAction = "followup";
+			passiveValueCheckReason = "facing_bet";
+		} else if (preflop || !sameStreet) {
+			botLine.passiveValueCheckIntent = null;
+			passiveValueCheckAction = "abandoned";
+			passiveValueCheckReason = sameStreet ? "not_postflop" : "street_changed";
+		}
+	}
 
 	if (useHarringtonStrategy) {
 		decision = decideHarringtonAction({
@@ -3513,21 +3748,91 @@ export function chooseBotAction(player, gameState) {
 		}
 
 		if (
-			!preflop && communityCards.length < 5 && !needsToCall &&
-			gateStrengthRatio >= 0.9 &&
-			edge > 1 &&
-			spotContext.headsUp &&
-			!isLastToAct &&
-			!previousStreetCheckedThrough &&
-			textureRisk < 0.4 &&
-			decision.action === "raise" &&
-			Math.random() < 0.3
+			!preflop &&
+			decision.action === "raise"
 		) {
-			decision = { action: "check" };
+			const sizingIntent = getPostflopSizingIntent();
+			const checkRaiseBlockReason = getCheckRaiseQualityBlockReason({
+				preflop,
+				streetIndex,
+				handContext,
+				currentBet,
+				needsToCall,
+				isLastToAct,
+				decision,
+				sizingIntent,
+				isBluff,
+				isStab,
+				noBetClass,
+				liftType,
+				edge,
+				rawHandRank,
+				textureRisk,
+				activeOpponents,
+			});
+			passiveValueCheckBlockReason = getPassiveValueCheckBlockReason({
+				preflop,
+				streetIndex,
+				handContext,
+				currentBet,
+				needsToCall,
+				isLastToAct,
+				decision,
+				sizingIntent,
+				isBluff,
+				isStab,
+				noBetClass,
+				rawHandRank,
+				hasPrivateMadeHand,
+				textureRisk,
+				checkRaiseBlockReason,
+			});
+
+			if (
+				checkRaiseBlockReason === null && botLine &&
+				Math.random() < CHECK_RAISE_INTENT_CHANCE
+			) {
+				botLine.checkRaiseIntent = {
+					handId: gameState.handId ?? 0,
+					streetIndex,
+					street: getCheckRaiseStreetName(streetIndex),
+					edge: toRoundedNumber(edge, 4),
+					rawHandRank,
+					rawHand: rawHandName,
+					textureRisk: toRoundedNumber(textureRisk),
+					structureTag: spotContext.headsUp ? "HU" : "MW",
+					reason: "value_raise_to_check",
+					plannedAmount: decision.amount ?? 0,
+				};
+				checkRaiseIntentAction = "set";
+				checkRaiseIntentReason = "value_raise_to_check";
+				decision = { action: "check" };
+			} else if (
+				passiveValueCheckBlockReason === null && botLine &&
+				Math.random() < PASSIVE_VALUE_CHECK_CHANCE
+			) {
+				botLine.passiveValueCheckIntent = {
+					handId: gameState.handId ?? 0,
+					streetIndex,
+					street: getCheckRaiseStreetName(streetIndex),
+					edge: toRoundedNumber(edge, 4),
+					rawHandRank,
+					rawHand: rawHandName,
+					textureRisk: toRoundedNumber(textureRisk),
+					structureTag: spotContext.headsUp ? "HU" : "MW",
+					reason: "random_value_check",
+					plannedAmount: decision.amount ?? 0,
+				};
+				passiveValueCheckAction = "set";
+				passiveValueCheckReason = "random_value_check";
+				decision = { action: "check" };
+			}
 		}
 
 		if (
 			!preflop && currentBet === 0 && decision.action === "check" &&
+			checkRaiseIntentAction !== "set" &&
+			passiveValueCheckAction !== "set" &&
 			canRaise &&
 			!facingRaise &&
 			textureRisk < 0.4 && (foldRate > 0.25 || drawEquity > 0) &&
@@ -3582,6 +3887,7 @@ export function chooseBotAction(player, gameState) {
 		)
 		: reraiseValueRatioBase;
 	if (
+		checkRaiseIntentAction !== "fired" &&
 		decision.action === "raise" && raiseLevel > 0 &&
 		gateStrengthRatio < reraiseValueRatio
 	) {
@@ -3592,25 +3898,6 @@ export function chooseBotAction(player, gameState) {
 		isStab = false;
 	}
 
-	const isNoBetOpportunity = isCheckedToSpot && canRaise;
-	const noBetClass = isCheckedToSpot
-		? classifyNoBetOpportunity({
-			rawHandRank,
-			drawOuts,
-			hasPrivateMadeHand,
-			topPair,
-			overPair,
-			pairClass,
-			textureRisk,
-			liftType,
-			edge,
-			headsUp: spotContext.headsUp,
-			isLastToAct,
-			previousStreetCheckedThrough,
-			isMarginalMadeHand,
-			communityCardsLength: communityCards.length,
-		})
-		: null;
 	const noBetInitialAction = isCheckedToSpot ? decision.action : null;
 	let noBetFilterApplied = false;
 	let noBetBlockReason = null;
@@ -3879,6 +4166,7 @@ export function chooseBotAction(player, gameState) {
 		liftType,
 		publicHand: publicHandName,
 		rawHand: rawHandName,
+		rawHandRank,
 		chipLeader: amChipleader,
 		shortStack: shortstackRelative,
 		premium: premiumHand,
@@ -3916,6 +4204,17 @@ export function chooseBotAction(player, gameState) {
 		noBetInitialAction,
 		noBetFilterApplied,
 		noBetBlockReason,
+		checkRaiseIntentAction,
+		checkRaiseIntentReason,
+		checkRaiseIntentStreet: checkRaiseIntentAction
+			? getCheckRaiseStreetName(streetIndex)
+			: botLine?.checkRaiseIntent?.street ?? null,
+		passiveValueCheckAction,
+		passiveValueCheckReason,
+		passiveValueCheckBlockReason,
+		passiveValueCheckStreet: passiveValueCheckAction
+			? getCheckRaiseStreetName(streetIndex)
+			: botLine?.passiveValueCheckIntent?.street ?? null,
 		sizingKind: sizingMeta.sizingKind,
 		targetSizeBucket: sizingMeta.targetSizeBucket,
 		expectedRaiseAmount: sizingMeta.expectedRaiseAmount,
@@ -3952,7 +4251,7 @@ export function chooseBotAction(player, gameState) {
 					preflopScores.threeBetBluffScore.toFixed(2)
 				} PS:${preflopScores.pushScore.toFixed(2)} | ` +
 				`Ctx:${boardCtx} Pair:${pairClass} Draw:${drawFlag} Tex:${textureRisk.toFixed(2)} LT:${liftType} | ` +
-				`PH:${publicHandName} RH:${rawHandName} | ` +
+				`PH:${publicHandName} RH:${rawHandName} RHR:${rawHandRank} | ` +
 				`Pub:${publicScore.toFixed(4)} Raw:${rawScore.toFixed(4)} ` +
 				`PMH:${hasPrivateMadeHand ? "Y" : "N"} Edge:${edge.toFixed(4)} ` +
 				`PRE:${hasPrivateRaiseEdge ? "Y" : "N"} ` +
@@ -3962,6 +4261,10 @@ export function chooseBotAction(player, gameState) {
 					premiumHand ? "Y" : "N"
 				} | ` +
 				`Line:${lineTag} CP:${cbetPlan} BP:${barrelPlan} CM:${cbetMade} BM:${barrelMade} LA:${lineAbortFlag} | ` +
+				`CRI:${checkRaiseIntentAction ?? "-"} CRR:${checkRaiseIntentReason ?? "-"} | ` +
+				`PVC:${passiveValueCheckAction ?? "-"} PVR:${passiveValueCheckReason ?? "-"} PVB:${
+					passiveValueCheckBlockReason ?? "-"
+				} | ` +
 				`Stab:${isStab ? "Y" : "N"} Bluff:${isBluff ? "Y" : "N"}`,
 		);
 	}
