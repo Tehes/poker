@@ -1402,6 +1402,24 @@ function mapEnginePayouts(totalPayoutByPlayer) {
 	}));
 }
 
+function mapEnginePayoutsBySeatIndex(totalPayoutByPlayer) {
+	return Object.fromEntries(
+		Array.from(totalPayoutByPlayer.entries()).map(([player, amount]) => [
+			String(player.seatIndex),
+			amount,
+		]),
+	);
+}
+
+function mapEngineTotalBetsBySeatIndex(contributors) {
+	return Object.fromEntries(
+		contributors.map((player) => [
+			String(player.seatIndex),
+			player.totalBet,
+		]),
+	);
+}
+
 function mapEnginePotResults(potResults) {
 	return potResults.map((potResult) => ({
 		...potResult,
@@ -1436,10 +1454,15 @@ function emitEngineHandEvents(gameState, handResult, tournamentResult, eventSink
 		communityCards: gameState.communityCards.slice(),
 		hadShowdown: showdownResult.hadShowdown,
 		uncontestedWinner: showdownResult.uncontestedWinner?.name ?? null,
+		uncontestedWinnerSeatIndex: showdownResult.uncontestedWinner?.seatIndex ?? null,
 		mainPotWinners: showdownResult.mainPotWinners.map((player) => player.name),
+		mainPotWinnerSeatIndexes: showdownResult.mainPotWinners.map((player) => player.seatIndex),
 		winningPlayers: showdownResult.winningPlayers.map((player) => player.name),
+		winningSeatIndexes: showdownResult.winningPlayers.map((player) => player.seatIndex),
 		potResults: mapEnginePotResults(showdownResult.potResults),
 		totalPayoutByPlayer: mapEnginePayouts(showdownResult.totalPayoutByPlayer),
+		totalPayoutBySeatIndex: mapEnginePayoutsBySeatIndex(showdownResult.totalPayoutByPlayer),
+		totalBetBySeatIndex: mapEngineTotalBetsBySeatIndex(showdownResult.contributors),
 		totalPot: showdownResult.totalPot,
 	});
 }

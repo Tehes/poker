@@ -103,6 +103,7 @@ const RANK_ORDER = "23456789TJQKA";
 // Enable verbose logging of bot decisions
 let DEBUG_DECISIONS = false;
 let DEBUG_DECISIONS_DETAIL = false;
+let botDecisionSink = null;
 
 const runtimeSearchParams = new URLSearchParams(globalThis.location?.search ?? "");
 const speedModeParam = runtimeSearchParams.get("speedmode");
@@ -117,6 +118,10 @@ const SPEED_MODE = speedModeParam !== null && speedModeParam !== "0" &&
 if (SPEED_MODE) {
 	BOT_ACTION_DELAY = 0;
 	DEBUG_DECISIONS = true;
+}
+
+export function setBotDecisionSink(sink) {
+	botDecisionSink = typeof sink === "function" ? sink : null;
 }
 
 function logSpeedmodeEvent(type, payload) {
@@ -4178,7 +4183,7 @@ export function chooseBotAction(player, gameState) {
 			).length
 		: null;
 	let decisionId = null;
-	if (SPEED_MODE) {
+	if (SPEED_MODE || botDecisionSink) {
 		decisionId = gameState.nextDecisionId ?? 1;
 		gameState.nextDecisionId = decisionId + 1;
 	}
@@ -4357,6 +4362,9 @@ export function chooseBotAction(player, gameState) {
 				} | ` +
 				`Stab:${isStab ? "Y" : "N"} Bluff:${isBluff ? "Y" : "N"}`,
 		);
+	}
+	if (botDecisionSink) {
+		botDecisionSink(structuredDecision);
 	}
 	logSpeedmodeEvent("bot_decision", structuredDecision);
 

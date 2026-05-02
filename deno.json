@@ -7,6 +7,10 @@
 		"semiColons": true
 	},
 	"tasks": {
+		"engine:batch": "deno run --allow-read=. --allow-write=.,/tmp ./scripts/engineBatch.js",
+		"engine:batch:10": "deno run --allow-read=. --allow-write=.,/tmp ./scripts/engineBatch.js --runs=10",
+		"engine:batch:30": "deno run --allow-read=. --allow-write=.,/tmp ./scripts/engineBatch.js --runs=30",
+		"engine:batch:100": "deno run --allow-read=. --allow-write=.,/tmp ./scripts/engineBatch.js --runs=100",
 		"speedmode": "deno run --allow-env=CHROME_BIN --allow-net=127.0.0.1,localhost --allow-read=. --allow-write=.,/tmp --allow-run ./scripts/speedmodeBatch.js",
 		"speedmode:10": "deno run --allow-env=CHROME_BIN --allow-net=127.0.0.1,localhost --allow-read=. --allow-write=.,/tmp --allow-run ./scripts/speedmodeBatch.js --runs=10",
 		"speedmode:30": "deno run --allow-env=CHROME_BIN --allow-net=127.0.0.1,localhost --allow-read=. --allow-write=.,/tmp --allow-run ./scripts/speedmodeBatch.js --runs=30",
