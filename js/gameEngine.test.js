@@ -2,6 +2,8 @@ import {
 	advanceDealer,
 	createBettingRoundProgressState,
 	createBettingRoundStartPlan,
+	createHandEndPlan,
+	createNextHandTransitionPlan,
 	createShowdownCommitPlan,
 	dealCommunityCardsForPhase,
 	dealHoleCardsForNewHand,
@@ -196,9 +198,9 @@ function createFlowGameState({ players, deck, smallBlind = 10, bigBlind = 20 }) 
 }
 
 function startEngineHand(gameState) {
-	const resetPlan = resetPlayersForNewHand(gameState);
-	applyPlayerPatches(resetPlan.playerPatches);
-	applyGameStatePatch(gameState, resetPlan.gameStatePatch);
+	const nextHandPlan = createNextHandTransitionPlan(gameState, gameState.handId ?? 1);
+	applyPlayerPatches(nextHandPlan.playerPatches);
+	applyGameStatePatch(gameState, nextHandPlan.gameStatePatch);
 
 	const dealerPlan = advanceDealer(gameState.players, 0);
 	applyPlayerPatches(dealerPlan.playerPatches);
@@ -215,7 +217,7 @@ function startEngineHand(gameState) {
 	const roundStartPlan = applyBettingRoundStartPlanForTest(gameState);
 
 	return {
-		resetPlan,
+		nextHandPlan,
 		dealerPlan,
 		blindPlan,
 		dealPlan,
@@ -1497,6 +1499,193 @@ Deno.test("resetPlayersForNewHand prepares remaining players and removes busted 
 	assertEquals(gameState, gameStateBefore);
 });
 
+Deno.test("createHandEndPlan clears deterministic hand-end state without mutating input", () => {
+	const gameState = {
+		pot: 120,
+		handInProgress: true,
+		activeSeatIndex: 1,
+		pendingAction: { player: "A" },
+		chipTransfer: { active: true },
+	};
+	const gameStateBefore = structuredClone(gameState);
+
+	const result = createHandEndPlan(gameState);
+
+	assertEquals(result, {
+		gameStatePatch: {
+			pot: 0,
+			handInProgress: false,
+			activeSeatIndex: null,
+			pendingAction: null,
+			chipTransfer: null,
+		},
+	});
+	assertEquals(gameState, gameStateBefore);
+});
+
+Deno.test("createNextHandTransitionPlan starts a new hand with remaining players", () => {
+	const human = createPlayer({
+		name: "Human",
+		chips: 140,
+		isBot: false,
+		stats: createStats({ hands: 2 }),
+		folded: true,
+		isWinner: true,
+	});
+	const bot = createPlayer({
+		name: "Bot",
+		seatIndex: 1,
+		chips: 220,
+		isBot: true,
+		stats: createStats({ hands: 4 }),
+	});
+	const busted = createPlayer({
+		name: "Busted",
+		seatIndex: 2,
+		chips: 0,
+		isBot: true,
+		stats: createStats({ hands: 5 }),
+	});
+	const gameState = {
+		currentPhaseIndex: 4,
+		currentBet: 80,
+		pot: 160,
+		raisesThisRound: 2,
+		gameFinished: true,
+		handInProgress: false,
+		activeSeatIndex: 2,
+		pendingAction: { player: "Busted" },
+		chipTransfer: { active: true },
+		communityCards: ["AS", "KH", "QC", "JD", "TC"],
+		openCardsMode: false,
+		spectatorMode: false,
+		players: [human, bot, busted],
+	};
+	const gameStateBefore = structuredClone(gameState);
+
+	const result = createNextHandTransitionPlan(gameState, 12);
+
+	assertEquals({
+		type: result.type,
+		champion: result.champion,
+		bustedPlayers: result.bustedPlayers.map((player) => player.name),
+		remainingPlayers: result.remainingPlayers.map((player) => player.name),
+	}, {
+		type: "next-hand",
+		champion: null,
+		bustedPlayers: ["Busted"],
+		remainingPlayers: ["Human", "Bot"],
+	});
+	assertEquals(gameState, gameStateBefore);
+
+	applyPlayerPatches(result.playerPatches);
+	applyGameStatePatch(gameState, result.gameStatePatch);
+	assertEquals({
+		currentPhaseIndex: gameState.currentPhaseIndex,
+		currentBet: gameState.currentBet,
+		pot: gameState.pot,
+		raisesThisRound: gameState.raisesThisRound,
+		gameFinished: gameState.gameFinished,
+		handInProgress: gameState.handInProgress,
+		handId: gameState.handId,
+		nextDecisionId: gameState.nextDecisionId,
+		activeSeatIndex: gameState.activeSeatIndex,
+		pendingAction: gameState.pendingAction,
+		chipTransfer: gameState.chipTransfer,
+		communityCards: gameState.communityCards,
+		players: gameState.players.map((player) => player.name),
+		humanHands: human.stats.hands,
+		humanWinner: human.isWinner,
+		bustedChips: busted.chips,
+	}, {
+		currentPhaseIndex: 0,
+		currentBet: 0,
+		pot: 0,
+		raisesThisRound: 0,
+		gameFinished: false,
+		handInProgress: true,
+		handId: 12,
+		nextDecisionId: 1,
+		activeSeatIndex: null,
+		pendingAction: null,
+		chipTransfer: null,
+		communityCards: [],
+		players: ["Human", "Bot"],
+		humanHands: 3,
+		humanWinner: false,
+		bustedChips: 0,
+	});
+});
+
+Deno.test("createNextHandTransitionPlan marks the last remaining player as champion", () => {
+	const champion = createPlayer({
+		name: "Champion",
+		chips: 400,
+		isBot: false,
+		stats: createStats({ hands: 7 }),
+	});
+	const busted = createPlayer({
+		name: "Busted",
+		seatIndex: 1,
+		chips: -20,
+		isBot: true,
+		stats: createStats({ hands: 7 }),
+	});
+	const gameState = {
+		currentPhaseIndex: 4,
+		currentBet: 40,
+		pot: 80,
+		raisesThisRound: 1,
+		gameFinished: false,
+		handInProgress: true,
+		activeSeatIndex: 1,
+		pendingAction: { player: "Busted" },
+		chipTransfer: { active: true },
+		communityCards: ["2C", "3D", "4H", "5S", "6C"],
+		openCardsMode: false,
+		spectatorMode: false,
+		players: [champion, busted],
+	};
+	const gameStateBefore = structuredClone(gameState);
+
+	const result = createNextHandTransitionPlan(gameState, 18);
+
+	assertEquals({
+		type: result.type,
+		champion: result.champion.name,
+		bustedPlayers: result.bustedPlayers.map((player) => player.name),
+		remainingPlayers: result.remainingPlayers.map((player) => player.name),
+	}, {
+		type: "game-over",
+		champion: "Champion",
+		bustedPlayers: ["Busted"],
+		remainingPlayers: ["Champion"],
+	});
+	assertEquals(gameState, gameStateBefore);
+
+	applyPlayerPatches(result.playerPatches);
+	applyGameStatePatch(gameState, result.gameStatePatch);
+	assertEquals({
+		gameFinished: gameState.gameFinished,
+		handInProgress: gameState.handInProgress,
+		activeSeatIndex: gameState.activeSeatIndex,
+		pendingAction: gameState.pendingAction,
+		players: gameState.players.map((player) => player.name),
+		championWinner: champion.isWinner,
+		championHands: champion.stats.hands,
+		bustedChips: busted.chips,
+	}, {
+		gameFinished: true,
+		handInProgress: false,
+		activeSeatIndex: null,
+		pendingAction: null,
+		players: ["Champion"],
+		championWinner: true,
+		championHands: 8,
+		bustedChips: 0,
+	});
+});
+
 Deno.test("getBlindLevelUpdateForHand returns the next blind level patch", () => {
 	const gameState = {
 		blindLevel: 0,
@@ -2009,11 +2198,12 @@ Deno.test("full engine flow removes a busted player after a three-player hand", 
 	const showdown = resolveShowdown(gameState.players, gameState.communityCards);
 	applyShowdownCommitPlanForTest(gameState, showdown);
 	const showdownSummary = summarizeShowdown(showdown);
-	const nextHandPlan = resetPlayersForNewHand(gameState);
+	const nextHandPlan = createNextHandTransitionPlan(gameState, 2);
 	applyPlayerPatches(nextHandPlan.playerPatches);
 	applyGameStatePatch(gameState, nextHandPlan.gameStatePatch);
 
 	assertEquals({
+		nextHandType: nextHandPlan.type,
 		communityCards: gameState.communityCards,
 		showdown: showdownSummary,
 		bustedPlayers: nextHandPlan.bustedPlayers.map((player) => player.name),
@@ -2023,6 +2213,7 @@ Deno.test("full engine flow removes a busted player after a three-player hand", 
 			chips: player.chips,
 		})),
 	}, {
+		nextHandType: "next-hand",
 		communityCards: [],
 		showdown: {
 			activePlayers: ["Dealer", "Small Blind", "Short"],

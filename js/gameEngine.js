@@ -6,9 +6,9 @@ MODULE BOUNDARY: Pure Poker Engine
 ================================================================================================== */
 
 // CURRENT STATE: Owns hand evaluation, payout math, showdown resolution, showdown commit state,
-// hand-start setup, turn-action resolution, betting-round start state, betting-round progress
-// decisions, street progression decisions, and other pure poker helpers used by the table runtime.
-// Browser scheduling and rendering remain in app.js.
+// hand-end/next-hand transition state, hand-start setup, turn-action resolution, betting-round
+// start state, betting-round progress decisions, street progression decisions, and other pure poker
+// helpers used by the table runtime. Browser scheduling and rendering remain in app.js.
 // TARGET STATE: gameEngine.js should own every pure poker rule and state transform that can run
 // without DOM, fetch, timers, or view objects, while app.js only orchestrates browser-facing flow.
 // PUT HERE: Deterministic poker rules, hand evaluation, payouts, betting order helpers, and state
@@ -417,6 +417,18 @@ export function createShowdownCommitPlan(gameState, showdownResult) {
 			: [],
 		mainPotWinners: showdownResult.mainPotWinners.slice(),
 		winningPlayers: showdownResult.winningPlayers.slice(),
+	};
+}
+
+export function createHandEndPlan() {
+	return {
+		gameStatePatch: {
+			pot: 0,
+			handInProgress: false,
+			activeSeatIndex: null,
+			pendingAction: null,
+			chipTransfer: null,
+		},
 	};
 }
 
@@ -1023,6 +1035,51 @@ export function resetPlayersForNewHand(gameState) {
 			openCardsMode: humanCount === 1,
 			spectatorMode: humanCount === 0,
 			handContext: createHandContextState(),
+		},
+	};
+}
+
+export function createNextHandTransitionPlan(gameState, handId) {
+	const resetPlan = resetPlayersForNewHand(gameState);
+	const gameStatePatch = {
+		...resetPlan.gameStatePatch,
+		pot: 0,
+		currentBet: 0,
+		raisesThisRound: 0,
+		activeSeatIndex: null,
+		pendingAction: null,
+	};
+	if (resetPlan.remainingPlayers.length === 1) {
+		const champion = resetPlan.remainingPlayers[0];
+		addPlayerPatch(resetPlan.playerPatches, champion, {
+			isWinner: true,
+		});
+		return {
+			type: "game-over",
+			champion,
+			playerPatches: resetPlan.playerPatches,
+			bustedPlayers: resetPlan.bustedPlayers,
+			remainingPlayers: resetPlan.remainingPlayers,
+			gameStatePatch: {
+				...gameStatePatch,
+				gameFinished: true,
+				handInProgress: false,
+			},
+		};
+	}
+
+	return {
+		type: "next-hand",
+		champion: null,
+		playerPatches: resetPlan.playerPatches,
+		bustedPlayers: resetPlan.bustedPlayers,
+		remainingPlayers: resetPlan.remainingPlayers,
+		gameStatePatch: {
+			...gameStatePatch,
+			gameFinished: false,
+			handInProgress: true,
+			handId,
+			nextDecisionId: 1,
 		},
 	};
 }

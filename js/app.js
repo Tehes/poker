@@ -3,9 +3,9 @@ MODULE BOUNDARY: Main Table Runtime
 ================================================================================================== */
 
 // CURRENT STATE: Coordinates browser-facing game flow, bots, sync, timers, analytics, and DOM
-// effects. Showdown resolution/commit state, hand-start setup, turn-action resolution,
-// betting-round start state, betting-round progress decisions, and street progression decisions are
-// extracted; browser orchestration remains here.
+// effects. Showdown resolution/commit state, hand-end/next-hand transition state, hand-start setup,
+// turn-action resolution, betting-round start state, betting-round progress decisions, and street
+// progression decisions are extracted; browser orchestration remains here.
 // TARGET STATE: app.js should stay as the browser-facing orchestrator only. Pure poker rules and
 // state transforms should live in gameEngine.js, while reusable UI, sync, and control primitives
 // should live in shared/*.
@@ -30,6 +30,8 @@ import {
 	calculateWinProbabilities,
 	createBettingRoundProgressState,
 	createHandContextState,
+	createHandEndPlan,
+	createNextHandTransitionPlan,
 	createPlayerSpotState,
 	createShowdownCommitPlan,
 	dealCommunityCardsForPhase,
@@ -49,7 +51,6 @@ import {
 	isAllInRunout,
 	postBlinds,
 	recordPlayerActionStats,
-	resetPlayersForNewHand,
 	resolveTurnAction,
 	resolveShowdown,
 } from "./gameEngine.js";
@@ -714,22 +715,12 @@ function showPlayerWinnerReaction(player, emoji, visibleUntil) {
 	renderPlayerSeat(player);
 }
 
-function renderPlayerWinnerState(player, isWinner = false) {
-	player.isWinner = isWinner === true;
-	renderPlayerSeat(player);
-}
-
 /* --------------------------------------------------------------------------------------------------
 Render And Overlay Helpers
 ---------------------------------------------------------------------------------------------------*/
 
 function renderPot() {
 	potEl.textContent = gameState.pot;
-}
-
-function setPot(amount) {
-	gameState.pot = amount;
-	renderPot();
 }
 
 function setCommunityCards(cardCodes) {
@@ -1822,11 +1813,6 @@ function preFlop() {
 	// --- Hand Start And Reset ---------------------------------------------------
 	// Analytics: count hands and mark start time
 	totalHands++;
-	// Reset phase to preflop
-	gameState.currentPhaseIndex = 0;
-	gameState.gameFinished = false;
-	gameState.handInProgress = false;
-	gameState.chipTransfer = null;
 	if (runoutPhaseTimer) {
 		clearTimeout(runoutPhaseTimer);
 		runoutPhaseTimer = null;
@@ -1840,13 +1826,13 @@ function preFlop() {
 	clearActionLabels();
 	clearActiveTurnPlayer(false);
 
-	const newHandPlan = resetPlayersForNewHand(gameState);
-	applyPlayerPatches(newHandPlan.playerPatches);
-	applyGameStatePatch(newHandPlan.gameStatePatch);
+	const nextHandPlan = createNextHandTransitionPlan(gameState, totalHands);
+	applyPlayerPatches(nextHandPlan.playerPatches);
+	applyGameStatePatch(nextHandPlan.gameStatePatch);
 
-	newHandPlan.playerPatches.forEach(({ player }) => {
+	nextHandPlan.playerPatches.forEach(({ player }) => {
 		clearPlayerWinnerReaction(player);
-		renderPlayerWinnerState(player, false);
+		renderPlayerSeat(player);
 		removePlayerSeatClasses(
 			player,
 			"folded",
@@ -1860,7 +1846,7 @@ function preFlop() {
 	});
 	setCommunityCards(gameState.communityCards);
 
-	newHandPlan.bustedPlayers.forEach((player) => {
+	nextHandPlan.bustedPlayers.forEach((player) => {
 		getPlayerSeatEl(player)?.classList.add("hidden");
 		enqueueNotification(`${player.name} is out of the game!`);
 		logFlow("player_bust", { name: player.name });
@@ -1871,16 +1857,14 @@ function preFlop() {
 
 	// --- Game Over Check ---------------------------------------------------------
 	// GAME OVER: only one player left at the table
-	if (gameState.players.length === 1) {
-		const champion = gameState.players[0];
+	if (nextHandPlan.type === "game-over") {
+		const champion = nextHandPlan.champion;
 		clearActiveTurnPlayer(false);
 		enqueueNotification(`${champion.name} wins the game! 🏆`);
 		// Reveal champion's stack
 		renderPlayerTotal(champion);
-		champion.isWinner = true;
-		renderPlayerWinnerState(champion, true);
+		renderPlayerSeat(champion);
 		logFlow("tournament_end", { champion: champion.name });
-		gameState.gameFinished = true;
 		clearPendingAction();
 		humanTurnController.hide();
 		resetRuntimeFastForward();
@@ -1900,9 +1884,6 @@ function preFlop() {
 	// ----------------------------------------------------------
 
 	// --- Dealer, Blinds, Deal, And First Round ----------------------------------
-	gameState.handInProgress = true;
-	gameState.handId = totalHands;
-	gameState.nextDecisionId = 1;
 	updateFastForwardButton();
 
 	// Assign dealer
@@ -2444,13 +2425,13 @@ function startChipTransferAnimation(commitPlan, onDone) {
 }
 
 function finishHandAfterShowdown() {
+	const handEndPlan = createHandEndPlan(gameState);
 	renderPlayerChipStacks();
-	setPot(0);
 
 	clearActiveTurnPlayer(false);
+	applyGameStatePatch(handEndPlan.gameStatePatch);
+	renderPot();
 
-	gameState.handInProgress = false;
-	clearPendingAction();
 	humanTurnController.hide();
 	if (SPEED_MODE) {
 		queueStateSync();
@@ -2747,7 +2728,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-05-02-v7";
+const SERVICE_WORKER_VERSION = "2026-05-02-v8";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
