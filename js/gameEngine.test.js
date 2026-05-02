@@ -1,10 +1,15 @@
 import {
+	advanceDealer,
 	createBettingRoundProgressState,
+	dealHoleCardsForNewHand,
 	getBettingRoundStartExit,
 	getBettingRoundStartIndex,
+	getBlindLevelUpdateForHand,
 	getNextBettingRoundStep,
 	getResolvedTurnContinuation,
 	hasPendingBettingRoundAction,
+	postBlinds,
+	resetPlayersForNewHand,
 	resolveTurnAction,
 } from "./gameEngine.js";
 
@@ -28,6 +33,7 @@ function createPlayer({
 	allIn = false,
 	dealer = false,
 	bigBlind = false,
+	...extra
 } = {}) {
 	return {
 		name,
@@ -39,6 +45,7 @@ function createPlayer({
 		allIn,
 		dealer,
 		bigBlind,
+		...extra,
 	};
 }
 
@@ -71,6 +78,24 @@ function createGameState({
 			players: [player, ...tableOpponents],
 		},
 		player,
+	};
+}
+
+function createStats({ hands = 0 } = {}) {
+	return {
+		hands,
+		handsWon: 0,
+		vpip: 0,
+		pfr: 0,
+		calls: 0,
+		aggressiveActs: 0,
+		reveals: 0,
+		showdowns: 0,
+		showdownsWon: 0,
+		folds: 0,
+		foldsPreflop: 0,
+		foldsPostflop: 0,
+		allins: 0,
 	};
 }
 
@@ -517,4 +542,229 @@ Deno.test("betting round progress helpers do not mutate inputs", () => {
 
 	assertEquals(gameState, gameStateBefore);
 	assertEquals(progressState, progressStateBefore);
+});
+
+Deno.test("resetPlayersForNewHand prepares remaining players and removes busted players", () => {
+	const human = createPlayer({
+		name: "Human",
+		isBot: false,
+		stats: createStats({ hands: 2 }),
+		folded: true,
+		allIn: true,
+		totalBet: 120,
+		roundBet: 40,
+		holeCards: ["AS", "KS"],
+		visibleHoleCards: [true, true],
+		winProbability: 50,
+		lastNonFinalWinProbability: 60,
+		isWinner: true,
+		winnerReactionEmoji: "x",
+		winnerReactionUntil: 123,
+	});
+	const bot = createPlayer({
+		name: "Bot",
+		seatIndex: 1,
+		isBot: true,
+		stats: createStats({ hands: 3 }),
+	});
+	const busted = createPlayer({
+		name: "Busted",
+		seatIndex: 2,
+		chips: -10,
+		isBot: true,
+		stats: createStats({ hands: 4 }),
+	});
+	const gameState = {
+		currentPhaseIndex: 3,
+		gameFinished: true,
+		handInProgress: true,
+		chipTransfer: { active: true },
+		communityCards: ["2C", "3D"],
+		openCardsMode: false,
+		spectatorMode: false,
+		players: [human, bot, busted],
+	};
+	const gameStateBefore = structuredClone(gameState);
+	const result = resetPlayersForNewHand(gameState);
+	const humanPatch = result.playerPatches.find((entry) => entry.player === human).patch;
+	const botPatch = result.playerPatches.find((entry) => entry.player === bot).patch;
+	const bustedPatch = result.playerPatches.find((entry) => entry.player === busted).patch;
+
+	assertEquals(result.remainingPlayers.map((player) => player.name), ["Human", "Bot"]);
+	assertEquals(result.bustedPlayers.map((player) => player.name), ["Busted"]);
+	assertEquals({
+		folded: humanPatch.folded,
+		allIn: humanPatch.allIn,
+		totalBet: humanPatch.totalBet,
+		roundBet: humanPatch.roundBet,
+		holeCards: humanPatch.holeCards,
+		visibleHoleCards: humanPatch.visibleHoleCards,
+		hands: humanPatch.stats.hands,
+		botLinePreflopAggressor: humanPatch.botLine.preflopAggressor,
+		spotActed: humanPatch.spotState.actedThisStreet,
+	}, {
+		folded: false,
+		allIn: false,
+		totalBet: 0,
+		roundBet: 0,
+		holeCards: [null, null],
+		visibleHoleCards: [false, false],
+		hands: 3,
+		botLinePreflopAggressor: false,
+		spotActed: false,
+	});
+	assertEquals(botPatch.stats.hands, 4);
+	assertEquals(bustedPatch.chips, 0);
+	assertEquals({
+		currentPhaseIndex: result.gameStatePatch.currentPhaseIndex,
+		gameFinished: result.gameStatePatch.gameFinished,
+		handInProgress: result.gameStatePatch.handInProgress,
+		communityCards: result.gameStatePatch.communityCards,
+		openCardsMode: result.gameStatePatch.openCardsMode,
+		spectatorMode: result.gameStatePatch.spectatorMode,
+		players: result.gameStatePatch.players.map((player) => player.name),
+	}, {
+		currentPhaseIndex: 0,
+		gameFinished: false,
+		handInProgress: false,
+		communityCards: [],
+		openCardsMode: true,
+		spectatorMode: false,
+		players: ["Human", "Bot"],
+	});
+	assertEquals(gameState, gameStateBefore);
+});
+
+Deno.test("getBlindLevelUpdateForHand returns the next blind level patch", () => {
+	const gameState = {
+		blindLevel: 0,
+		smallBlind: 10,
+		bigBlind: 20,
+	};
+
+	assertEquals(getBlindLevelUpdateForHand(7, gameState), {
+		gameStatePatch: {
+			blindLevel: 1,
+			bigBlind: 40,
+			smallBlind: 20,
+		},
+		blindsChanged: true,
+	});
+	assertEquals(getBlindLevelUpdateForHand(1, gameState), null);
+});
+
+Deno.test("advanceDealer rotates the dealer to the front without mutating players", () => {
+	const playerA = createPlayer({ name: "A", dealer: true });
+	const playerB = createPlayer({ name: "B", seatIndex: 1 });
+	const playerC = createPlayer({ name: "C", seatIndex: 2 });
+	const players = [playerA, playerB, playerC];
+	const playersBefore = structuredClone(players);
+
+	const result = advanceDealer(players);
+
+	assertEquals(result.previousDealer, playerA);
+	assertEquals(result.dealer, playerB);
+	assertEquals(result.players.map((player) => player.name), ["B", "C", "A"]);
+	assertEquals(result.playerPatches, [
+		{ player: playerA, patch: { dealer: false } },
+		{ player: playerB, patch: { dealer: true } },
+	]);
+	assertEquals(players, playersBefore);
+});
+
+Deno.test("postBlinds creates blind player patches and pot state", () => {
+	const dealer = createPlayer({ name: "Dealer" });
+	const smallBlind = createPlayer({ name: "Small", seatIndex: 1, chips: 1000 });
+	const bigBlind = createPlayer({ name: "Big", seatIndex: 2, chips: 1000 });
+	const gameState = {
+		players: [dealer, smallBlind, bigBlind],
+		smallBlind: 10,
+		bigBlind: 20,
+		pot: 0,
+	};
+	const gameStateBefore = structuredClone(gameState);
+	const result = postBlinds(gameState);
+	const smallBlindPatch = result.playerPatches.find((entry) => entry.player === smallBlind).patch;
+	const bigBlindPatch = result.playerPatches.find((entry) => entry.player === bigBlind).patch;
+
+	assertEquals({
+		smallBlindIndex: result.smallBlindIndex,
+		bigBlindIndex: result.bigBlindIndex,
+		smallBlindAmount: result.smallBlindAmount,
+		bigBlindAmount: result.bigBlindAmount,
+		smallBlindPatch,
+		bigBlindPatch,
+		gameStatePatch: result.gameStatePatch,
+	}, {
+		smallBlindIndex: 1,
+		bigBlindIndex: 2,
+		smallBlindAmount: 10,
+		bigBlindAmount: 20,
+		smallBlindPatch: {
+			smallBlind: true,
+			bigBlind: false,
+			roundBet: 10,
+			totalBet: 10,
+			chips: 990,
+		},
+		bigBlindPatch: {
+			smallBlind: false,
+			bigBlind: true,
+			roundBet: 20,
+			totalBet: 20,
+			chips: 980,
+		},
+		gameStatePatch: {
+			pot: 30,
+			currentBet: 20,
+			lastRaise: 20,
+		},
+	});
+	assertEquals(gameState, gameStateBefore);
+});
+
+Deno.test("dealHoleCardsForNewHand deals deterministic hole cards without mutating state", () => {
+	const human = createPlayer({ name: "Human", isBot: false });
+	const bot = createPlayer({ name: "Bot", seatIndex: 1, isBot: true });
+	const gameState = {
+		players: [human, bot],
+		deck: ["AS", "KS", "QS", "JS", "TS"],
+		cardGraveyard: ["9S"],
+		openCardsMode: true,
+		spectatorMode: false,
+	};
+	const gameStateBefore = structuredClone(gameState);
+	const result = dealHoleCardsForNewHand(gameState, (deck) => deck);
+	const humanPatch = result.playerPatches.find((entry) => entry.player === human).patch;
+	const botPatch = result.playerPatches.find((entry) => entry.player === bot).patch;
+
+	assertEquals({
+		dealtPlayers: result.dealtPlayers.map((entry) => ({
+			name: entry.player.name,
+			card1: entry.card1,
+			card2: entry.card2,
+			showCards: entry.showCards,
+		})),
+		humanPatch,
+		botPatch,
+		gameStatePatch: result.gameStatePatch,
+	}, {
+		dealtPlayers: [
+			{ name: "Human", card1: "AS", card2: "KS", showCards: true },
+			{ name: "Bot", card1: "QS", card2: "JS", showCards: false },
+		],
+		humanPatch: {
+			holeCards: ["AS", "KS"],
+			visibleHoleCards: [true, true],
+		},
+		botPatch: {
+			holeCards: ["QS", "JS"],
+			visibleHoleCards: [false, false],
+		},
+		gameStatePatch: {
+			deck: ["TS", "9S"],
+			cardGraveyard: ["AS", "KS", "QS", "JS"],
+		},
+	});
+	assertEquals(gameState, gameStateBefore);
 });

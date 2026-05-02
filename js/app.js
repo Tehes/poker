@@ -3,8 +3,8 @@ MODULE BOUNDARY: Main Table Runtime
 ================================================================================================== */
 
 // CURRENT STATE: Coordinates browser-facing game flow, bots, sync, timers, analytics, and DOM
-// effects. Showdown, turn-action resolution, and betting-round progress decisions are extracted;
-// street setup/reset and browser orchestration remain here.
+// effects. Showdown, hand-start setup, turn-action resolution, and betting-round progress decisions
+// are extracted; street transitions and browser orchestration remain here.
 // TARGET STATE: app.js should stay as the browser-facing orchestrator only. Pure poker rules and
 // state transforms should live in gameEngine.js, while reusable UI, sync, and control primitives
 // should live in shared/*.
@@ -24,17 +24,16 @@ import {
 	setBotPlaybackFast,
 } from "./bot.js";
 import {
+	advanceDealer,
 	calculateWinProbabilities,
 	createBettingRoundProgressState,
 	createHandContextState,
 	createPlayerSpotState,
+	dealHoleCardsForNewHand,
 	getBettingRoundStartExit,
-	getBigBlindForLevel,
-	getBlindLevelForHand,
-	getBlindSeatIndexes,
+	getBlindLevelUpdateForHand,
 	getBotRevealDecision,
 	getCurrentPhase,
-	getNextDealerIndex,
 	getNextBettingRoundStep,
 	getPlayerActionFollowUpEffects,
 	getResolvedTurnContinuation,
@@ -43,10 +42,11 @@ import {
 	INITIAL_DECK,
 	INITIAL_SMALL_BLIND,
 	isAllInRunout,
+	postBlinds,
 	recordPlayerActionStats,
+	resetPlayersForNewHand,
 	resolveTurnAction,
 	resolveShowdown,
-	shuffleArray,
 	takeDeckCard,
 	trackUsedCard,
 } from "./gameEngine.js";
@@ -685,18 +685,6 @@ function hidePlayerQr(player) {
 	delete seatRef.qrContainer.dataset.url;
 }
 
-function placePlayerBet(player, amount) {
-	const bet = Math.min(amount, player.chips);
-	player.roundBet += bet;
-	player.totalBet += bet;
-	player.chips -= bet;
-	if (player.chips === 0) {
-		player.allIn = true;
-	}
-	renderPlayerSeat(player);
-	return bet;
-}
-
 function resetPlayerRoundBet(player) {
 	player.roundBet = 0;
 	renderPlayerSeat(player);
@@ -705,6 +693,16 @@ function resetPlayerRoundBet(player) {
 function clearPlayerActionLabel(player) {
 	clearPlayerActionState(player);
 	renderPlayerResolvedAction(player);
+}
+
+function applyPlayerPatches(playerPatches) {
+	playerPatches.forEach(({ player, patch }) => {
+		Object.assign(player, patch);
+	});
+}
+
+function applyGameStatePatch(gameStatePatch) {
+	Object.assign(gameState, gameStatePatch);
 }
 
 function clearPlayerWinnerReaction(player) {
@@ -736,11 +734,6 @@ function setPot(amount) {
 	renderPot();
 }
 
-function addToPot(amount) {
-	gameState.pot += amount;
-	renderPot();
-}
-
 function setCommunityCards(cardCodes) {
 	gameState.communityCards = cardCodes.slice();
 	renderTableCommunityCards(communityCardSlots, gameState.communityCards);
@@ -749,11 +742,6 @@ function setCommunityCards(cardCodes) {
 function appendCommunityCards(cardCodes) {
 	gameState.communityCards = gameState.communityCards.concat(cardCodes);
 	renderTableCommunityCards(communityCardSlots, gameState.communityCards);
-}
-
-function setPlayerHoleCards(player, holeCards) {
-	player.holeCards = holeCards.slice();
-	renderPlayerHoleCards(player);
 }
 
 function setPlayerVisibleHoleCards(player, visibleHoleCards) {
@@ -1370,10 +1358,6 @@ function revealPlayerHoleCards(player) {
 	setPlayerVisibleHoleCards(player, [true, true]);
 }
 
-function hidePlayerHoleCards(player) {
-	setPlayerVisibleHoleCards(player, [false, false]);
-}
-
 function getCommunityCardCodes() {
 	return gameState.communityCards.slice();
 }
@@ -1766,49 +1750,27 @@ function createPlayers() {
 }
 
 function setDealer() {
-	const nextDealerIndex = getNextDealerIndex(gameState.players);
-	if (nextDealerIndex === -1) {
+	const dealerPlan = advanceDealer(gameState.players);
+	if (!dealerPlan) {
 		return;
 	}
-	const dealerIndex = gameState.players.findIndex((player) => player.dealer);
-	if (dealerIndex !== -1) {
-		gameState.players[dealerIndex].dealer = false;
-		clearPlayerRole(gameState.players[dealerIndex], "dealer");
+	if (dealerPlan.previousDealer) {
+		clearPlayerRole(dealerPlan.previousDealer, "dealer");
 	}
-	gameState.players[nextDealerIndex].dealer = true;
-	assignPlayerRole(gameState.players[nextDealerIndex], "dealer");
-
-	while (gameState.players[0].dealer === false) {
-		gameState.players.unshift(gameState.players.pop());
-	}
+	gameState.players = dealerPlan.players;
+	assignPlayerRole(dealerPlan.dealer, "dealer");
 
 	enqueueNotification(`${gameState.players[0].name} is Dealer.`);
 }
 
 function updateBlindLevelForCurrentHand() {
-	const nextBlindLevel = getBlindLevelForHand(totalHands);
-	if (nextBlindLevel <= gameState.blindLevel) {
+	const blindLevelUpdate = getBlindLevelUpdateForHand(totalHands, gameState);
+	if (!blindLevelUpdate) {
 		return;
 	}
 
-	let nextBigBlind = gameState.bigBlind;
-	for (
-		let level = gameState.blindLevel + 1;
-		level <= nextBlindLevel;
-		level++
-	) {
-		nextBigBlind = getBigBlindForLevel(level, nextBigBlind);
-	}
-
-	const nextSmallBlind = nextBigBlind / 2;
-	const blindsChanged = nextBigBlind !== gameState.bigBlind ||
-		nextSmallBlind !== gameState.smallBlind;
-
-	gameState.blindLevel = nextBlindLevel;
-	gameState.bigBlind = nextBigBlind;
-	gameState.smallBlind = nextSmallBlind;
-
-	if (blindsChanged) {
+	applyGameStatePatch(blindLevelUpdate.gameStatePatch);
+	if (blindLevelUpdate.blindsChanged) {
 		enqueueNotification(
 			`Blinds are now ${gameState.smallBlind}/${gameState.bigBlind}.`,
 		);
@@ -1823,54 +1785,32 @@ function setBlinds() {
 		clearPlayerRole(p, "small-blind");
 		clearPlayerRole(p, "big-blind");
 	});
-	// Post blinds for Pre-Flop and set currentBet
-	const { smallBlindIndex: sbIdx, bigBlindIndex: bbIdx } =
-		getBlindSeatIndexes(
-			gameState.players.length,
-		);
-
-	const sbBet = placePlayerBet(
-		gameState.players[sbIdx],
-		gameState.smallBlind,
-	);
-	const bbBet = placePlayerBet(gameState.players[bbIdx], gameState.bigBlind);
+	const blindPlan = postBlinds(gameState);
+	applyPlayerPatches(blindPlan.playerPatches);
+	applyGameStatePatch(blindPlan.gameStatePatch);
+	renderPlayerSeat(blindPlan.smallBlindPlayer);
+	renderPlayerSeat(blindPlan.bigBlindPlayer);
+	renderPot();
 
 	enqueueNotification(
-		`${gameState.players[sbIdx].name} posted small blind of ${sbBet}.`,
+		`${blindPlan.smallBlindPlayer.name} posted small blind of ${blindPlan.smallBlindAmount}.`,
 	);
 	enqueueNotification(
-		`${gameState.players[bbIdx].name} posted big blind of ${bbBet}.`,
+		`${blindPlan.bigBlindPlayer.name} posted big blind of ${blindPlan.bigBlindAmount}.`,
 	);
 
-	// Add blinds to the pot
-	addToPot(sbBet + bbBet);
 	// Assign new blinds
-	assignPlayerRole(gameState.players[sbIdx], "small-blind");
-	assignPlayerRole(gameState.players[bbIdx], "big-blind");
-	gameState.currentBet = gameState.bigBlind;
-	gameState.lastRaise = gameState.bigBlind; // minimum raise equals the big blind at hand start
+	assignPlayerRole(blindPlan.smallBlindPlayer, "small-blind");
+	assignPlayerRole(blindPlan.bigBlindPlayer, "big-blind");
 }
 
 function dealCards() {
-	gameState.deck = gameState.deck.concat(gameState.cardGraveyard);
-	gameState.cardGraveyard = [];
-	shuffleArray(gameState.deck);
+	const dealPlan = dealHoleCardsForNewHand(gameState);
+	applyPlayerPatches(dealPlan.playerPatches);
+	applyGameStatePatch(dealPlan.gameStatePatch);
 
-	for (const player of gameState.players) {
-		const card1 = trackUsedCard(
-			gameState.cardGraveyard,
-			takeDeckCard(gameState.deck),
-		);
-		const card2 = trackUsedCard(
-			gameState.cardGraveyard,
-			takeDeckCard(gameState.deck),
-		);
-		setPlayerHoleCards(player, [card1, card2]);
-
-		const showCards = gameState.spectatorMode ||
-			(!player.isBot && gameState.openCardsMode);
-		setPlayerVisibleHoleCards(player, [showCards, showCards]);
-
+	dealPlan.dealtPlayers.forEach(({ player, card1, card2 }) => {
+		renderPlayerHoleCards(player);
 		if (!player.isBot) {
 			if (gameState.openCardsMode) {
 				hidePlayerQr(player);
@@ -1880,7 +1820,7 @@ function dealCards() {
 		} else {
 			hidePlayerQr(player);
 		}
-	}
+	});
 }
 
 // Execute the standard pre-flop steps: rotate dealer, post blinds, deal cards, start betting.
@@ -1906,70 +1846,34 @@ function preFlop() {
 	clearActionLabels();
 	clearActiveTurnPlayer(false);
 
-	// Clear folded state and remove CSS-Klasse
-	gameState.players.forEach((p) => {
-		p.folded = false;
-		p.allIn = false;
-		p.totalBet = 0;
-		p.winProbability = null;
-		p.lastNonFinalWinProbability = null;
-		p.isWinner = false;
-		clearPlayerWinnerReaction(p);
-		renderPlayerWinnerState(p, false);
+	const newHandPlan = resetPlayersForNewHand(gameState);
+	applyPlayerPatches(newHandPlan.playerPatches);
+	applyGameStatePatch(newHandPlan.gameStatePatch);
+
+	newHandPlan.playerPatches.forEach(({ player }) => {
+		clearPlayerWinnerReaction(player);
+		renderPlayerWinnerState(player, false);
 		removePlayerSeatClasses(
-			p,
+			player,
 			"folded",
 			"called",
 			"raised",
 			"checked",
 			"allin",
 		);
-		setPlayerHoleCards(p, [null, null]);
-		hidePlayerHoleCards(p);
-		hidePlayerQr(p);
+		renderPlayerHoleCards(player);
+		hidePlayerQr(player);
+	});
+	setCommunityCards(gameState.communityCards);
+
+	newHandPlan.bustedPlayers.forEach((player) => {
+		getPlayerSeatEl(player)?.classList.add("hidden");
+		enqueueNotification(`${player.name} is out of the game!`);
+		logFlow("player_bust", { name: player.name });
 	});
 
-	// Clear community cards from last hand
-	setCommunityCards([]);
-
-	// --- Busted Player Cleanup ---------------------------------------------------
-	// Remove players with zero chips from the table
-	const remainingPlayers = [];
-	gameState.players.forEach((p) => {
-		if (p.chips <= 0) {
-			p.chips = 0;
-			getPlayerSeatEl(p)?.classList.add("hidden");
-			enqueueNotification(`${p.name} is out of the game!`);
-			logFlow("player_bust", { name: p.name });
-		} else {
-			remainingPlayers.push(p);
-		}
-	});
-	gameState.players = remainingPlayers;
-	// --- Visibility Mode Recalculation -------------------------------------------
-	const humanCount = getHumanPlayerCount();
-	gameState.openCardsMode = humanCount === 1;
-	gameState.spectatorMode = humanCount === 0;
 	updateWinProbabilityDisplays();
 	updateHandStrengthDisplays();
-
-	// --- Per-Hand Stats Reset ----------------------------------------------------
-	// Start statistics for a new hand
-	gameState.handContext = createHandContextState();
-	gameState.players.forEach((p) => {
-		p.stats.hands++;
-		p.botLine = {
-			preflopAggressor: false,
-			cbetIntent: null,
-			barrelIntent: null,
-			cbetMade: false,
-			barrelMade: false,
-			nonValueAggressionMade: false,
-			checkRaiseIntent: null,
-			passiveValueCheckIntent: null,
-		};
-		resetPlayerSpotStateForHand(p);
-	});
 
 	// --- Game Over Check ---------------------------------------------------------
 	// GAME OVER: only one player left at the table
@@ -2879,7 +2783,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-05-02-v3";
+const SERVICE_WORKER_VERSION = "2026-05-02-v4";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

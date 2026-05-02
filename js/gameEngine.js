@@ -5,9 +5,9 @@ import { getPlayerActionState } from "./shared/actionModel.js";
 MODULE BOUNDARY: Pure Poker Engine
 ================================================================================================== */
 
-// CURRENT STATE: Owns hand evaluation, payout math, showdown resolution, turn-action resolution,
-// betting-round progress decisions, and other pure poker helpers used by the table runtime. Some
-// street setup/reset orchestration still remains in app.js.
+// CURRENT STATE: Owns hand evaluation, payout math, showdown resolution, hand-start setup,
+// turn-action resolution, betting-round progress decisions, and other pure poker helpers used by
+// the table runtime. Some street transition orchestration still remains in app.js.
 // TARGET STATE: gameEngine.js should own every pure poker rule and state transform that can run
 // without DOM, fetch, timers, or view objects, while app.js only orchestrates browser-facing flow.
 // PUT HERE: Deterministic poker rules, hand evaluation, payouts, betting order helpers, and state
@@ -576,6 +576,19 @@ export function createPlayerSpotState() {
 	};
 }
 
+export function createBotLineState() {
+	return {
+		preflopAggressor: false,
+		cbetIntent: null,
+		barrelIntent: null,
+		cbetMade: false,
+		barrelMade: false,
+		nonValueAggressionMade: false,
+		checkRaiseIntent: null,
+		passiveValueCheckIntent: null,
+	};
+}
+
 function ensureHandContext(gameState) {
 	if (!gameState.handContext) {
 		gameState.handContext = createHandContextState();
@@ -851,6 +864,226 @@ export function getBlindSeatIndexes(playerCount) {
 	return {
 		smallBlindIndex: playerCount > 2 ? 1 : 0,
 		bigBlindIndex: playerCount > 2 ? 2 : 1,
+	};
+}
+
+function buildNextHandStats(stats) {
+	if (!stats) {
+		return stats;
+	}
+	return {
+		...stats,
+		hands: (stats.hands ?? 0) + 1,
+	};
+}
+
+function addPlayerPatch(playerPatches, player, patch) {
+	const existingPatch = playerPatches.find((entry) => entry.player === player);
+	if (existingPatch) {
+		Object.assign(existingPatch.patch, patch);
+		return;
+	}
+	playerPatches.push({ player, patch: { ...patch } });
+}
+
+function buildCommittedBetPatch(player, amount) {
+	const actual = Math.min(amount, player.chips);
+	const nextChips = player.chips - actual;
+	const patch = {
+		roundBet: player.roundBet + actual,
+		totalBet: player.totalBet + actual,
+		chips: nextChips,
+	};
+	if (nextChips === 0) {
+		patch.allIn = true;
+	}
+	return { actual, patch };
+}
+
+export function resetPlayersForNewHand(gameState) {
+	const playerPatches = [];
+	const remainingPlayers = [];
+	const bustedPlayers = [];
+
+	gameState.players.forEach((player) => {
+		const patch = {
+			folded: false,
+			allIn: false,
+			totalBet: 0,
+			roundBet: 0,
+			winProbability: null,
+			lastNonFinalWinProbability: null,
+			isWinner: false,
+			winnerReactionEmoji: "",
+			winnerReactionUntil: 0,
+			holeCards: [null, null],
+			visibleHoleCards: [false, false],
+		};
+
+		if (player.chips <= 0) {
+			patch.chips = 0;
+			bustedPlayers.push(player);
+		} else {
+			remainingPlayers.push(player);
+			const nextStats = buildNextHandStats(player.stats);
+			if (nextStats) {
+				patch.stats = nextStats;
+			}
+			patch.botLine = createBotLineState();
+			patch.spotState = createPlayerSpotState();
+		}
+
+		addPlayerPatch(playerPatches, player, patch);
+	});
+
+	const humanCount = remainingPlayers.filter((player) => !player.isBot).length;
+
+	return {
+		playerPatches,
+		bustedPlayers,
+		remainingPlayers,
+		gameStatePatch: {
+			currentPhaseIndex: 0,
+			gameFinished: false,
+			handInProgress: false,
+			chipTransfer: null,
+			communityCards: [],
+			players: remainingPlayers,
+			openCardsMode: humanCount === 1,
+			spectatorMode: humanCount === 0,
+			handContext: createHandContextState(),
+		},
+	};
+}
+
+export function getBlindLevelUpdateForHand(totalHands, gameState) {
+	const nextBlindLevel = getBlindLevelForHand(totalHands);
+	if (nextBlindLevel <= gameState.blindLevel) {
+		return null;
+	}
+
+	let nextBigBlind = gameState.bigBlind;
+	for (
+		let level = gameState.blindLevel + 1;
+		level <= nextBlindLevel;
+		level++
+	) {
+		nextBigBlind = getBigBlindForLevel(level, nextBigBlind);
+	}
+
+	const nextSmallBlind = nextBigBlind / 2;
+
+	return {
+		gameStatePatch: {
+			blindLevel: nextBlindLevel,
+			bigBlind: nextBigBlind,
+			smallBlind: nextSmallBlind,
+		},
+		blindsChanged: nextBigBlind !== gameState.bigBlind ||
+			nextSmallBlind !== gameState.smallBlind,
+	};
+}
+
+export function advanceDealer(players, randomValue = Math.random()) {
+	const nextDealerIndex = getNextDealerIndex(players, randomValue);
+	if (nextDealerIndex === -1) {
+		return null;
+	}
+
+	const dealer = players[nextDealerIndex];
+	const previousDealer = players.find((player) => player.dealer) ?? null;
+	const playerPatches = [];
+	if (previousDealer && previousDealer !== dealer) {
+		addPlayerPatch(playerPatches, previousDealer, { dealer: false });
+	}
+	addPlayerPatch(playerPatches, dealer, { dealer: true });
+
+	const orderedPlayers = players.slice();
+	while (orderedPlayers[0] !== dealer) {
+		orderedPlayers.unshift(orderedPlayers.pop());
+	}
+
+	return {
+		previousDealer,
+		dealer,
+		players: orderedPlayers,
+		playerPatches,
+	};
+}
+
+export function postBlinds(gameState) {
+	const { smallBlindIndex, bigBlindIndex } = getBlindSeatIndexes(gameState.players.length);
+	const smallBlindPlayer = gameState.players[smallBlindIndex];
+	const bigBlindPlayer = gameState.players[bigBlindIndex];
+	const playerPatches = [];
+
+	gameState.players.forEach((player) => {
+		addPlayerPatch(playerPatches, player, {
+			smallBlind: false,
+			bigBlind: false,
+		});
+	});
+
+	const smallBlindBet = buildCommittedBetPatch(smallBlindPlayer, gameState.smallBlind);
+	const bigBlindBet = buildCommittedBetPatch(bigBlindPlayer, gameState.bigBlind);
+	addPlayerPatch(playerPatches, smallBlindPlayer, {
+		...smallBlindBet.patch,
+		smallBlind: true,
+	});
+	addPlayerPatch(playerPatches, bigBlindPlayer, {
+		...bigBlindBet.patch,
+		bigBlind: true,
+	});
+
+	return {
+		smallBlindIndex,
+		bigBlindIndex,
+		smallBlindPlayer,
+		bigBlindPlayer,
+		smallBlindAmount: smallBlindBet.actual,
+		bigBlindAmount: bigBlindBet.actual,
+		playerPatches,
+		gameStatePatch: {
+			pot: gameState.pot + smallBlindBet.actual + bigBlindBet.actual,
+			currentBet: gameState.bigBlind,
+			lastRaise: gameState.bigBlind,
+		},
+	};
+}
+
+export function dealHoleCardsForNewHand(gameState, shuffleFn = shuffleArray) {
+	const deck = shuffleFn(gameState.deck.concat(gameState.cardGraveyard));
+	const cardGraveyard = [];
+	const playerPatches = [];
+	const dealtPlayers = [];
+
+	gameState.players.forEach((player) => {
+		const card1 = takeDeckCard(deck);
+		const card2 = takeDeckCard(deck);
+		trackUsedCard(cardGraveyard, card1);
+		trackUsedCard(cardGraveyard, card2);
+		const showCards = gameState.spectatorMode ||
+			(!player.isBot && gameState.openCardsMode);
+
+		addPlayerPatch(playerPatches, player, {
+			holeCards: [card1, card2],
+			visibleHoleCards: [showCards, showCards],
+		});
+		dealtPlayers.push({
+			player,
+			card1,
+			card2,
+			showCards,
+		});
+	});
+
+	return {
+		playerPatches,
+		dealtPlayers,
+		gameStatePatch: {
+			deck,
+			cardGraveyard,
+		},
 	};
 }
 
