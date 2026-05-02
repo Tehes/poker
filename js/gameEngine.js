@@ -5,10 +5,10 @@ import { getPlayerActionState } from "./shared/actionModel.js";
 MODULE BOUNDARY: Pure Poker Engine
 ================================================================================================== */
 
-// CURRENT STATE: Owns hand evaluation, payout math, showdown resolution, hand-start setup,
-// turn-action resolution, betting-round start state, betting-round progress decisions, street
-// progression decisions, and other pure poker helpers used by the table runtime. Browser scheduling
-// and rendering remain in app.js.
+// CURRENT STATE: Owns hand evaluation, payout math, showdown resolution, showdown commit state,
+// hand-start setup, turn-action resolution, betting-round start state, betting-round progress
+// decisions, street progression decisions, and other pure poker helpers used by the table runtime.
+// Browser scheduling and rendering remain in app.js.
 // TARGET STATE: gameEngine.js should own every pure poker rule and state transform that can run
 // without DOM, fetch, timers, or view objects, while app.js only orchestrates browser-facing flow.
 // PUT HERE: Deterministic poker rules, hand evaluation, payouts, betting order helpers, and state
@@ -347,6 +347,76 @@ export function resolveShowdown(players, communityCards, chipUnit = 10) {
 		transferQueue,
 		potResults,
 		totalPayoutByPlayer: buildTotalPayoutByPlayer(transferQueue),
+	};
+}
+
+function buildShowdownStatsPatch(player, showdownResult) {
+	if (!player.stats) {
+		return null;
+	}
+
+	const isActive = showdownResult.activePlayers.includes(player);
+	const isWinner = showdownResult.winningPlayers.includes(player);
+	const patch = {};
+	if (showdownResult.hadShowdown && isActive) {
+		patch.showdowns = player.stats.showdowns + 1;
+	}
+	if (isWinner) {
+		patch.handsWon = player.stats.handsWon + 1;
+		if (showdownResult.hadShowdown) {
+			patch.showdownsWon = player.stats.showdownsWon + 1;
+		}
+	}
+	if (Object.keys(patch).length === 0) {
+		return null;
+	}
+	return {
+		...player.stats,
+		...patch,
+	};
+}
+
+export function createShowdownCommitPlan(gameState, showdownResult) {
+	const playerPatches = [];
+	const payoutPlayerPatches = [];
+	const mainPotWinnerSet = new Set(showdownResult.mainPotWinners);
+
+	gameState.players.forEach((player) => {
+		const patch = {
+			roundBet: 0,
+		};
+		const statsPatch = buildShowdownStatsPatch(player, showdownResult);
+		if (statsPatch) {
+			patch.stats = statsPatch;
+		}
+		if (showdownResult.hadShowdown && showdownResult.activePlayers.includes(player)) {
+			patch.visibleHoleCards = [true, true];
+		}
+		if (mainPotWinnerSet.has(player)) {
+			patch.isWinner = true;
+		}
+		addPlayerPatch(playerPatches, player, patch);
+
+		const payout = showdownResult.totalPayoutByPlayer.get(player) || 0;
+		if (payout > 0) {
+			addPlayerPatch(payoutPlayerPatches, player, {
+				chips: player.chips + payout,
+			});
+		}
+	});
+
+	return {
+		playerPatches,
+		payoutPlayerPatches,
+		payoutGameStatePatch: {
+			pot: 0,
+		},
+		transferQueue: showdownResult.transferQueue.slice(),
+		revealPlayers: showdownResult.hadShowdown
+			? showdownResult.activePlayers.slice()
+			: [],
+		mainPotWinners: showdownResult.mainPotWinners.slice(),
+		winningPlayers: showdownResult.winningPlayers.slice(),
 	};
 }
 

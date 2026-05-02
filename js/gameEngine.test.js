@@ -2,6 +2,7 @@ import {
 	advanceDealer,
 	createBettingRoundProgressState,
 	createBettingRoundStartPlan,
+	createShowdownCommitPlan,
 	dealCommunityCardsForPhase,
 	dealHoleCardsForNewHand,
 	getBettingRoundStartExit,
@@ -150,6 +151,27 @@ function summarizeShowdown(result) {
 	};
 }
 
+function summarizeCommitPlan(plan) {
+	return {
+		playerPatches: plan.playerPatches.map(({ player, patch }) => ({
+			player: player.name,
+			patch,
+		})),
+		payoutPlayerPatches: plan.payoutPlayerPatches.map(({ player, patch }) => ({
+			player: player.name,
+			patch,
+		})),
+		payoutGameStatePatch: plan.payoutGameStatePatch,
+		transferQueue: plan.transferQueue.map(({ player, amount }) => ({
+			player: player.name,
+			amount,
+		})),
+		revealPlayers: plan.revealPlayers.map((player) => player.name),
+		mainPotWinners: plan.mainPotWinners.map((player) => player.name),
+		winningPlayers: plan.winningPlayers.map((player) => player.name),
+	};
+}
+
 function createFlowGameState({ players, deck, smallBlind = 10, bigBlind = 20 }) {
 	return {
 		currentPhaseIndex: 0,
@@ -239,10 +261,12 @@ function runOutToShowdownForTest(gameState) {
 	return phasePlans;
 }
 
-function applyShowdownPayouts(result) {
-	result.transferQueue.forEach(({ player, amount }) => {
-		player.chips += amount;
-	});
+function applyShowdownCommitPlanForTest(gameState, result) {
+	const plan = createShowdownCommitPlan(gameState, result);
+	applyPlayerPatches(plan.playerPatches);
+	applyPlayerPatches(plan.payoutPlayerPatches);
+	applyGameStatePatch(gameState, plan.payoutGameStatePatch);
+	return plan;
 }
 
 Deno.test("resolveShowdown awards an uncontested pot", () => {
@@ -482,6 +506,234 @@ Deno.test("resolveShowdown marks refund-only side pots", () => {
 			{ player: "Refunded", amount: 50 },
 		],
 		totalPot: 150,
+	});
+});
+
+Deno.test("createShowdownCommitPlan commits normal showdown stats, reveal, winners, and payout", () => {
+	const winner = createPlayer({
+		name: "Aces",
+		chips: 900,
+		roundBet: 100,
+		totalBet: 100,
+		stats: createStats({ hands: 3 }),
+		holeCards: ["AS", "AH"],
+		visibleHoleCards: [false, false],
+	});
+	const loser = createPlayer({
+		name: "Kings",
+		seatIndex: 1,
+		chips: 900,
+		roundBet: 100,
+		totalBet: 100,
+		stats: createStats({ hands: 3 }),
+		holeCards: ["KS", "KH"],
+		visibleHoleCards: [false, false],
+	});
+	const gameState = {
+		pot: 200,
+		players: [winner, loser],
+	};
+	const gameStateBefore = structuredClone(gameState);
+	const showdown = resolveShowdown(
+		gameState.players,
+		["2C", "7D", "9H", "TC", "3S"],
+	);
+
+	const plan = createShowdownCommitPlan(gameState, showdown);
+	const winnerPatch = plan.playerPatches.find((entry) => entry.player === winner).patch;
+	const loserPatch = plan.playerPatches.find((entry) => entry.player === loser).patch;
+	const planSummary = summarizeCommitPlan(plan);
+
+	assertEquals({
+		winnerPatch: {
+			roundBet: winnerPatch.roundBet,
+			visibleHoleCards: winnerPatch.visibleHoleCards,
+			isWinner: winnerPatch.isWinner,
+			handsWon: winnerPatch.stats.handsWon,
+			showdowns: winnerPatch.stats.showdowns,
+			showdownsWon: winnerPatch.stats.showdownsWon,
+		},
+		loserPatch: {
+			roundBet: loserPatch.roundBet,
+			visibleHoleCards: loserPatch.visibleHoleCards,
+			handsWon: loserPatch.stats.handsWon,
+			showdowns: loserPatch.stats.showdowns,
+			showdownsWon: loserPatch.stats.showdownsWon,
+		},
+		plan: {
+			payoutPlayerPatches: planSummary.payoutPlayerPatches,
+			payoutGameStatePatch: planSummary.payoutGameStatePatch,
+			transferQueue: planSummary.transferQueue,
+			revealPlayers: planSummary.revealPlayers,
+			mainPotWinners: planSummary.mainPotWinners,
+			winningPlayers: planSummary.winningPlayers,
+		},
+	}, {
+		winnerPatch: {
+			roundBet: 0,
+			visibleHoleCards: [true, true],
+			isWinner: true,
+			handsWon: 1,
+			showdowns: 1,
+			showdownsWon: 1,
+		},
+		loserPatch: {
+			roundBet: 0,
+			visibleHoleCards: [true, true],
+			handsWon: 0,
+			showdowns: 1,
+			showdownsWon: 0,
+		},
+		plan: {
+			payoutPlayerPatches: [{
+				player: "Aces",
+				patch: {
+					chips: 1100,
+				},
+			}],
+			payoutGameStatePatch: {
+				pot: 0,
+			},
+			transferQueue: [{ player: "Aces", amount: 200 }],
+			revealPlayers: ["Aces", "Kings"],
+			mainPotWinners: ["Aces"],
+			winningPlayers: ["Aces"],
+		},
+	});
+	assertEquals(gameState, gameStateBefore);
+});
+
+Deno.test("createShowdownCommitPlan keeps uncontested wins out of showdown stats", () => {
+	const winner = createPlayer({
+		name: "Winner",
+		chips: 960,
+		roundBet: 40,
+		totalBet: 40,
+		stats: createStats({ hands: 2 }),
+		holeCards: ["AS", "AH"],
+	});
+	const folded = createPlayer({
+		name: "Folded",
+		seatIndex: 1,
+		chips: 960,
+		roundBet: 40,
+		totalBet: 40,
+		folded: true,
+		stats: createStats({ hands: 2 }),
+		holeCards: ["KS", "KH"],
+	});
+	const gameState = {
+		pot: 80,
+		players: [winner, folded],
+	};
+	const showdown = resolveShowdown(
+		gameState.players,
+		["2C", "7D", "9H", "TC", "3S"],
+	);
+
+	const plan = createShowdownCommitPlan(gameState, showdown);
+	const winnerPatch = plan.playerPatches.find((entry) => entry.player === winner).patch;
+	const foldedPatch = plan.playerPatches.find((entry) => entry.player === folded).patch;
+
+	assertEquals({
+		winnerPatch: {
+			roundBet: winnerPatch.roundBet,
+			visibleHoleCards: winnerPatch.visibleHoleCards ?? null,
+			isWinner: winnerPatch.isWinner,
+			handsWon: winnerPatch.stats.handsWon,
+			showdowns: winnerPatch.stats.showdowns,
+			showdownsWon: winnerPatch.stats.showdownsWon,
+		},
+		foldedPatch,
+		payoutPlayerPatches: summarizeCommitPlan(plan).payoutPlayerPatches,
+		revealPlayers: summarizeCommitPlan(plan).revealPlayers,
+	}, {
+		winnerPatch: {
+			roundBet: 0,
+			visibleHoleCards: null,
+			isWinner: true,
+			handsWon: 1,
+			showdowns: 0,
+			showdownsWon: 0,
+		},
+		foldedPatch: {
+			roundBet: 0,
+		},
+		payoutPlayerPatches: [{
+			player: "Winner",
+			patch: {
+				chips: 1040,
+			},
+		}],
+		revealPlayers: [],
+	});
+});
+
+Deno.test("createShowdownCommitPlan pays refund-only pots without winner stats", () => {
+	const mainWinner = createPlayer({
+		name: "Main",
+		chips: 950,
+		roundBet: 50,
+		totalBet: 50,
+		allIn: true,
+		stats: createStats(),
+		holeCards: ["AS", "AH"],
+	});
+	const refunded = createPlayer({
+		name: "Refunded",
+		seatIndex: 1,
+		chips: 900,
+		roundBet: 100,
+		totalBet: 100,
+		stats: createStats(),
+		holeCards: ["KS", "KH"],
+	});
+	const gameState = {
+		pot: 150,
+		players: [mainWinner, refunded],
+	};
+	const showdown = resolveShowdown(
+		gameState.players,
+		["2C", "7D", "9H", "TC", "3S"],
+	);
+
+	const plan = createShowdownCommitPlan(gameState, showdown);
+	const mainWinnerPatch = plan.playerPatches.find((entry) => entry.player === mainWinner).patch;
+	const refundedPatch = plan.playerPatches.find((entry) => entry.player === refunded).patch;
+
+	assertEquals({
+		mainWinner: {
+			isWinner: mainWinnerPatch.isWinner,
+			handsWon: mainWinnerPatch.stats.handsWon,
+			showdowns: mainWinnerPatch.stats.showdowns,
+			showdownsWon: mainWinnerPatch.stats.showdownsWon,
+		},
+		refunded: {
+			isWinner: refundedPatch.isWinner ?? false,
+			handsWon: refundedPatch.stats.handsWon,
+			showdowns: refundedPatch.stats.showdowns,
+			showdownsWon: refundedPatch.stats.showdownsWon,
+		},
+		payoutPlayerPatches: summarizeCommitPlan(plan).payoutPlayerPatches,
+		winningPlayers: summarizeCommitPlan(plan).winningPlayers,
+	}, {
+		mainWinner: {
+			isWinner: true,
+			handsWon: 1,
+			showdowns: 1,
+			showdownsWon: 1,
+		},
+		refunded: {
+			isWinner: false,
+			handsWon: 0,
+			showdowns: 1,
+			showdownsWon: 0,
+		},
+		payoutPlayerPatches: [
+			{ player: "Main", patch: { chips: 1050 } },
+			{ player: "Refunded", patch: { chips: 950 } },
+		],
+		winningPlayers: ["Main"],
 	});
 });
 
@@ -1672,7 +1924,7 @@ Deno.test("full engine flow plays a heads-up hand to showdown", () => {
 	advancePhaseForTest(gameState);
 
 	const showdown = resolveShowdown(gameState.players, gameState.communityCards);
-	applyShowdownPayouts(showdown);
+	applyShowdownCommitPlanForTest(gameState, showdown);
 
 	assertEquals({
 		currentPhaseIndex: gameState.currentPhaseIndex,
@@ -1692,7 +1944,7 @@ Deno.test("full engine flow plays a heads-up hand to showdown", () => {
 	}, {
 		currentPhaseIndex: 4,
 		communityCards: ["7D", "9H", "TC", "4C", "6D"],
-		pot: 40,
+		pot: 0,
 		totalBets: [
 			{ player: "Button", totalBet: 20 },
 			{ player: "Big Blind", totalBet: 20 },
@@ -1755,7 +2007,7 @@ Deno.test("full engine flow removes a busted player after a three-player hand", 
 	applyTurnActionForTest(gameState, smallBlind, { action: "call" });
 	runOutToShowdownForTest(gameState);
 	const showdown = resolveShowdown(gameState.players, gameState.communityCards);
-	applyShowdownPayouts(showdown);
+	applyShowdownCommitPlanForTest(gameState, showdown);
 	const showdownSummary = summarizeShowdown(showdown);
 	const nextHandPlan = resetPlayersForNewHand(gameState);
 	applyPlayerPatches(nextHandPlan.playerPatches);
@@ -1829,7 +2081,7 @@ Deno.test("full engine flow runs out a preflop all-in", () => {
 	const isRunout = isAllInRunout(gameState.players, gameState.currentBet);
 	const phasePlans = runOutToShowdownForTest(gameState);
 	const showdown = resolveShowdown(gameState.players, gameState.communityCards);
-	applyShowdownPayouts(showdown);
+	applyShowdownCommitPlanForTest(gameState, showdown);
 
 	assertEquals({
 		isRunout,

@@ -3,9 +3,9 @@ MODULE BOUNDARY: Main Table Runtime
 ================================================================================================== */
 
 // CURRENT STATE: Coordinates browser-facing game flow, bots, sync, timers, analytics, and DOM
-// effects. Showdown, hand-start setup, turn-action resolution, betting-round start state,
-// betting-round progress decisions, and street progression decisions are extracted; browser
-// orchestration remains here.
+// effects. Showdown resolution/commit state, hand-start setup, turn-action resolution,
+// betting-round start state, betting-round progress decisions, and street progression decisions are
+// extracted; browser orchestration remains here.
 // TARGET STATE: app.js should stay as the browser-facing orchestrator only. Pure poker rules and
 // state transforms should live in gameEngine.js, while reusable UI, sync, and control primitives
 // should live in shared/*.
@@ -31,6 +31,7 @@ import {
 	createBettingRoundProgressState,
 	createHandContextState,
 	createPlayerSpotState,
+	createShowdownCommitPlan,
 	dealCommunityCardsForPhase,
 	dealHoleCardsForNewHand,
 	getBettingRoundStartExit,
@@ -2380,11 +2381,9 @@ function buildChipTransferState(transferQueue) {
 	};
 }
 
-function applyChipTransferResults(transferQueue) {
-	transferQueue.forEach((transfer) => {
-		transfer.player.chips += transfer.amount;
-	});
-	gameState.pot = 0;
+function applyChipTransferResults(commitPlan) {
+	applyPlayerPatches(commitPlan.payoutPlayerPatches);
+	applyGameStatePatch(commitPlan.payoutGameStatePatch);
 }
 
 function getChipTransferRemainingDuration(chipTransfer) {
@@ -2403,7 +2402,8 @@ function getChipTransferRemainingDuration(chipTransfer) {
 	return Math.max(0, Math.ceil(endAt - Date.now()));
 }
 
-function startChipTransferAnimation(transferQueue, onDone) {
+function startChipTransferAnimation(commitPlan, onDone) {
+	const transferQueue = commitPlan.transferQueue;
 	if (!Array.isArray(transferQueue) || transferQueue.length === 0) {
 		if (onDone) {
 			onDone();
@@ -2416,7 +2416,7 @@ function startChipTransferAnimation(transferQueue, onDone) {
 
 	const chipTransfer = buildChipTransferState(transferQueue);
 	gameState.chipTransfer = chipTransfer;
-	applyChipTransferResults(transferQueue);
+	applyChipTransferResults(commitPlan);
 
 	if (!chipTransfer) {
 		if (onDone) {
@@ -2483,10 +2483,8 @@ function finishHandAfterShowdown() {
 
 function doShowdown() {
 	// --- Active Players And Showdown State ---------------------------------------
-	// Reset round bets now that they are in the pot
-	gameState.players.forEach((p) => resetPlayerRoundBet(p));
-
 	const communityCards = getCommunityCardCodes();
+	const showdownResult = resolveShowdown(gameState.players, communityCards, CHIP_UNIT);
 	const {
 		activePlayers,
 		contributors,
@@ -2494,11 +2492,11 @@ function doShowdown() {
 		uncontestedWinner,
 		mainPotWinners,
 		winningPlayers,
-		transferQueue,
 		potResults,
 		totalPayoutByPlayer,
 		totalPot,
-	} = resolveShowdown(gameState.players, communityCards, CHIP_UNIT);
+	} = showdownResult;
+	const commitPlan = createShowdownCommitPlan(gameState, showdownResult);
 	logSpeedmodeEvent("hand_result", {
 		handId: gameState.handId,
 		communityCards: communityCards.slice(),
@@ -2521,21 +2519,17 @@ function doShowdown() {
 		totalPot,
 	});
 
-	if (hadShowdown) {
-		activePlayers.forEach((p) => p.stats.showdowns++);
-		revealActiveHoleCards();
-	}
-
-	winningPlayers.forEach((player) => {
-		player.stats.handsWon++;
-		if (hadShowdown) {
-			player.stats.showdownsWon++;
-		}
+	applyPlayerPatches(commitPlan.playerPatches);
+	commitPlan.playerPatches.forEach(({ player }) => {
+		renderPlayerSeat(player);
 	});
-
-	mainPotWinners.forEach((player) => {
-		player.isWinner = true;
-		renderPlayerWinnerState(player, true);
+	commitPlan.revealPlayers.forEach((player) => {
+		hidePlayerQr(player);
+	});
+	if (commitPlan.revealPlayers.length > 0) {
+		updateHandStrengthDisplays();
+	}
+	commitPlan.mainPotWinners.forEach((player) => {
 		removePlayerSeatClasses(player, "active");
 	});
 
@@ -2570,7 +2564,7 @@ function doShowdown() {
 			totalPayoutByPlayer,
 		});
 		enqueueNotification(`${uncontestedWinner.name} wins ${totalPot}!`);
-		startChipTransferAnimation(transferQueue, () => {
+		startChipTransferAnimation(commitPlan, () => {
 			finishHandAfterShowdown();
 		});
 		return;
@@ -2625,7 +2619,7 @@ function doShowdown() {
 
 	// --- Payout Animation --------------------------------------------------------
 	// Build one synced transfer plan and let host and remote play the same animation locally.
-	startChipTransferAnimation(transferQueue, () => {
+	startChipTransferAnimation(commitPlan, () => {
 		finishHandAfterShowdown();
 	});
 	return; // exit doShowdown early because UI flow continues in animation
@@ -2753,7 +2747,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-05-02-v6";
+const SERVICE_WORKER_VERSION = "2026-05-02-v7";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
