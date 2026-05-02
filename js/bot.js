@@ -542,6 +542,64 @@ function hasShowdownStrongRead(opponents) {
 	);
 }
 
+function getStreetLineCount(counts, street) {
+	const value = counts?.[street];
+	return typeof value === "number" ? value : 0;
+}
+
+function buildStreetLineRead(currentPhaseIndex, handContext) {
+	const flopCheckedThrough = Boolean(handContext?.flopCheckedThrough);
+	const turnCheckedThrough = Boolean(handContext?.turnCheckedThrough);
+	const streetCheckCounts = handContext?.streetCheckCounts;
+	const streetAggressiveActionCounts = handContext?.streetAggressiveActionCounts;
+	const priorStreets = [];
+	let currentStreet = null;
+
+	if (currentPhaseIndex === 1) {
+		currentStreet = "flop";
+	} else if (currentPhaseIndex === 2) {
+		priorStreets.push("flop");
+		currentStreet = "turn";
+	} else if (currentPhaseIndex === 3) {
+		priorStreets.push("flop", "turn");
+		currentStreet = "river";
+	}
+
+	const priorCheckedThroughCount = priorStreets.reduce((count, street) => {
+		if (street === "flop" && flopCheckedThrough) {
+			return count + 1;
+		}
+		if (street === "turn" && turnCheckedThrough) {
+			return count + 1;
+		}
+		return count;
+	}, 0);
+	const priorAggressiveStreetCount = priorStreets.reduce(
+		(count, street) =>
+			getStreetLineCount(streetAggressiveActionCounts, street) > 0
+				? count + 1
+				: count,
+		0,
+	);
+
+	return {
+		flopCheckedThrough,
+		turnCheckedThrough,
+		priorCheckedThroughCount,
+		priorAggressiveStreetCount,
+		passiveLineDepth: priorCheckedThroughCount,
+		doubleCheckedThrough: currentPhaseIndex === 3 &&
+			flopCheckedThrough &&
+			turnCheckedThrough,
+		streetCheckCount: currentStreet
+			? getStreetLineCount(streetCheckCounts, currentStreet)
+			: 0,
+		streetAggressiveActionCount: currentStreet
+			? getStreetLineCount(streetAggressiveActionCounts, currentStreet)
+			: 0,
+	};
+}
+
 function buildSpotReadProfile(
 	{ players, player, currentPhaseIndex, handContext },
 ) {
@@ -565,12 +623,14 @@ function buildSpotReadProfile(
 		: currentPhaseIndex === 3
 		? Boolean(handContext?.turnCheckedThrough)
 		: false;
+	const streetLineRead = buildStreetLineRead(currentPhaseIndex, handContext);
 
 	return {
 		liveOpponents,
 		playersBehind,
 		streetAggressor,
 		previousStreetCheckedThrough,
+		streetLineRead,
 		live: buildAggregateRead(liveOpponents),
 		behind: buildAggregateRead(playersBehind),
 		aggressor: buildAggregateRead(streetAggressor ? [streetAggressor] : []),
@@ -2314,6 +2374,7 @@ export function chooseBotAction(player, gameState) {
 	const activeOpponentStacks = activeSizingOpponents.map((currentPlayer) => currentPlayer.chips);
 	const playersBehind = spotReadProfile.playersBehind;
 	const previousStreetCheckedThrough = spotReadProfile.previousStreetCheckedThrough;
+	const streetLineRead = spotReadProfile.streetLineRead;
 	const liveRead = spotReadProfile.live;
 	const behindRead = spotReadProfile.behind;
 	const aggressorRead = spotReadProfile.aggressor;
@@ -4146,6 +4207,15 @@ export function chooseBotAction(player, gameState) {
 		activeOpponents,
 		activePlayers: activeOpponents + 1,
 		effectiveStack,
+		previousStreetCheckedThrough,
+		flopCheckedThrough: streetLineRead.flopCheckedThrough,
+		turnCheckedThrough: streetLineRead.turnCheckedThrough,
+		priorCheckedThroughCount: streetLineRead.priorCheckedThroughCount,
+		priorAggressiveStreetCount: streetLineRead.priorAggressiveStreetCount,
+		passiveLineDepth: streetLineRead.passiveLineDepth,
+		doubleCheckedThrough: streetLineRead.doubleCheckedThrough,
+		streetCheckCount: streetLineRead.streetCheckCount,
+		streetAggressiveActionCount: streetLineRead.streetAggressiveActionCount,
 		noBet: noBetTag === "Y",
 		canRaiseOpportunity: canRaiseTag === "Y",
 		actingSlotIndex,

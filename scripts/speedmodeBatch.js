@@ -333,6 +333,83 @@ function mergeOutcomeMetrics(target, source) {
 	deepMergeCounts(target, source);
 }
 
+function createNoBetActionRateRow(total, actions, stabCount = 0, bluffCount = 0) {
+	const checks = actions.check ?? 0;
+	const raises = actions.raise ?? 0;
+	return {
+		total,
+		checks,
+		checkRate: total > 0 ? Number(((checks / total) * 100).toFixed(1)) : 0,
+		raises,
+		raiseRate: total > 0 ? Number(((raises / total) * 100).toFixed(1)) : 0,
+		stabs: stabCount,
+		stabRate: total > 0 ? Number(((stabCount / total) * 100).toFixed(1)) : 0,
+		bluffs: bluffCount,
+		bluffRate: total > 0 ? Number(((bluffCount / total) * 100).toFixed(1)) : 0,
+		actions: structuredClone(actions),
+	};
+}
+
+function createNoBetActionRateBreakdown(totalByKey, actionsByKey, stabsByKey = {}, bluffsByKey = {}) {
+	return Object.fromEntries(
+		Object.entries(totalByKey).map(([key, total]) => [
+			key,
+			createNoBetActionRateRow(
+				total,
+				actionsByKey[key] ?? {},
+				stabsByKey[key] ?? 0,
+				bluffsByKey[key] ?? 0,
+			),
+		]),
+	);
+}
+
+function createPostflopLineReadAnalysis(postflopMetrics) {
+	const riverChecks = postflopMetrics.riverHuOopDoubleCheckedThroughCheckCount;
+	const laterBets = postflopMetrics.riverHuOopDoubleCheckedThroughLaterBetCount;
+	const laterFolds = postflopMetrics.riverHuOopDoubleCheckedThroughLaterFoldCount;
+	const laterBettorWins = postflopMetrics.riverHuOopDoubleCheckedThroughLaterBettorWinCount;
+
+	return {
+		noBetByPassiveLineDepth: createNoBetActionRateBreakdown(
+			postflopMetrics.noBetOpportunityByPassiveLineDepth,
+			postflopMetrics.noBetOpportunityActionsByPassiveLineDepth,
+			postflopMetrics.noBetOpportunityStabsByPassiveLineDepth,
+			postflopMetrics.noBetOpportunityBluffsByPassiveLineDepth,
+		),
+		noBetByDoubleCheckedThrough: createNoBetActionRateBreakdown(
+			postflopMetrics.noBetOpportunityByDoubleCheckedThrough,
+			postflopMetrics.noBetOpportunityActionsByDoubleCheckedThrough,
+			postflopMetrics.noBetOpportunityStabsByDoubleCheckedThrough,
+			postflopMetrics.noBetOpportunityBluffsByDoubleCheckedThrough,
+		),
+		noBetByStreetStructureActingSlot: structuredClone(
+			postflopMetrics.noBetOpportunityByStreetStructureActingSlot,
+		),
+		noBetActionsByStreetStructureActingSlot: structuredClone(
+			postflopMetrics.noBetOpportunityActionsByStreetStructureActingSlot,
+		),
+		noBetByClassInitialFinalBlock: structuredClone(
+			postflopMetrics.noBetOpportunityByClassInitialFinalBlock,
+		),
+		riverHuOopDoubleCheckedThroughChecks: {
+			total: riverChecks,
+			laterOpponentBets: laterBets,
+			laterOpponentBetRate: riverChecks > 0
+				? Number(((laterBets / riverChecks) * 100).toFixed(1))
+				: 0,
+			laterBotFolds: laterFolds,
+			laterBotFoldRateAfterBet: laterBets > 0
+				? Number(((laterFolds / laterBets) * 100).toFixed(1))
+				: 0,
+			laterBettorWins,
+			laterBettorWinRateAfterBet: laterBets > 0
+				? Number(((laterBettorWins / laterBets) * 100).toFixed(1))
+				: 0,
+		},
+	};
+}
+
 function flagToState(flag) {
 	if (flag === "Y") {
 		return "yes";
@@ -955,6 +1032,25 @@ function normalizeStructuredDecision(decision) {
 			: null,
 		eliminationReliefCandidate: decision.eliminationReliefCandidate === true,
 		eliminationReliefApplied: decision.eliminationReliefApplied === true,
+		previousStreetCheckedThrough: decision.previousStreetCheckedThrough === true,
+		flopCheckedThrough: decision.flopCheckedThrough === true,
+		turnCheckedThrough: decision.turnCheckedThrough === true,
+		priorCheckedThroughCount: typeof decision.priorCheckedThroughCount === "number"
+			? decision.priorCheckedThroughCount
+			: 0,
+		priorAggressiveStreetCount: typeof decision.priorAggressiveStreetCount === "number"
+			? decision.priorAggressiveStreetCount
+			: 0,
+		passiveLineDepth: typeof decision.passiveLineDepth === "number"
+			? decision.passiveLineDepth
+			: 0,
+		doubleCheckedThrough: decision.doubleCheckedThrough === true,
+		streetCheckCount: typeof decision.streetCheckCount === "number"
+			? decision.streetCheckCount
+			: 0,
+		streetAggressiveActionCount: typeof decision.streetAggressiveActionCount === "number"
+			? decision.streetAggressiveActionCount
+			: 0,
 		marginalEdge: decision.marginalEdge === true,
 		marginalReason: typeof decision.marginalReason === "string" ? decision.marginalReason : null,
 		mdfEligible: decision.mdfEligible === true,
@@ -1240,6 +1336,60 @@ function analyzeAutoValueCheckFollowups(decisions, metrics) {
 					metrics.examples.postflopAutoValueCheckLaterFacingBetFold,
 					`${decision.line} -> ${laterFacingBetDecision.line}`,
 				);
+			}
+		}
+	}
+}
+
+function isRiverHuOopDoubleCheckedThroughCheck(decision) {
+	return decision.phase === "postflop" &&
+		decision.noBet === true &&
+		decision.currentBet === 0 &&
+		getPostflopStreet(decision) === "river" &&
+		decision.structureTag === "HU" &&
+		decision.actingSlotIndex !== decision.actingSlotCount &&
+		decision.doubleCheckedThrough === true &&
+		decision.action === "check";
+}
+
+function analyzeRiverHuOopDoubleCheckedThroughFollowups(decisions, metrics) {
+	const decisionsByHandId = groupDecisionsByHandId(decisions);
+
+	for (const handDecisions of decisionsByHandId.values()) {
+		for (const decision of handDecisions) {
+			if (!isRiverHuOopDoubleCheckedThroughCheck(decision)) {
+				continue;
+			}
+
+			metrics.postflop.riverHuOopDoubleCheckedThroughCheckCount += 1;
+			const laterOpponentBetDecision = handDecisions.find((laterDecision) =>
+				laterDecision.seatIndex !== decision.seatIndex &&
+				(laterDecision.decisionId ?? 0) > (decision.decisionId ?? 0) &&
+				laterDecision.phase === "postflop" &&
+				getPostflopStreet(laterDecision) === "river" &&
+				laterDecision.action === "raise" &&
+				(laterDecision.amount ?? 0) > 0
+			);
+
+			if (!laterOpponentBetDecision) {
+				continue;
+			}
+
+			metrics.postflop.riverHuOopDoubleCheckedThroughLaterBetCount += 1;
+			if (laterOpponentBetDecision.winnerSide === "winner") {
+				metrics.postflop.riverHuOopDoubleCheckedThroughLaterBettorWinCount += 1;
+			}
+
+			const laterFoldDecision = handDecisions.find((laterDecision) =>
+				laterDecision.seatIndex === decision.seatIndex &&
+				(laterDecision.decisionId ?? 0) >
+					(laterOpponentBetDecision.decisionId ?? 0) &&
+				laterDecision.phase === "postflop" &&
+				getPostflopStreet(laterDecision) === "river" &&
+				laterDecision.action === "fold"
+			);
+			if (laterFoldDecision) {
+				metrics.postflop.riverHuOopDoubleCheckedThroughLaterFoldCount += 1;
 			}
 		}
 	}
@@ -2404,6 +2554,21 @@ function createEmptyPostflopMetrics() {
 		noBetOpportunityByStructure: {},
 		noBetOpportunityByActingSlot: {},
 		noBetOpportunityActionsByLineRoleAndActingSlot: {},
+		noBetOpportunityByPassiveLineDepth: {},
+		noBetOpportunityActionsByPassiveLineDepth: {},
+		noBetOpportunityStabsByPassiveLineDepth: {},
+		noBetOpportunityBluffsByPassiveLineDepth: {},
+		noBetOpportunityByDoubleCheckedThrough: {},
+		noBetOpportunityActionsByDoubleCheckedThrough: {},
+		noBetOpportunityStabsByDoubleCheckedThrough: {},
+		noBetOpportunityBluffsByDoubleCheckedThrough: {},
+		noBetOpportunityByStreetStructureActingSlot: {},
+		noBetOpportunityActionsByStreetStructureActingSlot: {},
+		noBetOpportunityByClassInitialFinalBlock: {},
+		riverHuOopDoubleCheckedThroughCheckCount: 0,
+		riverHuOopDoubleCheckedThroughLaterBetCount: 0,
+		riverHuOopDoubleCheckedThroughLaterFoldCount: 0,
+		riverHuOopDoubleCheckedThroughLaterBettorWinCount: 0,
 		blockedNoBetRaiseCount: 0,
 		blockedNoBetRaiseByClass: {},
 		blockedNoBetRaiseByReason: {},
@@ -3314,6 +3479,13 @@ function analyzeRunDecisions(decisions, hands) {
 		}
 		if (decision.noBet && decision.canRaiseOpportunity) {
 			const noBetClass = decision.noBetClass ?? "unknown";
+			const passiveLineDepth = String(decision.passiveLineDepth ?? 0);
+			const doubleCheckedThrough = decision.doubleCheckedThrough ? "yes" : "no";
+			const actingSlotRole = decision.actingSlotIndex === decision.actingSlotCount
+				? "LTA"
+				: "OOP";
+			const noBetInitialAction = decision.noBetInitialAction ?? "none";
+			const noBetBlockReason = decision.noBetBlockReason ?? "none";
 			metrics.postflop.noBetOpportunityCount += 1;
 			incrementCount(metrics.postflop.noBetOpportunityActions, decision.action);
 			incrementCount(metrics.postflop.noBetOpportunityByClass, noBetClass);
@@ -3332,8 +3504,57 @@ function analyzeRunDecisions(decisions, hands) {
 				decision.actingSlotKey,
 				decision.action,
 			);
+			incrementCount(
+				metrics.postflop.noBetOpportunityByPassiveLineDepth,
+				passiveLineDepth,
+			);
+			incrementNestedCount(
+				metrics.postflop.noBetOpportunityActionsByPassiveLineDepth,
+				passiveLineDepth,
+				decision.action,
+			);
+			if (decision.stab) {
+				incrementCount(
+					metrics.postflop.noBetOpportunityStabsByPassiveLineDepth,
+					passiveLineDepth,
+				);
+				incrementCount(
+					metrics.postflop.noBetOpportunityStabsByDoubleCheckedThrough,
+					doubleCheckedThrough,
+				);
+			}
+			if (decision.bluff) {
+				incrementCount(
+					metrics.postflop.noBetOpportunityBluffsByPassiveLineDepth,
+					passiveLineDepth,
+				);
+				incrementCount(
+					metrics.postflop.noBetOpportunityBluffsByDoubleCheckedThrough,
+					doubleCheckedThrough,
+				);
+			}
+			incrementCount(
+				metrics.postflop.noBetOpportunityByDoubleCheckedThrough,
+				doubleCheckedThrough,
+			);
+			incrementNestedCount(
+				metrics.postflop.noBetOpportunityActionsByDoubleCheckedThrough,
+				doubleCheckedThrough,
+				decision.action,
+			);
+			incrementNestedPathCount(
+				metrics.postflop.noBetOpportunityByStreetStructureActingSlot,
+				[postflopStreet, decision.structureTag, actingSlotRole],
+			);
+			incrementNestedPathCount(
+				metrics.postflop.noBetOpportunityActionsByStreetStructureActingSlot,
+				[postflopStreet, decision.structureTag, actingSlotRole, decision.action],
+			);
+			incrementNestedPathCount(
+				metrics.postflop.noBetOpportunityByClassInitialFinalBlock,
+				[noBetClass, noBetInitialAction, decision.action, noBetBlockReason],
+			);
 			if (decision.noBetFilterApplied && decision.noBetInitialAction === "raise") {
-				const noBetBlockReason = decision.noBetBlockReason ?? "unknown";
 				metrics.postflop.blockedNoBetRaiseCount += 1;
 				incrementCount(metrics.postflop.blockedNoBetRaiseByClass, noBetClass);
 				incrementCount(metrics.postflop.blockedNoBetRaiseByReason, noBetBlockReason);
@@ -3613,6 +3834,7 @@ function analyzeRunDecisions(decisions, hands) {
 
 	analyzeBlockedNoBetRaiseFollowups(normalizedDecisions, metrics);
 	analyzeAutoValueCheckFollowups(normalizedDecisions, metrics);
+	analyzeRiverHuOopDoubleCheckedThroughFollowups(normalizedDecisions, metrics);
 	analyzePreflopTransitions(normalizedDecisions, hands, metrics);
 	return metrics;
 }
@@ -3800,6 +4022,7 @@ async function runSingleTournament(
 				analysis: {
 					postflop: {
 						mdf: createMdfAnalysis(runMetrics.postflop.mdf),
+						lineReads: createPostflopLineReadAnalysis(runMetrics.postflop),
 					},
 				},
 				outcomeMetrics: runOutcome.metrics,
@@ -3907,6 +4130,7 @@ async function main() {
 		browserChild = null;
 
 		const mdfAnalysis = createMdfAnalysis(aggregateMetrics.postflop.mdf);
+		const lineReadAnalysis = createPostflopLineReadAnalysis(aggregateMetrics.postflop);
 		const summary = {
 			generatedAt: new Date().toISOString(),
 			config: {
@@ -3934,6 +4158,7 @@ async function main() {
 			analysis: {
 				postflop: {
 					mdf: mdfAnalysis,
+					lineReads: lineReadAnalysis,
 				},
 			},
 			outcomeMetrics: finalizeOutcomeMetrics(aggregateOutcomeMetrics),
@@ -4041,6 +4266,17 @@ async function main() {
 		);
 		console.log(
 			`postflop_no_bet_raises=${aggregateMetrics.postflop.noBetOpportunityActions.raise || 0}`,
+		);
+		console.log(
+			`postflop_no_bet_by_passive_line_depth=${JSON.stringify(lineReadAnalysis.noBetByPassiveLineDepth)}`,
+		);
+		console.log(
+			`postflop_no_bet_double_checked_through=${JSON.stringify(lineReadAnalysis.noBetByDoubleCheckedThrough)}`,
+		);
+		console.log(
+			`postflop_river_hu_oop_double_checked_through_checks=${
+				JSON.stringify(lineReadAnalysis.riverHuOopDoubleCheckedThroughChecks)
+			}`,
 		);
 		console.log(
 			`postflop_blocked_no_bet_raises=${aggregateMetrics.postflop.blockedNoBetRaiseCount}`,

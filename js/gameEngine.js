@@ -379,6 +379,16 @@ export function createHandContextState() {
 		streetAggressorSeatIndex: null,
 		flopCheckedThrough: false,
 		turnCheckedThrough: false,
+		streetCheckCounts: {
+			flop: 0,
+			turn: 0,
+			river: 0,
+		},
+		streetAggressiveActionCounts: {
+			flop: 0,
+			turn: 0,
+			river: 0,
+		},
 	};
 }
 
@@ -424,6 +434,23 @@ export function recordPlayerActionStats(gameState, player, actionName, actionMet
 	if (isAggressiveAction) {
 		spotState.aggressiveThisStreet = true;
 		handContext.streetAggressorSeatIndex = player.seatIndex;
+	}
+	const phase = getCurrentPhase(gameState.currentPhaseIndex);
+	if (phase === "flop" || phase === "turn" || phase === "river") {
+		if (!handContext.streetCheckCounts) {
+			handContext.streetCheckCounts = createHandContextState().streetCheckCounts;
+		}
+		if (!handContext.streetAggressiveActionCounts) {
+			handContext.streetAggressiveActionCounts = createHandContextState().streetAggressiveActionCounts;
+		}
+		if (actionName === "check") {
+			handContext.streetCheckCounts[phase] =
+				(handContext.streetCheckCounts[phase] ?? 0) + 1;
+		}
+		if (isAggressiveAction) {
+			handContext.streetAggressiveActionCounts[phase] =
+				(handContext.streetAggressiveActionCounts[phase] ?? 0) + 1;
+		}
 	}
 	if (gameState.currentPhaseIndex === 0 && isVoluntaryAction) {
 		spotState.enteredPreflop = true;
