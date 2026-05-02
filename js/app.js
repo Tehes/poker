@@ -593,7 +593,6 @@ function getRoleFlagName(role) {
 function setPlayerRoleVisibility(player, role, isVisible) {
 	const seatRef = getSeatRef(player);
 	const flagName = getRoleFlagName(role);
-	player[flagName] = isVisible;
 	seatRef?.[`${flagName}El`]?.classList.toggle("hidden", !isVisible);
 }
 
@@ -1754,10 +1753,11 @@ function setDealer() {
 	if (!dealerPlan) {
 		return;
 	}
+	applyPlayerPatches(dealerPlan.playerPatches);
+	gameState.players = dealerPlan.players;
 	if (dealerPlan.previousDealer) {
 		clearPlayerRole(dealerPlan.previousDealer, "dealer");
 	}
-	gameState.players = dealerPlan.players;
 	assignPlayerRole(dealerPlan.dealer, "dealer");
 
 	enqueueNotification(`${gameState.players[0].name} is Dealer.`);
@@ -1780,7 +1780,7 @@ function updateBlindLevelForCurrentHand() {
 function setBlinds() {
 	updateBlindLevelForCurrentHand();
 
-	// Clear previous roles and icons
+	// Clear previous icons before the engine commits the next blind roles.
 	gameState.players.forEach((p) => {
 		clearPlayerRole(p, "small-blind");
 		clearPlayerRole(p, "big-blind");
