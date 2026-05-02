@@ -961,7 +961,7 @@ Deno.test("betting round progress starts from preflop big blind and postflop dea
 	});
 });
 
-Deno.test("getBettingRoundStartExit advances with one actionable player", () => {
+Deno.test("getBettingRoundStartExit advances with one matched actionable player", () => {
 	const player = createPlayer({ chips: 100 });
 	const allInOpponent = createPlayer({
 		name: "Villain",
@@ -980,6 +980,30 @@ Deno.test("getBettingRoundStartExit advances with one actionable player", () => 
 		activePlayerCount: 2,
 		actionablePlayerCount: 1,
 	});
+});
+
+Deno.test("getBettingRoundStartExit keeps one actionable player when they owe a bet", () => {
+	const smallBlind = createPlayer({
+		name: "Small Blind",
+		chips: 990,
+		roundBet: 10,
+		totalBet: 10,
+	});
+	const allInBigBlind = createPlayer({
+		name: "Big Blind",
+		seatIndex: 1,
+		chips: 0,
+		roundBet: 20,
+		totalBet: 20,
+		allIn: true,
+	});
+	const { gameState } = createGameState({
+		player: smallBlind,
+		opponents: [allInBigBlind],
+		currentBet: 20,
+	});
+
+	assertEquals(getBettingRoundStartExit(gameState), null);
 });
 
 Deno.test("getNextBettingRoundStep advances when no actionable players remain", () => {
@@ -2285,41 +2309,35 @@ Deno.test("full engine flow runs out a preflop all-in", () => {
 		runType: "showdown",
 		isRunout: true,
 		phases: ["flop", "turn", "river", "showdown"],
-		actions: [],
+		actions: [
+			{ player: "Button", action: "call" },
+		],
 		currentPhaseIndex: 4,
 		communityCards: ["7D", "9H", "TC", "4C", "6D"],
 		shortAllIn: true,
 		showdown: {
 			activePlayers: ["Button", "Short"],
 			contributors: [
-				{ player: "Button", totalBet: 10 },
+				{ player: "Button", totalBet: 20 },
 				{ player: "Short", totalBet: 20 },
 			],
 			hadShowdown: true,
 			uncontestedWinner: null,
 			mainPotWinners: ["Short"],
 			winningPlayers: ["Short"],
-			transferQueue: [
-				{ player: "Short", amount: 20 },
-				{ player: "Short", amount: 10 },
-			],
+			transferQueue: [{ player: "Short", amount: 40 }],
 			potResults: [{
 				players: ["Short"],
-				amount: 20,
+				amount: 40,
 				hand: "Pair",
 				isRefundOnly: false,
-			}, {
-				players: ["Short"],
-				amount: 10,
-				hand: null,
-				isRefundOnly: true,
 			}],
-			totalPayoutByPlayer: [{ player: "Short", amount: 30 }],
-			totalPot: 30,
+			totalPayoutByPlayer: [{ player: "Short", amount: 40 }],
+			totalPot: 40,
 		},
 		chips: [
-			{ player: "Button", chips: 990 },
-			{ player: "Short", chips: 30 },
+			{ player: "Button", chips: 980 },
+			{ player: "Short", chips: 40 },
 		],
 	});
 });

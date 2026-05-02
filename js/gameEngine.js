@@ -1635,7 +1635,22 @@ export function createBettingRoundProgressState(gameState) {
 export function getBettingRoundStartExit(gameState) {
 	const activePlayers = gameState.players.filter((player) => !player.folded);
 	const actionablePlayers = activePlayers.filter((player) => !player.allIn);
-	if (activePlayers.length > 1 && actionablePlayers.length > 1) {
+	if (activePlayers.length <= 1 || actionablePlayers.length === 0) {
+		return {
+			type: "advance",
+			reason: "startBettingRound",
+			activePlayerCount: activePlayers.length,
+			actionablePlayerCount: actionablePlayers.length,
+		};
+	}
+	if (
+		actionablePlayers.length === 1 &&
+		gameState.currentBet > 0 &&
+		actionablePlayers[0].roundBet < gameState.currentBet
+	) {
+		return null;
+	}
+	if (actionablePlayers.length > 1) {
 		return null;
 	}
 
