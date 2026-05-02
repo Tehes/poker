@@ -41,6 +41,7 @@ import {
 	INITIAL_SMALL_BLIND,
 	isAllInRunout,
 	recordPlayerActionStats,
+	resolveTurnAction,
 	resolveShowdown,
 	shuffleArray,
 	takeDeckCard,
@@ -2252,155 +2253,52 @@ function getResolvedTurnMeta(resolvedAction) {
 	};
 }
 
-function applyTurnAction(player, actionRequest) {
-	if (!player || !actionRequest) {
-		return null;
+function applyResolvedTurnActionPatches(player, resolvedAction) {
+	Object.assign(player, resolvedAction.playerPatch);
+	Object.assign(gameState, resolvedAction.gameStatePatch);
+
+	if (Object.keys(resolvedAction.playerPatch).length > 0) {
+		renderPlayerSeat(player);
 	}
-
-	const currentActionState = getPlayerActionState(gameState, player);
-
-	switch (actionRequest.action) {
-		case "fold":
-			player.folded = true;
-			notifyPlayerAction(player, "fold", 0, {
-				aggressive: false,
-				voluntary: false,
-			});
-			hidePlayerQr(player);
-			return { action: "fold", amount: 0 };
-		case "check":
-			notifyPlayerAction(player, "check", 0, {
-				aggressive: false,
-				voluntary: false,
-			});
-			return { action: "check", amount: 0 };
-		case "call": {
-			const callAmount = Math.min(
-				player.chips,
-				currentActionState.needToCall,
-			);
-			if (
-				callAmount === player.chips &&
-				player.chips > 0 &&
-				currentActionState.needToCall > 0
-			) {
-				return applyTurnAction(player, {
-					action: "allin",
-					amount: player.chips,
-				});
-			}
-			const actual = placePlayerBet(player, callAmount);
-			addToPot(actual);
-			notifyPlayerAction(player, "call", actual, {
-				aggressive: false,
-				voluntary: actual > 0,
-			});
-			return { action: "call", amount: actual };
-		}
-		case "allin": {
-			const actual = placePlayerBet(player, player.chips);
-			const isAggressiveAllIn = actual > currentActionState.needToCall;
-			addToPot(actual);
-			if (actual >= currentActionState.minRaise) {
-				gameState.currentBet = player.roundBet;
-				gameState.lastRaise = actual - currentActionState.needToCall;
-				gameState.raisesThisRound++;
-			} else if (actual >= currentActionState.needToCall) {
-				gameState.currentBet = Math.max(
-					gameState.currentBet,
-					player.roundBet,
-				);
-			}
-			notifyPlayerAction(player, "allin", actual, {
-				aggressive: isAggressiveAllIn,
-				voluntary: actual > 0,
-			});
-			return { action: "allin", amount: actual };
-		}
-		case "raise": {
-			let bet = Number.parseInt(actionRequest.amount, 10);
-			if (Number.isNaN(bet)) {
-				return null;
-			}
-			if (bet >= player.chips && player.chips > 0) {
-				return applyTurnAction(player, {
-					action: "allin",
-					amount: player.chips,
-				});
-			}
-			if (bet < currentActionState.minRaise && bet < player.chips) {
-				bet = Math.min(player.chips, currentActionState.minRaise);
-			}
-			if (bet > currentActionState.maxRaiseAmount && bet < player.chips) {
-				bet = currentActionState.maxRaiseAmount;
-			}
-			if (bet < currentActionState.minRaise && bet < player.chips) {
-				return applyTurnAction(
-					player,
-					currentActionState.canCheck
-						? { action: "check" }
-						: { action: "call" },
-				);
-			}
-			if (bet >= player.chips && player.chips > 0) {
-				return applyTurnAction(player, {
-					action: "allin",
-					amount: player.chips,
-				});
-			}
-			const actual = placePlayerBet(player, bet);
-			if (actual > currentActionState.needToCall) {
-				gameState.currentBet = player.roundBet;
-				gameState.lastRaise = actual - currentActionState.needToCall;
-				gameState.raisesThisRound++;
-			}
-			addToPot(actual);
-			notifyPlayerAction(player, "raise", actual, {
-				aggressive: actual > currentActionState.needToCall,
-				voluntary: actual > 0,
-			});
-			return { action: "raise", amount: actual };
-		}
-		default:
-			return null;
+	if (Object.prototype.hasOwnProperty.call(resolvedAction.gameStatePatch, "pot")) {
+		renderPot();
 	}
 }
 
-function normalizeBotActionRequest(player, decision) {
-	if (!player || !decision) {
+function applyTurnAction(player, actionRequest) {
+	const resolvedAction = resolveTurnAction(gameState, player, actionRequest);
+	if (!resolvedAction) {
 		return null;
 	}
 
-	const actionState = getPlayerActionState(gameState, player);
+	applyResolvedTurnActionPatches(player, resolvedAction);
+	notifyPlayerAction(
+		player,
+		resolvedAction.action,
+		resolvedAction.amount,
+		resolvedAction.actionMeta,
+	);
+	if (resolvedAction.action === "fold") {
+		hidePlayerQr(player);
+	}
+	return resolvedAction;
+}
+
+function normalizeBotActionRequest(decision) {
+	if (!decision) {
+		return null;
+	}
 
 	switch (decision.action) {
 		case "fold":
 		case "check":
-			return { action: decision.action };
 		case "call":
-			return {
-				action: "call",
-				amount: Math.min(player.chips, actionState.needToCall),
-			};
+		case "allin":
+			return { action: decision.action };
 		case "raise": {
-			let amount = Number.parseInt(decision.amount, 10);
+			const amount = Number.parseInt(decision.amount, 10);
 			if (Number.isNaN(amount)) {
 				return null;
-			}
-			if (amount >= player.chips && player.chips > 0) {
-				return { action: "raise", amount: player.chips };
-			}
-			if (amount < actionState.minRaise && amount < player.chips) {
-				amount = Math.min(player.chips, actionState.minRaise);
-			}
-			if (amount > actionState.maxRaiseAmount && amount < player.chips) {
-				amount = actionState.maxRaiseAmount;
-			}
-			if (amount < actionState.minRaise && amount < player.chips) {
-				return actionState.canCheck ? { action: "check" } : {
-					action: "call",
-					amount: Math.min(player.chips, actionState.needToCall),
-				};
 			}
 			return { action: "raise", amount };
 		}
@@ -2418,7 +2316,7 @@ function runBotTurn({ player, cycles, anyUncalled, nextPlayer }) {
 
 	enqueueBotAction(() => {
 		const decision = chooseBotAction(player, gameState);
-		const actionRequest = normalizeBotActionRequest(player, decision);
+		const actionRequest = normalizeBotActionRequest(decision);
 		let resolvedAction = applyTurnAction(player, actionRequest);
 		if (!resolvedAction) {
 			logFlow("bot action fallback", {
@@ -3013,7 +2911,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-05-02-v1";
+const SERVICE_WORKER_VERSION = "2026-05-02-v2";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

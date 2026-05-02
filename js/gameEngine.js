@@ -1,4 +1,5 @@
 import { Hand } from "./pokersolver.js";
+import { getPlayerActionState } from "./shared/actionModel.js";
 
 /* ==================================================================================================
 MODULE BOUNDARY: Pure Poker Engine
@@ -370,6 +371,180 @@ export function isAllInRunout(players, currentBet) {
 		return true;
 	}
 	return actionablePlayers[0].roundBet === currentBet;
+}
+
+function buildEmptyTurnActionResolution(action, amount, actionMeta = {}) {
+	return {
+		action,
+		amount,
+		actionMeta,
+		playerPatch: {},
+		gameStatePatch: {},
+	};
+}
+
+function buildBetPlayerPatch(player, amount) {
+	const actual = Math.min(amount, player.chips);
+	const nextChips = player.chips - actual;
+	const playerPatch = {
+		roundBet: player.roundBet + actual,
+		totalBet: player.totalBet + actual,
+		chips: nextChips,
+	};
+	if (nextChips === 0) {
+		playerPatch.allIn = true;
+	}
+
+	return {
+		actual,
+		playerPatch,
+	};
+}
+
+function buildPotPatch(gameState, amount) {
+	return {
+		pot: gameState.pot + amount,
+	};
+}
+
+function buildAllInActionResolution(gameState, player, currentActionState) {
+	if (player.chips <= 0) {
+		return null;
+	}
+
+	const { actual, playerPatch } = buildBetPlayerPatch(player, player.chips);
+	const nextRoundBet = playerPatch.roundBet;
+	const isAggressiveAllIn = actual > currentActionState.needToCall;
+	const gameStatePatch = buildPotPatch(gameState, actual);
+
+	if (actual >= currentActionState.minRaise) {
+		gameStatePatch.currentBet = nextRoundBet;
+		gameStatePatch.lastRaise = actual - currentActionState.needToCall;
+		gameStatePatch.raisesThisRound = gameState.raisesThisRound + 1;
+	} else if (actual >= currentActionState.needToCall) {
+		gameStatePatch.currentBet = Math.max(gameState.currentBet, nextRoundBet);
+	}
+
+	return {
+		action: "allin",
+		amount: actual,
+		actionMeta: {
+			aggressive: isAggressiveAllIn,
+			voluntary: actual > 0,
+		},
+		playerPatch,
+		gameStatePatch,
+	};
+}
+
+function buildCallActionResolution(gameState, player, currentActionState) {
+	if (currentActionState.needToCall <= 0) {
+		return null;
+	}
+
+	const callAmount = Math.min(player.chips, currentActionState.needToCall);
+	if (callAmount === player.chips && player.chips > 0) {
+		return buildAllInActionResolution(gameState, player, currentActionState);
+	}
+
+	const { actual, playerPatch } = buildBetPlayerPatch(player, callAmount);
+
+	return {
+		action: "call",
+		amount: actual,
+		actionMeta: {
+			aggressive: false,
+			voluntary: actual > 0,
+		},
+		playerPatch,
+		gameStatePatch: buildPotPatch(gameState, actual),
+	};
+}
+
+function buildRaiseActionResolution(gameState, player, actionRequest, currentActionState) {
+	let bet = Number.parseInt(actionRequest.amount, 10);
+	if (Number.isNaN(bet)) {
+		return null;
+	}
+	if (bet >= player.chips && player.chips > 0) {
+		return buildAllInActionResolution(gameState, player, currentActionState);
+	}
+	if (bet < currentActionState.minRaise && bet < player.chips) {
+		bet = Math.min(player.chips, currentActionState.minRaise);
+	}
+	if (bet > currentActionState.maxRaiseAmount && bet < player.chips) {
+		bet = currentActionState.maxRaiseAmount;
+	}
+	if (bet < currentActionState.minRaise && bet < player.chips) {
+		return currentActionState.canCheck
+			? buildEmptyTurnActionResolution("check", 0, {
+				aggressive: false,
+				voluntary: false,
+			})
+			: buildCallActionResolution(gameState, player, currentActionState);
+	}
+	if (bet >= player.chips && player.chips > 0) {
+		return buildAllInActionResolution(gameState, player, currentActionState);
+	}
+
+	const { actual, playerPatch } = buildBetPlayerPatch(player, bet);
+	const gameStatePatch = buildPotPatch(gameState, actual);
+	if (actual > currentActionState.needToCall) {
+		gameStatePatch.currentBet = playerPatch.roundBet;
+		gameStatePatch.lastRaise = actual - currentActionState.needToCall;
+		gameStatePatch.raisesThisRound = gameState.raisesThisRound + 1;
+	}
+
+	return {
+		action: "raise",
+		amount: actual,
+		actionMeta: {
+			aggressive: actual > currentActionState.needToCall,
+			voluntary: actual > 0,
+		},
+		playerPatch,
+		gameStatePatch,
+	};
+}
+
+export function resolveTurnAction(gameState, player, actionRequest) {
+	if (!gameState || !player || !actionRequest || player.folded || player.allIn) {
+		return null;
+	}
+
+	const currentActionState = getPlayerActionState(gameState, player);
+
+	switch (actionRequest.action) {
+		case "fold":
+			return {
+				action: "fold",
+				amount: 0,
+				actionMeta: {
+					aggressive: false,
+					voluntary: false,
+				},
+				playerPatch: {
+					folded: true,
+				},
+				gameStatePatch: {},
+			};
+		case "check":
+			if (!currentActionState.canCheck) {
+				return null;
+			}
+			return buildEmptyTurnActionResolution("check", 0, {
+				aggressive: false,
+				voluntary: false,
+			});
+		case "call":
+			return buildCallActionResolution(gameState, player, currentActionState);
+		case "allin":
+			return buildAllInActionResolution(gameState, player, currentActionState);
+		case "raise":
+			return buildRaiseActionResolution(gameState, player, actionRequest, currentActionState);
+		default:
+			return null;
+	}
 }
 
 export function createHandContextState() {
