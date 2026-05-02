@@ -6,8 +6,8 @@ MODULE BOUNDARY: Pure Poker Engine
 ================================================================================================== */
 
 // CURRENT STATE: Owns hand evaluation, payout math, showdown resolution, hand-start setup,
-// turn-action resolution, betting-round progress decisions, and other pure poker helpers used by
-// the table runtime. Some street transition orchestration still remains in app.js.
+// turn-action resolution, betting-round progress decisions, street progression decisions, and other
+// pure poker helpers used by the table runtime. Browser scheduling and rendering remain in app.js.
 // TARGET STATE: gameEngine.js should own every pure poker rule and state transform that can run
 // without DOM, fetch, timers, or view objects, while app.js only orchestrates browser-facing flow.
 // PUT HERE: Deterministic poker rules, hand evaluation, payouts, betting order helpers, and state
@@ -1083,6 +1083,109 @@ export function dealHoleCardsForNewHand(gameState, shuffleFn = shuffleArray) {
 		gameStatePatch: {
 			deck,
 			cardGraveyard,
+		},
+	};
+}
+
+function getCommunityCardsToDealForPhase(phase) {
+	switch (phase) {
+		case "flop":
+			return 3;
+		case "turn":
+		case "river":
+			return 1;
+		default:
+			return 0;
+	}
+}
+
+function buildCompletedStreetPatch(gameState, completedPhase) {
+	if (!gameState.handContext || gameState.currentPhaseIndex <= 0) {
+		return {
+			handContextPatch: null,
+			streetEndReason: null,
+			checkedThrough: null,
+		};
+	}
+
+	const checkedThrough = gameState.handContext.streetAggressorSeatIndex === null;
+	const handContextPatch = {};
+	if (completedPhase === "flop") {
+		handContextPatch.flopCheckedThrough = checkedThrough;
+	} else if (completedPhase === "turn") {
+		handContextPatch.turnCheckedThrough = checkedThrough;
+	}
+
+	return {
+		handContextPatch: Object.keys(handContextPatch).length > 0 ? handContextPatch : null,
+		streetEndReason: checkedThrough ? "street_end_no_bet" : "street_end_unfired",
+		checkedThrough,
+	};
+}
+
+export function getNextPhasePlan(gameState) {
+	const activePlayers = gameState.players.filter((player) => !player.folded);
+	if (activePlayers.length <= 1) {
+		return {
+			type: "showdown",
+			reason: "onlyActivePlayer",
+			phase: "showdown",
+			activePlayers,
+			gameStatePatch: {},
+			handContextPatch: null,
+			streetEndReason: null,
+			checkedThrough: null,
+			botIntentResetReason: gameState.currentPhaseIndex > 0 ? "hand_end" : null,
+		};
+	}
+
+	const completedPhase = getCurrentPhase(gameState.currentPhaseIndex);
+	const streetPatch = buildCompletedStreetPatch(gameState, completedPhase);
+	const nextPhaseIndex = gameState.currentPhaseIndex + 1;
+	const nextPhase = getCurrentPhase(nextPhaseIndex);
+	const cardsToDeal = getCommunityCardsToDealForPhase(nextPhase);
+	const type = cardsToDeal > 0 ? "deal" : "showdown";
+
+	return {
+		type,
+		reason: type,
+		completedPhase,
+		phase: nextPhase,
+		cardsToDeal,
+		activePlayers,
+		gameStatePatch: {
+			currentPhaseIndex: nextPhaseIndex,
+		},
+		handContextPatch: streetPatch.handContextPatch,
+		streetEndReason: streetPatch.streetEndReason,
+		checkedThrough: streetPatch.checkedThrough,
+		botIntentResetReason: streetPatch.streetEndReason,
+	};
+}
+
+export function dealCommunityCardsForPhase(gameState, amount, maxCommunityCards = 5) {
+	if (maxCommunityCards - gameState.communityCards.length < amount) {
+		return null;
+	}
+
+	const deck = gameState.deck.slice();
+	const cardGraveyard = gameState.cardGraveyard.slice();
+	const burnedCard = trackUsedCard(cardGraveyard, takeDeckCard(deck));
+	const dealtCards = [];
+	for (let i = 0; i < amount; i++) {
+		const card = trackUsedCard(cardGraveyard, takeDeckCard(deck));
+		if (card) {
+			dealtCards.push(card);
+		}
+	}
+
+	return {
+		burnedCard,
+		dealtCards,
+		gameStatePatch: {
+			deck,
+			cardGraveyard,
+			communityCards: gameState.communityCards.concat(dealtCards),
 		},
 	};
 }

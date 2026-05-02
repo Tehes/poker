@@ -3,8 +3,8 @@ MODULE BOUNDARY: Main Table Runtime
 ================================================================================================== */
 
 // CURRENT STATE: Coordinates browser-facing game flow, bots, sync, timers, analytics, and DOM
-// effects. Showdown, hand-start setup, turn-action resolution, and betting-round progress decisions
-// are extracted; street transitions and browser orchestration remain here.
+// effects. Showdown, hand-start setup, turn-action resolution, betting-round progress decisions, and
+// street progression decisions are extracted; browser orchestration remains here.
 // TARGET STATE: app.js should stay as the browser-facing orchestrator only. Pure poker rules and
 // state transforms should live in gameEngine.js, while reusable UI, sync, and control primitives
 // should live in shared/*.
@@ -29,12 +29,14 @@ import {
 	createBettingRoundProgressState,
 	createHandContextState,
 	createPlayerSpotState,
+	dealCommunityCardsForPhase,
 	dealHoleCardsForNewHand,
 	getBettingRoundStartExit,
 	getBlindLevelUpdateForHand,
 	getBotRevealDecision,
 	getCurrentPhase,
 	getNextBettingRoundStep,
+	getNextPhasePlan,
 	getPlayerActionFollowUpEffects,
 	getResolvedTurnContinuation,
 	getVisibleSolvedHand,
@@ -47,8 +49,6 @@ import {
 	resetPlayersForNewHand,
 	resolveTurnAction,
 	resolveShowdown,
-	takeDeckCard,
-	trackUsedCard,
 } from "./gameEngine.js";
 import QrCreator from "./qr-creator.js";
 import {
@@ -704,6 +704,16 @@ function applyGameStatePatch(gameStatePatch) {
 	Object.assign(gameState, gameStatePatch);
 }
 
+function applyHandContextPatch(handContextPatch) {
+	if (!handContextPatch) {
+		return;
+	}
+	if (!gameState.handContext) {
+		gameState.handContext = createHandContextState();
+	}
+	Object.assign(gameState.handContext, handContextPatch);
+}
+
 function clearPlayerWinnerReaction(player) {
 	clearPlayerWinnerReactionState(player);
 	renderPlayerSeat(player);
@@ -735,11 +745,6 @@ function setPot(amount) {
 
 function setCommunityCards(cardCodes) {
 	gameState.communityCards = cardCodes.slice();
-	renderTableCommunityCards(communityCardSlots, gameState.communityCards);
-}
-
-function appendCommunityCards(cardCodes) {
-	gameState.communityCards = gameState.communityCards.concat(cardCodes);
 	renderTableCommunityCards(communityCardSlots, gameState.communityCards);
 }
 
@@ -1945,23 +1950,18 @@ function preFlop() {
 }
 
 function dealCommunityCards(amount) {
-	if (communityCardSlots.length - gameState.communityCards.length < amount) {
+	const dealPlan = dealCommunityCardsForPhase(
+		gameState,
+		amount,
+		communityCardSlots.length,
+	);
+	if (!dealPlan) {
 		console.warn("Not enough empty slots for", amount);
 		logFlow("dealCommunityCards: not enough slots");
 		return;
 	}
-	trackUsedCard(gameState.cardGraveyard, takeDeckCard(gameState.deck)); // burn
-	const dealtCards = [];
-	for (let i = 0; i < amount; i++) {
-		const card = trackUsedCard(
-			gameState.cardGraveyard,
-			takeDeckCard(gameState.deck),
-		);
-		if (card) {
-			dealtCards.push(card);
-		}
-	}
-	appendCommunityCards(dealtCards);
+	applyGameStatePatch(dealPlan.gameStatePatch);
+	renderTableCommunityCards(communityCardSlots, gameState.communityCards);
 	updateHandStrengthDisplays();
 	if (
 		gameState.spectatorMode ||
@@ -1975,47 +1975,31 @@ function setPhase() {
 	logFlow("setPhase", {
 		phase: getCurrentPhase(gameState.currentPhaseIndex),
 	});
-	// EARLY EXIT: If only one player remains, skip straight to showdown
-	const activePlayers = gameState.players.filter((p) => !p.folded);
-	if (activePlayers.length <= 1) {
-		if (gameState.currentPhaseIndex > 0) {
-			clearBotCheckRaiseIntents("hand_end");
-			clearBotPassiveValueCheckIntents("hand_end");
-		}
+	const phasePlan = getNextPhasePlan(gameState);
+	if (phasePlan.botIntentResetReason) {
+		clearBotCheckRaiseIntents(phasePlan.botIntentResetReason);
+		clearBotPassiveValueCheckIntents(phasePlan.botIntentResetReason);
+	}
+	if (phasePlan.reason === "onlyActivePlayer") {
 		return doShowdown();
 	}
 
-	const completedPhase = getCurrentPhase(gameState.currentPhaseIndex);
-	if (gameState.handContext && gameState.currentPhaseIndex > 0) {
-		const checkedThrough =
-			gameState.handContext.streetAggressorSeatIndex === null;
-		clearBotCheckRaiseIntents(
-			checkedThrough ? "street_end_no_bet" : "street_end_unfired",
-		);
-		clearBotPassiveValueCheckIntents(
-			checkedThrough ? "street_end_no_bet" : "street_end_unfired",
-		);
-		if (completedPhase === "flop") {
-			gameState.handContext.flopCheckedThrough = checkedThrough;
-		} else if (completedPhase === "turn") {
-			gameState.handContext.turnCheckedThrough = checkedThrough;
-		}
-	}
+	applyGameStatePatch(phasePlan.gameStatePatch);
+	applyHandContextPatch(phasePlan.handContextPatch);
 
-	gameState.currentPhaseIndex++;
-	switch (getCurrentPhase(gameState.currentPhaseIndex)) {
+	switch (phasePlan.phase) {
 		case "flop":
-			dealCommunityCards(3);
+			dealCommunityCards(phasePlan.cardsToDeal);
 			enqueueNotification("Flop (3 cards) dealt.");
 			startBettingRound();
 			break;
 		case "turn":
-			dealCommunityCards(1);
+			dealCommunityCards(phasePlan.cardsToDeal);
 			enqueueNotification("Turn (4th card) dealt.");
 			startBettingRound();
 			break;
 		case "river":
-			dealCommunityCards(1);
+			dealCommunityCards(phasePlan.cardsToDeal);
 			enqueueNotification("River (5th card) dealt.");
 			startBettingRound();
 			break;
@@ -2783,7 +2767,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-05-02-v4";
+const SERVICE_WORKER_VERSION = "2026-05-02-v5";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

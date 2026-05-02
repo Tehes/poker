@@ -1,11 +1,13 @@
 import {
 	advanceDealer,
 	createBettingRoundProgressState,
+	dealCommunityCardsForPhase,
 	dealHoleCardsForNewHand,
 	getBettingRoundStartExit,
 	getBettingRoundStartIndex,
 	getBlindLevelUpdateForHand,
 	getNextBettingRoundStep,
+	getNextPhasePlan,
 	getResolvedTurnContinuation,
 	hasPendingBettingRoundAction,
 	postBlinds,
@@ -766,5 +768,219 @@ Deno.test("dealHoleCardsForNewHand deals deterministic hole cards without mutati
 			cardGraveyard: ["AS", "KS", "QS", "JS"],
 		},
 	});
+	assertEquals(gameState, gameStateBefore);
+});
+
+Deno.test("getNextPhasePlan advances preflop to flop deal", () => {
+	const gameState = {
+		currentPhaseIndex: 0,
+		players: [
+			createPlayer({ name: "A" }),
+			createPlayer({ name: "B", seatIndex: 1 }),
+		],
+		handContext: {
+			streetAggressorSeatIndex: null,
+			flopCheckedThrough: false,
+			turnCheckedThrough: false,
+		},
+	};
+	const gameStateBefore = structuredClone(gameState);
+
+	const result = getNextPhasePlan(gameState);
+
+	assertEquals({
+		type: result.type,
+		reason: result.reason,
+		completedPhase: result.completedPhase,
+		phase: result.phase,
+		cardsToDeal: result.cardsToDeal,
+		gameStatePatch: result.gameStatePatch,
+		handContextPatch: result.handContextPatch,
+		botIntentResetReason: result.botIntentResetReason,
+	}, {
+		type: "deal",
+		reason: "deal",
+		completedPhase: "preflop",
+		phase: "flop",
+		cardsToDeal: 3,
+		gameStatePatch: {
+			currentPhaseIndex: 1,
+		},
+		handContextPatch: null,
+		botIntentResetReason: null,
+	});
+	assertEquals(gameState, gameStateBefore);
+});
+
+Deno.test("getNextPhasePlan records checked-through flop before turn", () => {
+	const gameState = {
+		currentPhaseIndex: 1,
+		players: [
+			createPlayer({ name: "A" }),
+			createPlayer({ name: "B", seatIndex: 1 }),
+		],
+		handContext: {
+			streetAggressorSeatIndex: null,
+			flopCheckedThrough: false,
+			turnCheckedThrough: false,
+		},
+	};
+	const gameStateBefore = structuredClone(gameState);
+
+	const result = getNextPhasePlan(gameState);
+
+	assertEquals({
+		type: result.type,
+		completedPhase: result.completedPhase,
+		phase: result.phase,
+		cardsToDeal: result.cardsToDeal,
+		handContextPatch: result.handContextPatch,
+		streetEndReason: result.streetEndReason,
+		checkedThrough: result.checkedThrough,
+		botIntentResetReason: result.botIntentResetReason,
+	}, {
+		type: "deal",
+		completedPhase: "flop",
+		phase: "turn",
+		cardsToDeal: 1,
+		handContextPatch: {
+			flopCheckedThrough: true,
+		},
+		streetEndReason: "street_end_no_bet",
+		checkedThrough: true,
+		botIntentResetReason: "street_end_no_bet",
+	});
+	assertEquals(gameState, gameStateBefore);
+});
+
+Deno.test("getNextPhasePlan records fired turn before river", () => {
+	const gameState = {
+		currentPhaseIndex: 2,
+		players: [
+			createPlayer({ name: "A" }),
+			createPlayer({ name: "B", seatIndex: 1 }),
+		],
+		handContext: {
+			streetAggressorSeatIndex: 1,
+			flopCheckedThrough: true,
+			turnCheckedThrough: true,
+		},
+	};
+
+	const result = getNextPhasePlan(gameState);
+
+	assertEquals({
+		type: result.type,
+		completedPhase: result.completedPhase,
+		phase: result.phase,
+		cardsToDeal: result.cardsToDeal,
+		handContextPatch: result.handContextPatch,
+		streetEndReason: result.streetEndReason,
+		checkedThrough: result.checkedThrough,
+	}, {
+		type: "deal",
+		completedPhase: "turn",
+		phase: "river",
+		cardsToDeal: 1,
+		handContextPatch: {
+			turnCheckedThrough: false,
+		},
+		streetEndReason: "street_end_unfired",
+		checkedThrough: false,
+	});
+});
+
+Deno.test("getNextPhasePlan returns showdown on river or single active player", () => {
+	const riverGameState = {
+		currentPhaseIndex: 3,
+		players: [
+			createPlayer({ name: "A" }),
+			createPlayer({ name: "B", seatIndex: 1 }),
+		],
+		handContext: {
+			streetAggressorSeatIndex: null,
+		},
+	};
+	const foldedGameState = {
+		currentPhaseIndex: 2,
+		players: [
+			createPlayer({ name: "A" }),
+			createPlayer({ name: "B", seatIndex: 1, folded: true }),
+		],
+		handContext: {
+			streetAggressorSeatIndex: null,
+		},
+	};
+
+	const riverPlan = getNextPhasePlan(riverGameState);
+	const foldedPlan = getNextPhasePlan(foldedGameState);
+
+	assertEquals({
+		type: riverPlan.type,
+		reason: riverPlan.reason,
+		completedPhase: riverPlan.completedPhase,
+		phase: riverPlan.phase,
+		cardsToDeal: riverPlan.cardsToDeal,
+		gameStatePatch: riverPlan.gameStatePatch,
+		streetEndReason: riverPlan.streetEndReason,
+	}, {
+		type: "showdown",
+		reason: "showdown",
+		completedPhase: "river",
+		phase: "showdown",
+		cardsToDeal: 0,
+		gameStatePatch: {
+			currentPhaseIndex: 4,
+		},
+		streetEndReason: "street_end_no_bet",
+	});
+	assertEquals({
+		type: foldedPlan.type,
+		reason: foldedPlan.reason,
+		phase: foldedPlan.phase,
+		gameStatePatch: foldedPlan.gameStatePatch,
+		botIntentResetReason: foldedPlan.botIntentResetReason,
+		activePlayers: foldedPlan.activePlayers.map((player) => player.name),
+	}, {
+		type: "showdown",
+		reason: "onlyActivePlayer",
+		phase: "showdown",
+		gameStatePatch: {},
+		botIntentResetReason: "hand_end",
+		activePlayers: ["A"],
+	});
+});
+
+Deno.test("dealCommunityCardsForPhase burns and deals without mutating state", () => {
+	const gameState = {
+		deck: ["2C", "3C", "4C", "5C"],
+		cardGraveyard: ["AS"],
+		communityCards: ["KH", "QD", "JS"],
+	};
+	const gameStateBefore = structuredClone(gameState);
+
+	const result = dealCommunityCardsForPhase(gameState, 1);
+
+	assertEquals(result, {
+		burnedCard: "2C",
+		dealtCards: ["3C"],
+		gameStatePatch: {
+			deck: ["4C", "5C"],
+			cardGraveyard: ["AS", "2C", "3C"],
+			communityCards: ["KH", "QD", "JS", "3C"],
+		},
+	});
+	assertEquals(gameState, gameStateBefore);
+});
+
+Deno.test("dealCommunityCardsForPhase rejects overfilled boards without mutating state", () => {
+	const gameState = {
+		deck: ["2C", "3C"],
+		cardGraveyard: [],
+		communityCards: ["KH", "QD", "JS", "TC"],
+	};
+	const gameStateBefore = structuredClone(gameState);
+
+	assertEquals(dealCommunityCardsForPhase(gameState, 2), null);
 	assertEquals(gameState, gameStateBefore);
 });
