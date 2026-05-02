@@ -10,8 +10,10 @@ import {
 	getNextPhasePlan,
 	getResolvedTurnContinuation,
 	hasPendingBettingRoundAction,
+	isAllInRunout,
 	postBlinds,
 	resetPlayersForNewHand,
+	resolveShowdown,
 	resolveTurnAction,
 } from "./gameEngine.js";
 
@@ -100,6 +102,388 @@ function createStats({ hands = 0 } = {}) {
 		allins: 0,
 	};
 }
+
+function applyPlayerPatches(playerPatches) {
+	playerPatches.forEach(({ player, patch }) => {
+		Object.assign(player, patch);
+	});
+}
+
+function applyGameStatePatch(gameState, gameStatePatch) {
+	Object.assign(gameState, gameStatePatch);
+}
+
+function applyHandContextPatch(gameState, handContextPatch) {
+	if (!handContextPatch) {
+		return;
+	}
+	Object.assign(gameState.handContext, handContextPatch);
+}
+
+function summarizeShowdown(result) {
+	return {
+		activePlayers: result.activePlayers.map((player) => player.name),
+		contributors: result.contributors.map((player) => ({
+			player: player.name,
+			totalBet: player.totalBet,
+		})),
+		hadShowdown: result.hadShowdown,
+		uncontestedWinner: result.uncontestedWinner?.name ?? null,
+		mainPotWinners: result.mainPotWinners.map((player) => player.name),
+		winningPlayers: result.winningPlayers.map((player) => player.name),
+		transferQueue: result.transferQueue.map(({ player, amount }) => ({
+			player: player.name,
+			amount,
+		})),
+		potResults: result.potResults.map((potResult) => ({
+			...potResult,
+			players: potResult.players.slice().sort(),
+		})),
+		totalPayoutByPlayer: Array.from(result.totalPayoutByPlayer.entries()).map(
+			([player, amount]) => ({
+				player: player.name,
+				amount,
+			}),
+		),
+		totalPot: result.totalPot,
+	};
+}
+
+function createFlowGameState({ players, deck, smallBlind = 10, bigBlind = 20 }) {
+	return {
+		currentPhaseIndex: 0,
+		currentBet: 0,
+		pot: 0,
+		raisesThisRound: 0,
+		blindLevel: 0,
+		smallBlind,
+		bigBlind,
+		lastRaise: bigBlind,
+		deck,
+		cardGraveyard: [],
+		communityCards: [],
+		players,
+		openCardsMode: false,
+		spectatorMode: false,
+		handContext: null,
+		gameFinished: false,
+		handInProgress: false,
+		chipTransfer: null,
+	};
+}
+
+function startEngineHand(gameState) {
+	const resetPlan = resetPlayersForNewHand(gameState);
+	applyPlayerPatches(resetPlan.playerPatches);
+	applyGameStatePatch(gameState, resetPlan.gameStatePatch);
+
+	const dealerPlan = advanceDealer(gameState.players, 0);
+	applyPlayerPatches(dealerPlan.playerPatches);
+	gameState.players = dealerPlan.players;
+
+	const blindPlan = postBlinds(gameState);
+	applyPlayerPatches(blindPlan.playerPatches);
+	applyGameStatePatch(gameState, blindPlan.gameStatePatch);
+
+	const dealPlan = dealHoleCardsForNewHand(gameState, (deck) => deck);
+	applyPlayerPatches(dealPlan.playerPatches);
+	applyGameStatePatch(gameState, dealPlan.gameStatePatch);
+
+	return {
+		resetPlan,
+		dealerPlan,
+		blindPlan,
+		dealPlan,
+	};
+}
+
+function applyTurnActionForTest(gameState, player, actionRequest) {
+	const resolvedAction = resolveTurnAction(gameState, player, actionRequest);
+	if (!resolvedAction) {
+		throw new Error(`Unresolved action for ${player.name}: ${actionRequest.action}`);
+	}
+	Object.assign(player, resolvedAction.playerPatch);
+	Object.assign(gameState, resolvedAction.gameStatePatch);
+	return resolvedAction;
+}
+
+function resetStreetForTest(gameState) {
+	gameState.currentBet = 0;
+	gameState.lastRaise = gameState.bigBlind;
+	gameState.raisesThisRound = 0;
+	gameState.players.forEach((player) => {
+		player.roundBet = 0;
+	});
+	if (gameState.handContext) {
+		gameState.handContext.streetAggressorSeatIndex = null;
+	}
+}
+
+function advancePhaseForTest(gameState) {
+	const phasePlan = getNextPhasePlan(gameState);
+	applyGameStatePatch(gameState, phasePlan.gameStatePatch);
+	applyHandContextPatch(gameState, phasePlan.handContextPatch);
+	if (phasePlan.cardsToDeal > 0) {
+		const dealPlan = dealCommunityCardsForPhase(gameState, phasePlan.cardsToDeal);
+		applyGameStatePatch(gameState, dealPlan.gameStatePatch);
+		resetStreetForTest(gameState);
+	}
+	return phasePlan;
+}
+
+function runOutToShowdownForTest(gameState) {
+	const phasePlans = [];
+	while (gameState.currentPhaseIndex < 4) {
+		phasePlans.push(advancePhaseForTest(gameState));
+	}
+	return phasePlans;
+}
+
+function applyShowdownPayouts(result) {
+	result.transferQueue.forEach(({ player, amount }) => {
+		player.chips += amount;
+	});
+}
+
+Deno.test("resolveShowdown awards an uncontested pot", () => {
+	const winner = createPlayer({
+		name: "Winner",
+		totalBet: 40,
+		holeCards: ["AS", "AH"],
+	});
+	const folded = createPlayer({
+		name: "Folded",
+		seatIndex: 1,
+		totalBet: 40,
+		folded: true,
+		holeCards: ["KS", "KH"],
+	});
+	const players = [winner, folded];
+	const playersBefore = structuredClone(players);
+
+	const result = resolveShowdown(players, ["2C", "7D", "9H", "TC", "3S"]);
+
+	assertEquals(summarizeShowdown(result), {
+		activePlayers: ["Winner"],
+		contributors: [
+			{ player: "Winner", totalBet: 40 },
+			{ player: "Folded", totalBet: 40 },
+		],
+		hadShowdown: false,
+		uncontestedWinner: "Winner",
+		mainPotWinners: ["Winner"],
+		winningPlayers: ["Winner"],
+		transferQueue: [{ player: "Winner", amount: 80 }],
+		potResults: [],
+		totalPayoutByPlayer: [{ player: "Winner", amount: 80 }],
+		totalPot: 80,
+	});
+	assertEquals(players, playersBefore);
+});
+
+Deno.test("resolveShowdown awards a normal showdown to the best hand", () => {
+	const winner = createPlayer({
+		name: "Aces",
+		totalBet: 100,
+		holeCards: ["AS", "AH"],
+	});
+	const loser = createPlayer({
+		name: "Kings",
+		seatIndex: 1,
+		totalBet: 100,
+		holeCards: ["KS", "KH"],
+	});
+
+	const result = resolveShowdown(
+		[winner, loser],
+		["2C", "7D", "9H", "TC", "3S"],
+	);
+
+	assertEquals(summarizeShowdown(result), {
+		activePlayers: ["Aces", "Kings"],
+		contributors: [
+			{ player: "Aces", totalBet: 100 },
+			{ player: "Kings", totalBet: 100 },
+		],
+		hadShowdown: true,
+		uncontestedWinner: null,
+		mainPotWinners: ["Aces"],
+		winningPlayers: ["Aces"],
+		transferQueue: [{ player: "Aces", amount: 200 }],
+		potResults: [{
+			players: ["Aces"],
+			amount: 200,
+			hand: "Pair",
+			isRefundOnly: false,
+		}],
+		totalPayoutByPlayer: [{ player: "Aces", amount: 200 }],
+		totalPot: 200,
+	});
+});
+
+Deno.test("resolveShowdown splits a tied pot", () => {
+	const playerA = createPlayer({
+		name: "A",
+		totalBet: 100,
+		dealer: true,
+		holeCards: ["2S", "3S"],
+	});
+	const playerB = createPlayer({
+		name: "B",
+		seatIndex: 1,
+		totalBet: 100,
+		holeCards: ["4D", "5D"],
+	});
+
+	const result = resolveShowdown(
+		[playerA, playerB],
+		["AS", "KD", "QH", "JC", "TC"],
+	);
+
+	assertEquals(summarizeShowdown(result), {
+		activePlayers: ["A", "B"],
+		contributors: [
+			{ player: "A", totalBet: 100 },
+			{ player: "B", totalBet: 100 },
+		],
+		hadShowdown: true,
+		uncontestedWinner: null,
+		mainPotWinners: ["A", "B"],
+		winningPlayers: ["A", "B"],
+		transferQueue: [
+			{ player: "A", amount: 100 },
+			{ player: "B", amount: 100 },
+		],
+		potResults: [{
+			players: ["A", "B"],
+			amount: 200,
+			hand: null,
+			isRefundOnly: false,
+		}],
+		totalPayoutByPlayer: [
+			{ player: "A", amount: 100 },
+			{ player: "B", amount: 100 },
+		],
+		totalPot: 200,
+	});
+});
+
+Deno.test("resolveShowdown handles a side pot with an all-in player", () => {
+	const allInWinner = createPlayer({
+		name: "All-in",
+		totalBet: 50,
+		allIn: true,
+		holeCards: ["AS", "AH"],
+	});
+	const sideWinner = createPlayer({
+		name: "Side",
+		seatIndex: 1,
+		totalBet: 100,
+		holeCards: ["KS", "KH"],
+	});
+	const loser = createPlayer({
+		name: "Loser",
+		seatIndex: 2,
+		totalBet: 100,
+		holeCards: ["QS", "QH"],
+	});
+
+	const result = resolveShowdown(
+		[allInWinner, sideWinner, loser],
+		["2C", "7D", "9H", "TC", "3S"],
+	);
+
+	assertEquals(summarizeShowdown(result), {
+		activePlayers: ["All-in", "Side", "Loser"],
+		contributors: [
+			{ player: "All-in", totalBet: 50 },
+			{ player: "Side", totalBet: 100 },
+			{ player: "Loser", totalBet: 100 },
+		],
+		hadShowdown: true,
+		uncontestedWinner: null,
+		mainPotWinners: ["All-in"],
+		winningPlayers: ["All-in", "Side"],
+		transferQueue: [
+			{ player: "All-in", amount: 150 },
+			{ player: "Side", amount: 100 },
+		],
+		potResults: [
+			{
+				players: ["All-in"],
+				amount: 150,
+				hand: "Pair",
+				isRefundOnly: false,
+			},
+			{
+				players: ["Side"],
+				amount: 100,
+				hand: "Pair",
+				isRefundOnly: false,
+			},
+		],
+		totalPayoutByPlayer: [
+			{ player: "All-in", amount: 150 },
+			{ player: "Side", amount: 100 },
+		],
+		totalPot: 250,
+	});
+});
+
+Deno.test("resolveShowdown marks refund-only side pots", () => {
+	const mainWinner = createPlayer({
+		name: "Main",
+		totalBet: 50,
+		allIn: true,
+		holeCards: ["AS", "AH"],
+	});
+	const refunded = createPlayer({
+		name: "Refunded",
+		seatIndex: 1,
+		totalBet: 100,
+		holeCards: ["KS", "KH"],
+	});
+
+	const result = resolveShowdown(
+		[mainWinner, refunded],
+		["2C", "7D", "9H", "TC", "3S"],
+	);
+
+	assertEquals(summarizeShowdown(result), {
+		activePlayers: ["Main", "Refunded"],
+		contributors: [
+			{ player: "Main", totalBet: 50 },
+			{ player: "Refunded", totalBet: 100 },
+		],
+		hadShowdown: true,
+		uncontestedWinner: null,
+		mainPotWinners: ["Main"],
+		winningPlayers: ["Main"],
+		transferQueue: [
+			{ player: "Main", amount: 100 },
+			{ player: "Refunded", amount: 50 },
+		],
+		potResults: [
+			{
+				players: ["Main"],
+				amount: 100,
+				hand: "Pair",
+				isRefundOnly: false,
+			},
+			{
+				players: ["Refunded"],
+				amount: 50,
+				hand: null,
+				isRefundOnly: true,
+			},
+		],
+		totalPayoutByPlayer: [
+			{ player: "Main", amount: 100 },
+			{ player: "Refunded", amount: 50 },
+		],
+		totalPot: 150,
+	});
+});
 
 Deno.test("resolveTurnAction allows check with no call required", () => {
 	const { gameState, player } = createGameState();
@@ -983,4 +1367,286 @@ Deno.test("dealCommunityCardsForPhase rejects overfilled boards without mutating
 
 	assertEquals(dealCommunityCardsForPhase(gameState, 2), null);
 	assertEquals(gameState, gameStateBefore);
+});
+
+Deno.test("heads-up setup makes dealer the small blind and starts preflop action on the dealer", () => {
+	const button = createPlayer({ name: "Button", seatIndex: 0, chips: 1000 });
+	const bigBlind = createPlayer({ name: "Big Blind", seatIndex: 1, chips: 1000 });
+	const gameState = createFlowGameState({
+		players: [button, bigBlind],
+		deck: ["AS", "AH", "KS", "KH"],
+	});
+
+	startEngineHand(gameState);
+	const startIndex = getBettingRoundStartIndex(gameState.players, 0);
+
+	assertEquals({
+		players: gameState.players.map((player) => ({
+			name: player.name,
+			dealer: player.dealer,
+			smallBlind: player.smallBlind,
+			bigBlind: player.bigBlind,
+			roundBet: player.roundBet,
+		})),
+		startIndex,
+		startPlayer: gameState.players[startIndex].name,
+	}, {
+		players: [
+			{
+				name: "Button",
+				dealer: true,
+				smallBlind: true,
+				bigBlind: false,
+				roundBet: 10,
+			},
+			{
+				name: "Big Blind",
+				dealer: false,
+				smallBlind: false,
+				bigBlind: true,
+				roundBet: 20,
+			},
+		],
+		startIndex: 0,
+		startPlayer: "Button",
+	});
+});
+
+Deno.test("full engine flow plays a heads-up hand to showdown", () => {
+	const button = createPlayer({ name: "Button", seatIndex: 0, chips: 1000 });
+	const bigBlind = createPlayer({ name: "Big Blind", seatIndex: 1, chips: 1000 });
+	const gameState = createFlowGameState({
+		players: [button, bigBlind],
+		deck: [
+			"AS",
+			"AH",
+			"KS",
+			"KH",
+			"2C",
+			"7D",
+			"9H",
+			"TC",
+			"3S",
+			"4C",
+			"5C",
+			"6D",
+		],
+	});
+
+	startEngineHand(gameState);
+	applyTurnActionForTest(gameState, button, { action: "call" });
+	applyTurnActionForTest(gameState, bigBlind, { action: "check" });
+	advancePhaseForTest(gameState);
+	applyTurnActionForTest(gameState, bigBlind, { action: "check" });
+	applyTurnActionForTest(gameState, button, { action: "check" });
+	advancePhaseForTest(gameState);
+	applyTurnActionForTest(gameState, bigBlind, { action: "check" });
+	applyTurnActionForTest(gameState, button, { action: "check" });
+	advancePhaseForTest(gameState);
+	applyTurnActionForTest(gameState, bigBlind, { action: "check" });
+	applyTurnActionForTest(gameState, button, { action: "check" });
+	advancePhaseForTest(gameState);
+
+	const showdown = resolveShowdown(gameState.players, gameState.communityCards);
+	applyShowdownPayouts(showdown);
+
+	assertEquals({
+		currentPhaseIndex: gameState.currentPhaseIndex,
+		communityCards: gameState.communityCards,
+		pot: gameState.pot,
+		totalBets: gameState.players.map((player) => ({
+			player: player.name,
+			totalBet: player.totalBet,
+		})),
+		flopCheckedThrough: gameState.handContext.flopCheckedThrough,
+		turnCheckedThrough: gameState.handContext.turnCheckedThrough,
+		showdown: summarizeShowdown(showdown),
+		chips: gameState.players.map((player) => ({
+			player: player.name,
+			chips: player.chips,
+		})),
+	}, {
+		currentPhaseIndex: 4,
+		communityCards: ["7D", "9H", "TC", "4C", "6D"],
+		pot: 40,
+		totalBets: [
+			{ player: "Button", totalBet: 20 },
+			{ player: "Big Blind", totalBet: 20 },
+		],
+		flopCheckedThrough: true,
+		turnCheckedThrough: true,
+		showdown: {
+			activePlayers: ["Button", "Big Blind"],
+			contributors: [
+				{ player: "Button", totalBet: 20 },
+				{ player: "Big Blind", totalBet: 20 },
+			],
+			hadShowdown: true,
+			uncontestedWinner: null,
+			mainPotWinners: ["Button"],
+			winningPlayers: ["Button"],
+			transferQueue: [{ player: "Button", amount: 40 }],
+			potResults: [{
+				players: ["Button"],
+				amount: 40,
+				hand: "Pair",
+				isRefundOnly: false,
+			}],
+			totalPayoutByPlayer: [{ player: "Button", amount: 40 }],
+			totalPot: 40,
+		},
+		chips: [
+			{ player: "Button", chips: 1020 },
+			{ player: "Big Blind", chips: 980 },
+		],
+	});
+});
+
+Deno.test("full engine flow removes a busted player after a three-player hand", () => {
+	const dealer = createPlayer({ name: "Dealer", seatIndex: 0, chips: 1000 });
+	const smallBlind = createPlayer({ name: "Small Blind", seatIndex: 1, chips: 1000 });
+	const shortStack = createPlayer({ name: "Short", seatIndex: 2, chips: 20 });
+	const gameState = createFlowGameState({
+		players: [dealer, smallBlind, shortStack],
+		deck: [
+			"AS",
+			"AH",
+			"KS",
+			"KH",
+			"QS",
+			"QH",
+			"2C",
+			"7D",
+			"9H",
+			"TC",
+			"3S",
+			"4C",
+			"5C",
+			"6D",
+		],
+	});
+
+	startEngineHand(gameState);
+	applyTurnActionForTest(gameState, dealer, { action: "call" });
+	applyTurnActionForTest(gameState, smallBlind, { action: "call" });
+	runOutToShowdownForTest(gameState);
+	const showdown = resolveShowdown(gameState.players, gameState.communityCards);
+	applyShowdownPayouts(showdown);
+	const showdownSummary = summarizeShowdown(showdown);
+	const nextHandPlan = resetPlayersForNewHand(gameState);
+	applyPlayerPatches(nextHandPlan.playerPatches);
+	applyGameStatePatch(gameState, nextHandPlan.gameStatePatch);
+
+	assertEquals({
+		communityCards: gameState.communityCards,
+		showdown: showdownSummary,
+		bustedPlayers: nextHandPlan.bustedPlayers.map((player) => player.name),
+		remainingPlayers: gameState.players.map((player) => player.name),
+		chips: [dealer, smallBlind, shortStack].map((player) => ({
+			player: player.name,
+			chips: player.chips,
+		})),
+	}, {
+		communityCards: [],
+		showdown: {
+			activePlayers: ["Dealer", "Small Blind", "Short"],
+			contributors: [
+				{ player: "Dealer", totalBet: 20 },
+				{ player: "Small Blind", totalBet: 20 },
+				{ player: "Short", totalBet: 20 },
+			],
+			hadShowdown: true,
+			uncontestedWinner: null,
+			mainPotWinners: ["Dealer"],
+			winningPlayers: ["Dealer"],
+			transferQueue: [{ player: "Dealer", amount: 60 }],
+			potResults: [{
+				players: ["Dealer"],
+				amount: 60,
+				hand: "Pair",
+				isRefundOnly: false,
+			}],
+			totalPayoutByPlayer: [{ player: "Dealer", amount: 60 }],
+			totalPot: 60,
+		},
+		bustedPlayers: ["Short"],
+		remainingPlayers: ["Dealer", "Small Blind"],
+		chips: [
+			{ player: "Dealer", chips: 1040 },
+			{ player: "Small Blind", chips: 980 },
+			{ player: "Short", chips: 0 },
+		],
+	});
+});
+
+Deno.test("full engine flow runs out a preflop all-in", () => {
+	const button = createPlayer({ name: "Button", seatIndex: 0, chips: 1000 });
+	const shortStack = createPlayer({ name: "Short", seatIndex: 1, chips: 20 });
+	const gameState = createFlowGameState({
+		players: [button, shortStack],
+		deck: [
+			"KS",
+			"KH",
+			"AS",
+			"AH",
+			"2C",
+			"7D",
+			"9H",
+			"TC",
+			"3S",
+			"4C",
+			"5C",
+			"6D",
+		],
+	});
+
+	startEngineHand(gameState);
+	applyTurnActionForTest(gameState, button, { action: "call" });
+	const isRunout = isAllInRunout(gameState.players, gameState.currentBet);
+	const phasePlans = runOutToShowdownForTest(gameState);
+	const showdown = resolveShowdown(gameState.players, gameState.communityCards);
+	applyShowdownPayouts(showdown);
+
+	assertEquals({
+		isRunout,
+		phases: phasePlans.map((phasePlan) => phasePlan.phase),
+		currentPhaseIndex: gameState.currentPhaseIndex,
+		communityCards: gameState.communityCards,
+		shortAllIn: shortStack.allIn,
+		showdown: summarizeShowdown(showdown),
+		chips: gameState.players.map((player) => ({
+			player: player.name,
+			chips: player.chips,
+		})),
+	}, {
+		isRunout: true,
+		phases: ["flop", "turn", "river", "showdown"],
+		currentPhaseIndex: 4,
+		communityCards: ["7D", "9H", "TC", "4C", "6D"],
+		shortAllIn: true,
+		showdown: {
+			activePlayers: ["Button", "Short"],
+			contributors: [
+				{ player: "Button", totalBet: 20 },
+				{ player: "Short", totalBet: 20 },
+			],
+			hadShowdown: true,
+			uncontestedWinner: null,
+			mainPotWinners: ["Short"],
+			winningPlayers: ["Short"],
+			transferQueue: [{ player: "Short", amount: 40 }],
+			potResults: [{
+				players: ["Short"],
+				amount: 40,
+				hand: "Pair",
+				isRefundOnly: false,
+			}],
+			totalPayoutByPlayer: [{ player: "Short", amount: 40 }],
+			totalPot: 40,
+		},
+		chips: [
+			{ player: "Button", chips: 980 },
+			{ player: "Short", chips: 40 },
+		],
+	});
 });
