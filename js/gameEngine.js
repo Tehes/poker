@@ -5,9 +5,9 @@ import { getPlayerActionState } from "./shared/actionModel.js";
 MODULE BOUNDARY: Pure Poker Engine
 ================================================================================================== */
 
-// CURRENT STATE: Owns hand evaluation, payout math, showdown resolution, and other pure poker
-// helpers used by the table runtime. Some setup and betting-round state transforms still remain in
-// app.js.
+// CURRENT STATE: Owns hand evaluation, payout math, showdown resolution, turn-action resolution,
+// betting-round progress decisions, and other pure poker helpers used by the table runtime. Some
+// street setup/reset orchestration still remains in app.js.
 // TARGET STATE: gameEngine.js should own every pure poker rule and state transform that can run
 // without DOM, fetch, timers, or view objects, while app.js only orchestrates browser-facing flow.
 // PUT HERE: Deterministic poker rules, hand evaluation, payouts, betting order helpers, and state
@@ -864,6 +864,132 @@ export function getBettingRoundStartIndex(players, currentPhaseIndex) {
 	}
 	const dealerIndex = players.findIndex((player) => player.dealer);
 	return dealerIndex === -1 ? 0 : (dealerIndex + 1) % players.length;
+}
+
+export function createBettingRoundProgressState(gameState) {
+	return {
+		nextIndex: getBettingRoundStartIndex(gameState.players, gameState.currentPhaseIndex),
+		cycles: 0,
+	};
+}
+
+export function getBettingRoundStartExit(gameState) {
+	const activePlayers = gameState.players.filter((player) => !player.folded);
+	const actionablePlayers = activePlayers.filter((player) => !player.allIn);
+	if (activePlayers.length > 1 && actionablePlayers.length > 1) {
+		return null;
+	}
+
+	return {
+		type: "advance",
+		reason: "startBettingRound",
+		activePlayerCount: activePlayers.length,
+		actionablePlayerCount: actionablePlayers.length,
+	};
+}
+
+export function hasPendingBettingRoundAction(gameState, cycles) {
+	if (gameState.currentBet === 0) {
+		return cycles < gameState.players.filter((player) => !player.folded && !player.allIn).length;
+	}
+	return gameState.players.some((player) =>
+		!player.folded && !player.allIn && player.roundBet < gameState.currentBet
+	);
+}
+
+function shouldMatchedPlayerActThisPass(gameState, cycles) {
+	return (gameState.currentPhaseIndex === 0 && cycles <= gameState.players.length) ||
+		(
+			gameState.currentPhaseIndex > 0 &&
+			gameState.currentBet === 0 &&
+			cycles <= gameState.players.length
+		);
+}
+
+export function getNextBettingRoundStep(gameState, progressState) {
+	const activePlayers = gameState.players.filter((player) => !player.folded);
+	const actionablePlayers = activePlayers.filter((player) => !player.allIn);
+	if (activePlayers.length <= 1 || actionablePlayers.length === 0) {
+		return {
+			type: "advance",
+			reason: "nextPlayer",
+			activePlayers,
+			progressState,
+		};
+	}
+
+	const index = progressState.nextIndex % gameState.players.length;
+	const player = gameState.players[index];
+	const nextProgressState = {
+		nextIndex: progressState.nextIndex + 1,
+		cycles: progressState.cycles + 1,
+	};
+
+	if (player.folded || player.allIn) {
+		return {
+			type: "skip",
+			reason: "foldedAllIn",
+			player,
+			index,
+			previousCycles: progressState.cycles,
+			cycles: nextProgressState.cycles,
+			progressState: nextProgressState,
+		};
+	}
+
+	if (player.roundBet >= gameState.currentBet) {
+		if (shouldMatchedPlayerActThisPass(gameState, nextProgressState.cycles)) {
+			return {
+				type: "act",
+				reason: "firstPassMatched",
+				player,
+				index,
+				previousCycles: progressState.cycles,
+				cycles: nextProgressState.cycles,
+				progressState: nextProgressState,
+			};
+		}
+		if (hasPendingBettingRoundAction(gameState, nextProgressState.cycles)) {
+			return {
+				type: "skip",
+				reason: "waitUncalled",
+				player,
+				index,
+				previousCycles: progressState.cycles,
+				cycles: nextProgressState.cycles,
+				progressState: nextProgressState,
+			};
+		}
+		return {
+			type: "advance",
+			reason: "matched",
+			player,
+			index,
+			previousCycles: progressState.cycles,
+			cycles: nextProgressState.cycles,
+			progressState: nextProgressState,
+		};
+	}
+
+	return {
+		type: "act",
+		reason: "owesAction",
+		player,
+		index,
+		previousCycles: progressState.cycles,
+		cycles: nextProgressState.cycles,
+		progressState: nextProgressState,
+	};
+}
+
+export function getResolvedTurnContinuation(gameState, cycles) {
+	if (cycles < gameState.players.length) {
+		return { type: "next" };
+	}
+	if (hasPendingBettingRoundAction(gameState, cycles)) {
+		return { type: "wait" };
+	}
+	return { type: "advance" };
 }
 
 export function calculateWinProbabilities(

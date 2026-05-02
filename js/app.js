@@ -3,8 +3,8 @@ MODULE BOUNDARY: Main Table Runtime
 ================================================================================================== */
 
 // CURRENT STATE: Coordinates browser-facing game flow, bots, sync, timers, analytics, and DOM
-// effects. Showdown resolution is now extracted, but some setup and betting-round orchestration
-// still remains here as legacy transition code.
+// effects. Showdown, turn-action resolution, and betting-round progress decisions are extracted;
+// street setup/reset and browser orchestration remain here.
 // TARGET STATE: app.js should stay as the browser-facing orchestrator only. Pure poker rules and
 // state transforms should live in gameEngine.js, while reusable UI, sync, and control primitives
 // should live in shared/*.
@@ -25,16 +25,19 @@ import {
 } from "./bot.js";
 import {
 	calculateWinProbabilities,
+	createBettingRoundProgressState,
 	createHandContextState,
 	createPlayerSpotState,
-	getBettingRoundStartIndex,
+	getBettingRoundStartExit,
 	getBigBlindForLevel,
 	getBlindLevelForHand,
 	getBlindSeatIndexes,
 	getBotRevealDecision,
 	getCurrentPhase,
 	getNextDealerIndex,
+	getNextBettingRoundStep,
 	getPlayerActionFollowUpEffects,
+	getResolvedTurnContinuation,
 	getVisibleSolvedHand,
 	INITIAL_BIG_BLIND,
 	INITIAL_DECK,
@@ -2216,15 +2219,15 @@ function clearActiveTurnPlayer(sync = true) {
 function continueAfterResolvedTurn({
 	player,
 	cycles,
-	anyUncalled,
 	nextPlayer,
 	logPrefix,
 	advanceReason,
 }) {
-	if (cycles < gameState.players.length) {
+	const continuation = getResolvedTurnContinuation(gameState, cycles);
+	if (continuation.type === "next") {
 		logFlow(`${logPrefix} next`, { name: player.name });
 		nextPlayer();
-	} else if (anyUncalled()) {
+	} else if (continuation.type === "wait") {
 		logFlow(`${logPrefix} wait`, { name: player.name });
 		nextPlayer();
 	} else {
@@ -2307,7 +2310,7 @@ function normalizeBotActionRequest(decision) {
 	}
 }
 
-function runBotTurn({ player, cycles, anyUncalled, nextPlayer }) {
+function runBotTurn({ player, cycles, nextPlayer }) {
 	setActiveTurnPlayer(player);
 	humanTurnController.hide();
 	clearPlayerActionLabel(player);
@@ -2334,7 +2337,6 @@ function runBotTurn({ player, cycles, anyUncalled, nextPlayer }) {
 		continueAfterResolvedTurn({
 			player,
 			cycles,
-			anyUncalled,
 			nextPlayer,
 			logPrefix: "bot",
 			advanceReason: "bot",
@@ -2370,57 +2372,36 @@ function startBettingRound() {
 	);
 	clearPendingAction();
 
-	// --- Early Exit Checks -------------------------------------------------------
-	// EARLY EXIT: Skip betting if only one player remains or all are all-in
-	const activePlayers = gameState.players.filter((p) => !p.folded);
-	const actionable = activePlayers.filter((p) => !p.allIn);
-	if (activePlayers.length <= 1 || actionable.length <= 1) {
+	const startExit = getBettingRoundStartExit(gameState);
+	if (startExit) {
 		logFlow("skip betting round", {
-			active: activePlayers.length,
-			actionable: actionable.length,
+			active: startExit.activePlayerCount,
+			actionable: startExit.actionablePlayerCount,
 		});
 		clearActiveTurnPlayer(false);
 		clearPendingAction();
-		return queueRunoutPhaseAdvance("startBettingRound");
+		return queueRunoutPhaseAdvance(startExit.reason);
 	}
 
-	// --- Start Index -------------------------------------------------------------
-	// 2) Determine start index
-	const startIdx = getBettingRoundStartIndex(
-		gameState.players,
-		gameState.currentPhaseIndex,
-	);
+	let progressState = createBettingRoundProgressState(gameState);
 
 	logFlow("betting start index", {
-		index: startIdx,
-		player: gameState.players[startIdx].name,
+		index: progressState.nextIndex,
+		player: gameState.players[progressState.nextIndex].name,
 	});
 
 	gameState.raisesThisRound = 0;
-	let idx = startIdx;
-	let cycles = 0;
-
-	function anyUncalled() {
-		if (gameState.currentBet === 0) {
-			// Post-flop: Prüfe ob alle Spieler schon dran waren
-			return cycles <
-				gameState.players.filter((p) => !p.folded && !p.allIn).length;
-		}
-		return gameState.players.some((p) =>
-			!p.folded && !p.allIn && p.roundBet < gameState.currentBet
-		);
-	}
 
 	// --- Turn Loop ----------------------------------------------------------------
 	function nextPlayer() {
-		// --- GLOBAL GUARD -------------------------------------------------
-		// If no player can act anymore (all folded or all all-in),
-		// the betting round is over and we advance the phase.
-		const activePlayers = gameState.players.filter((p) => !p.folded);
-		const actionablePlayers = activePlayers.filter((p) => !p.allIn);
-		if (activePlayers.length <= 1 || actionablePlayers.length === 0) {
+		const step = getNextBettingRoundStep(gameState, progressState);
+		if (step.progressState) {
+			progressState = step.progressState;
+		}
+
+		if (step.type === "advance" && step.reason === "nextPlayer") {
 			logFlow("no actionable players, advance phase (nextPlayer)", {
-				active: activePlayers.map((p) => ({
+				active: step.activePlayers.map((p) => ({
 					name: p.name,
 					allIn: p.allIn,
 					roundBet: p.roundBet,
@@ -2431,64 +2412,51 @@ function startBettingRound() {
 			return queueRunoutPhaseAdvance("nextPlayer");
 		}
 
-		// -------------------------------------------------------------------
-		// Find next player who still owes action
-		const player = gameState.players[idx % gameState.players.length];
 		logFlow(
 			"nextPlayer",
 			{
-				index: idx % gameState.players.length,
-				cycles,
-				name: player.name,
-				folded: player.folded,
-				allIn: player.allIn,
-				roundBet: player.roundBet,
+				index: step.index,
+				cycles: step.previousCycles,
+				name: step.player.name,
+				folded: step.player.folded,
+				allIn: step.player.allIn,
+				roundBet: step.player.roundBet,
 			},
 		);
-		idx++;
-		cycles++;
 
-		// Skip folded or all-in players immediately
-		if (player.folded || player.allIn) {
-			logFlow("skip folded/allin", { name: player.name });
+		if (step.reason === "foldedAllIn") {
+			logFlow("skip folded/allin", { name: step.player.name });
 			return setTimeout(nextPlayer, 0); // avoid recursive stack growth
 		}
 
-		// Skip if player already matched the current bet
-		if (player.roundBet >= gameState.currentBet) {
-			logFlow("already matched bet", { name: player.name, cycles });
-			// Allow one pass-through for Big Blind pre-flop or Check post-flop
-			if (
-				(gameState.currentPhaseIndex === 0 &&
-					cycles <= gameState.players.length) ||
-				(gameState.currentPhaseIndex > 0 &&
-					gameState.currentBet === 0 &&
-					cycles <= gameState.players.length)
-			) {
-				// within first cycle: let them act
-			} else {
-				if (anyUncalled()) {
-					logFlow("wait uncalled", { name: player.name });
-					return setTimeout(nextPlayer, 0); // schedule asynchronously to break call chain
-				}
-				logFlow("advance phase", { name: player.name });
-				clearActiveTurnPlayer(false);
-				clearPendingAction();
-				return queueRunoutPhaseAdvance("matched");
-			}
+		if (step.reason === "waitUncalled") {
+			logFlow("already matched bet", { name: step.player.name, cycles: step.cycles });
+			logFlow("wait uncalled", { name: step.player.name });
+			return setTimeout(nextPlayer, 0); // schedule asynchronously to break call chain
+		}
+
+		if (step.type === "advance") {
+			logFlow("already matched bet", { name: step.player.name, cycles: step.cycles });
+			logFlow("advance phase", { name: step.player.name });
+			clearActiveTurnPlayer(false);
+			clearPendingAction();
+			return queueRunoutPhaseAdvance(step.reason);
+		}
+
+		if (step.reason === "firstPassMatched") {
+			logFlow("already matched bet", { name: step.player.name, cycles: step.cycles });
 		}
 
 		// --- Bot Branch --------------------------------------------------------------
 		// If this is a bot, choose an action based on hand strength
-		if (player.isBot) {
-			return runBotTurn({ player, cycles, anyUncalled, nextPlayer });
+		if (step.player.isBot) {
+			return runBotTurn({ player: step.player, cycles: step.cycles, nextPlayer });
 		}
 
 		// --- Human Branch ------------------------------------------------------------
 		return humanTurnController.runHumanTurn({
-			player,
-			cycles,
-			anyUncalled,
+			player: step.player,
+			cycles: step.cycles,
 			nextPlayer,
 		});
 	}
@@ -2911,7 +2879,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-05-02-v2";
+const SERVICE_WORKER_VERSION = "2026-05-02-v3";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

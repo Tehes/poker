@@ -3,7 +3,8 @@ MODULE BOUNDARY: Shared Human Turn Controller
 ================================================================================================== */
 
 // CURRENT STATE: Shared action-control shell for the host table, remote table, and private seat
-// views.
+// views. It submits local/remote human action requests, while betting-round progress decisions stay
+// with the caller/engine boundary.
 // TARGET STATE: Keep input wiring and control-state synchronization shared, while poker rules stay
 // in actionModel and runtime flow ownership stays with the callers.
 // LAYERS:
@@ -428,7 +429,6 @@ export function createHumanTurnController({
 		continueAfterResolvedTurn({
 			player: turnState.player,
 			cycles: turnState.cycles,
-			anyUncalled: turnState.anyUncalled,
 			nextPlayer: turnState.nextPlayer,
 			logPrefix: turnMeta.logPrefix,
 			advanceReason: turnMeta.advanceReason,
@@ -490,14 +490,13 @@ export function createHumanTurnController({
 		}
 	}
 
-	function runHumanTurn({ player, cycles, anyUncalled, nextPlayer }) {
+	function runHumanTurn({ player, cycles, nextPlayer }) {
 		releaseActiveTurn({ clearPending: true });
 		setActiveTurnPlayer(player);
 
 		const turnState = {
 			player,
 			cycles,
-			anyUncalled,
 			nextPlayer,
 			actionState: getPlayerActionState(player),
 			pendingAction: null,

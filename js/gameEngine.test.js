@@ -1,4 +1,12 @@
-import { resolveTurnAction } from "./gameEngine.js";
+import {
+	createBettingRoundProgressState,
+	getBettingRoundStartExit,
+	getBettingRoundStartIndex,
+	getNextBettingRoundStep,
+	getResolvedTurnContinuation,
+	hasPendingBettingRoundAction,
+	resolveTurnAction,
+} from "./gameEngine.js";
 
 function assertEquals(actual, expected, message = "") {
 	const actualJson = JSON.stringify(actual);
@@ -18,6 +26,8 @@ function createPlayer({
 	totalBet = roundBet,
 	folded = false,
 	allIn = false,
+	dealer = false,
+	bigBlind = false,
 } = {}) {
 	return {
 		name,
@@ -27,6 +37,8 @@ function createPlayer({
 		totalBet,
 		folded,
 		allIn,
+		dealer,
+		bigBlind,
 	};
 }
 
@@ -285,4 +297,224 @@ Deno.test("resolveTurnAction does not mutate inputs", () => {
 
 	assertEquals(player, playerBefore);
 	assertEquals(gameState, gameStateBefore);
+});
+
+Deno.test("betting round progress starts from preflop big blind and postflop dealer", () => {
+	const players = [
+		createPlayer({ name: "Dealer", seatIndex: 0, dealer: true }),
+		createPlayer({ name: "Big Blind", seatIndex: 1, bigBlind: true }),
+		createPlayer({ name: "Button", seatIndex: 2 }),
+	];
+	const preflopGameState = {
+		currentPhaseIndex: 0,
+		players,
+	};
+	const postflopGameState = {
+		currentPhaseIndex: 1,
+		players,
+	};
+
+	assertEquals(getBettingRoundStartIndex(players, 0), 2);
+	assertEquals(createBettingRoundProgressState(preflopGameState), {
+		nextIndex: 2,
+		cycles: 0,
+	});
+	assertEquals(getBettingRoundStartIndex(players, 1), 1);
+	assertEquals(createBettingRoundProgressState(postflopGameState), {
+		nextIndex: 1,
+		cycles: 0,
+	});
+});
+
+Deno.test("getBettingRoundStartExit advances with one actionable player", () => {
+	const player = createPlayer({ chips: 100 });
+	const allInOpponent = createPlayer({
+		name: "Villain",
+		seatIndex: 1,
+		chips: 0,
+		allIn: true,
+	});
+	const { gameState } = createGameState({
+		player,
+		opponents: [allInOpponent],
+	});
+
+	assertEquals(getBettingRoundStartExit(gameState), {
+		type: "advance",
+		reason: "startBettingRound",
+		activePlayerCount: 2,
+		actionablePlayerCount: 1,
+	});
+});
+
+Deno.test("getNextBettingRoundStep advances when no actionable players remain", () => {
+	const player = createPlayer({ chips: 0, allIn: true });
+	const opponent = createPlayer({
+		name: "Villain",
+		seatIndex: 1,
+		chips: 0,
+		allIn: true,
+	});
+	const { gameState } = createGameState({
+		player,
+		opponents: [opponent],
+	});
+	const step = getNextBettingRoundStep(gameState, { nextIndex: 0, cycles: 0 });
+
+	assertEquals({
+		type: step.type,
+		reason: step.reason,
+		progressState: step.progressState,
+		activePlayerCount: step.activePlayers.length,
+	}, {
+		type: "advance",
+		reason: "nextPlayer",
+		progressState: { nextIndex: 0, cycles: 0 },
+		activePlayerCount: 2,
+	});
+});
+
+Deno.test("getNextBettingRoundStep skips folded and all-in players with progress", () => {
+	const player = createPlayer({ folded: true });
+	const { gameState } = createGameState({
+		player,
+		opponents: [
+			createPlayer({ name: "Villain 1", seatIndex: 1 }),
+			createPlayer({ name: "Villain 2", seatIndex: 2 }),
+		],
+	});
+
+	assertEquals(getNextBettingRoundStep(gameState, { nextIndex: 0, cycles: 0 }), {
+		type: "skip",
+		reason: "foldedAllIn",
+		player,
+		index: 0,
+		previousCycles: 0,
+		cycles: 1,
+		progressState: { nextIndex: 1, cycles: 1 },
+	});
+});
+
+Deno.test("getNextBettingRoundStep lets the big blind act once preflop", () => {
+	const player = createPlayer({
+		bigBlind: true,
+		roundBet: 20,
+	});
+	const { gameState } = createGameState({
+		player,
+		currentPhaseIndex: 0,
+		currentBet: 20,
+	});
+
+	assertEquals(getNextBettingRoundStep(gameState, { nextIndex: 0, cycles: 0 }), {
+		type: "act",
+		reason: "firstPassMatched",
+		player,
+		index: 0,
+		previousCycles: 0,
+		cycles: 1,
+		progressState: { nextIndex: 1, cycles: 1 },
+	});
+});
+
+Deno.test("getNextBettingRoundStep keeps postflop first-pass checks available", () => {
+	const player = createPlayer({ roundBet: 0 });
+	const { gameState } = createGameState({
+		player,
+		currentPhaseIndex: 1,
+		currentBet: 0,
+	});
+
+	assertEquals(getNextBettingRoundStep(gameState, { nextIndex: 0, cycles: 0 }), {
+		type: "act",
+		reason: "firstPassMatched",
+		player,
+		index: 0,
+		previousCycles: 0,
+		cycles: 1,
+		progressState: { nextIndex: 1, cycles: 1 },
+	});
+});
+
+Deno.test("getNextBettingRoundStep advances matched players after the first cycle", () => {
+	const player = createPlayer({ roundBet: 20 });
+	const { gameState } = createGameState({
+		player,
+		currentBet: 20,
+		opponents: [
+			createPlayer({
+				name: "Villain",
+				seatIndex: 1,
+				roundBet: 20,
+			}),
+		],
+	});
+
+	assertEquals(getNextBettingRoundStep(gameState, { nextIndex: 0, cycles: 2 }), {
+		type: "advance",
+		reason: "matched",
+		player,
+		index: 0,
+		previousCycles: 2,
+		cycles: 3,
+		progressState: { nextIndex: 1, cycles: 3 },
+	});
+});
+
+Deno.test("getNextBettingRoundStep returns act when player is below current bet", () => {
+	const player = createPlayer({ roundBet: 10 });
+	const { gameState } = createGameState({
+		player,
+		currentBet: 20,
+	});
+
+	assertEquals(getNextBettingRoundStep(gameState, { nextIndex: 0, cycles: 3 }), {
+		type: "act",
+		reason: "owesAction",
+		player,
+		index: 0,
+		previousCycles: 3,
+		cycles: 4,
+		progressState: { nextIndex: 1, cycles: 4 },
+	});
+});
+
+Deno.test("getResolvedTurnContinuation returns next, wait, and advance", () => {
+	const player = createPlayer({ roundBet: 20 });
+	const opponent = createPlayer({
+		name: "Villain",
+		seatIndex: 1,
+		roundBet: 10,
+	});
+	const { gameState } = createGameState({
+		player,
+		opponents: [opponent],
+		currentBet: 20,
+	});
+
+	assertEquals(getResolvedTurnContinuation(gameState, 1), { type: "next" });
+	assertEquals(getResolvedTurnContinuation(gameState, 2), { type: "wait" });
+	opponent.roundBet = 20;
+	assertEquals(getResolvedTurnContinuation(gameState, 2), { type: "advance" });
+});
+
+Deno.test("betting round progress helpers do not mutate inputs", () => {
+	const player = createPlayer({ roundBet: 20, bigBlind: true });
+	const { gameState } = createGameState({
+		player,
+		currentPhaseIndex: 0,
+		currentBet: 20,
+	});
+	const gameStateBefore = structuredClone(gameState);
+	const progressState = { nextIndex: 0, cycles: 0 };
+	const progressStateBefore = structuredClone(progressState);
+
+	createBettingRoundProgressState(gameState);
+	getBettingRoundStartExit(gameState);
+	hasPendingBettingRoundAction(gameState, 0);
+	getNextBettingRoundStep(gameState, progressState);
+	getResolvedTurnContinuation(gameState, 2);
+
+	assertEquals(gameState, gameStateBefore);
+	assertEquals(progressState, progressStateBefore);
 });
