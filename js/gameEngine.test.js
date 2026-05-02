@@ -20,6 +20,7 @@ import {
 	resolveShowdown,
 	resolveTurnAction,
 	runEngineHand,
+	runEngineTournament,
 } from "./gameEngine.js";
 
 function assertEquals(actual, expected, message = "") {
@@ -2339,5 +2340,103 @@ Deno.test("full engine flow runs out a preflop all-in", () => {
 			{ player: "Button", chips: 980 },
 			{ player: "Short", chips: 40 },
 		],
+	});
+});
+
+Deno.test("runEngineTournament plays a browserless mini tournament to champion", () => {
+	const shortButton = createPlayer({ name: "Short Button", seatIndex: 0, chips: 20 });
+	const bigBlind = createPlayer({ name: "Big Blind", seatIndex: 1, chips: 1000 });
+	const events = [];
+	const gameState = createFlowGameState({
+		players: [shortButton, bigBlind],
+		deck: [
+			"KS",
+			"KH",
+			"AS",
+			"AH",
+			"2C",
+			"7D",
+			"9H",
+			"TC",
+			"3S",
+			"4C",
+			"5C",
+			"6D",
+		],
+	});
+
+	const result = runEngineTournament(gameState, callOrCheckAction, {
+		eventSink: (event) => {
+			events.push(event);
+		},
+		maxHands: 5,
+		shuffleFn: (deck) => deck,
+	});
+
+	assertEquals({
+		type: result.type,
+		champion: result.champion.name,
+		handCount: result.handCount,
+		handTypes: result.handResults.map((handResult) => handResult.type),
+		events: events.map((event) => event.type),
+		eventCountMatches: events.length === result.events.length,
+		players: gameState.players.map((player) => ({
+			name: player.name,
+			chips: player.chips,
+			isWinner: player.isWinner,
+		})),
+		decision: events.find((event) => event.type === "decision"),
+		handResult: events.find((event) => event.type === "hand_result"),
+	}, {
+		type: "game-over",
+		champion: "Big Blind",
+		handCount: 1,
+		handTypes: ["showdown", "game-over"],
+		events: [
+			"hand_start",
+			"decision",
+			"decision",
+			"hand_result",
+			"player_bust",
+			"tournament_end",
+		],
+		eventCountMatches: true,
+		players: [{
+			name: "Big Blind",
+			chips: 1020,
+			isWinner: true,
+		}],
+		decision: {
+			type: "decision",
+			handId: 1,
+			phase: "preflop",
+			player: "Short Button",
+			seatIndex: 0,
+			requestedAction: "call",
+			requestedAmount: null,
+			action: "allin",
+			amount: 10,
+		},
+		handResult: {
+			type: "hand_result",
+			handId: 1,
+			communityCards: ["7D", "9H", "TC", "4C", "6D"],
+			hadShowdown: true,
+			uncontestedWinner: null,
+			mainPotWinners: ["Big Blind"],
+			winningPlayers: ["Big Blind"],
+			potResults: [{
+				players: ["Big Blind"],
+				amount: 40,
+				hand: "Pair",
+				isRefundOnly: false,
+			}],
+			totalPayoutByPlayer: [{
+				player: "Big Blind",
+				seatIndex: 1,
+				amount: 40,
+			}],
+			totalPot: 40,
+		},
 	});
 });

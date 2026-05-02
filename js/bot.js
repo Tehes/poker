@@ -2,8 +2,8 @@
 MODULE BOUNDARY: Bot Decision Engine
 ================================================================================================== */
 
-// CURRENT STATE: Owns poker bot decision logic, including hand evaluation, action selection, debug
-// instrumentation, and queued action playback timing.
+// CURRENT STATE: Owns poker bot decision logic, including hand evaluation, action selection, action
+// request normalization, debug instrumentation, and queued action playback timing.
 // TARGET STATE: Stay the single place for autonomous bot behavior, while pure generic poker rules
 // remain in gameEngine.js and browser-facing flow stays in app.js.
 // PUT HERE: Bot heuristics, opponent-independent decision rules, debug hooks, and delayed execution
@@ -104,12 +104,9 @@ const RANK_ORDER = "23456789TJQKA";
 let DEBUG_DECISIONS = false;
 let DEBUG_DECISIONS_DETAIL = false;
 
-const speedModeParam = new URLSearchParams(globalThis.location.search).get(
-	"speedmode",
-);
-const debugBotParam = new URLSearchParams(globalThis.location.search).get(
-	"botdebug",
-);
+const runtimeSearchParams = new URLSearchParams(globalThis.location?.search ?? "");
+const speedModeParam = runtimeSearchParams.get("speedmode");
+const debugBotParam = runtimeSearchParams.get("botdebug");
 DEBUG_DECISIONS_DETAIL = debugBotParam === "1" || debugBotParam === "true" ||
 	debugBotParam === "detail";
 if (DEBUG_DECISIONS_DETAIL) {
@@ -244,6 +241,29 @@ export function enqueueBotAction(fn) {
 		processingBotActions = true;
 	}
 	scheduleBotQueue();
+}
+
+export function normalizeBotActionRequest(decision) {
+	if (!decision) {
+		return null;
+	}
+
+	switch (decision.action) {
+		case "fold":
+		case "check":
+		case "call":
+		case "allin":
+			return { action: decision.action };
+		case "raise": {
+			const amount = Number.parseInt(decision.amount, 10);
+			if (Number.isNaN(amount)) {
+				return null;
+			}
+			return { action: "raise", amount };
+		}
+		default:
+			return null;
+	}
 }
 
 // Execute queued actions at fixed intervals

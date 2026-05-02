@@ -6,10 +6,10 @@ MODULE BOUNDARY: Pure Poker Engine
 ================================================================================================== */
 
 // CURRENT STATE: Owns hand evaluation, payout math, showdown resolution, showdown commit state,
-// hand-end/next-hand transition state, a browserless hand runner, hand-start setup, turn-action
-// resolution, betting-round start state, betting-round progress decisions, street progression
-// decisions, and other pure poker helpers used by the table runtime. Browser scheduling and
-// rendering remain in app.js.
+// hand-end/next-hand transition state, browserless hand/tournament runners, hand-start setup,
+// turn-action resolution, betting-round start state, betting-round progress decisions, street
+// progression decisions, and other pure poker helpers used by the table runtime. Browser scheduling
+// and rendering remain in app.js.
 // TARGET STATE: gameEngine.js should own every pure poker rule and state transform that can run
 // without DOM, fetch, timers, or view objects, while app.js only orchestrates browser-facing flow.
 // PUT HERE: Deterministic poker rules, hand evaluation, payouts, betting order helpers, and state
@@ -1118,6 +1118,7 @@ function createEngineHandRunResult(handId, maxSteps) {
 		dealerPlan: null,
 		blindPlan: null,
 		dealPlan: null,
+		handStartState: null,
 		roundStartPlans: [],
 		bettingSteps: [],
 		bettingRoundExits: [],
@@ -1129,6 +1130,34 @@ function createEngineHandRunResult(handId, maxSteps) {
 		showdownCommitPlan: null,
 		handEndPlan: null,
 		invalidAction: null,
+	};
+}
+
+function createEnginePlayerSnapshot(player) {
+	return {
+		name: player.name,
+		seatIndex: player.seatIndex,
+		chips: player.chips,
+		roundBet: player.roundBet,
+		totalBet: player.totalBet,
+		folded: player.folded,
+		allIn: player.allIn,
+		dealer: player.dealer === true,
+		smallBlind: player.smallBlind === true,
+		bigBlind: player.bigBlind === true,
+		isBot: player.isBot === true,
+	};
+}
+
+function createEngineHandStartState(gameState, handId) {
+	return {
+		handId,
+		blindLevel: gameState.blindLevel,
+		smallBlind: gameState.smallBlind,
+		bigBlind: gameState.bigBlind,
+		dealerSeatIndex: gameState.players.find((player) => player.dealer)?.seatIndex ?? null,
+		communityCards: gameState.communityCards.slice(),
+		players: gameState.players.map(createEnginePlayerSnapshot),
 	};
 }
 
@@ -1308,6 +1337,7 @@ export function runEngineHand(gameState, actionProvider, options = {}) {
 	applyEnginePlayerPatches(dealPlan.playerPatches);
 	applyEngineGameStatePatch(gameState, dealPlan.gameStatePatch);
 	result.dealPlan = dealPlan;
+	result.handStartState = createEngineHandStartState(gameState, handId);
 
 	while (true) {
 		const bettingRoundResult = runEngineBettingRound(
@@ -1337,6 +1367,150 @@ export function runEngineHand(gameState, actionProvider, options = {}) {
 
 	commitEngineShowdown(gameState, result, chipUnit);
 	return finishEngineHandRun(result, "showdown");
+}
+
+function createEngineTournamentResult(maxHands) {
+	return {
+		type: "running",
+		maxHands,
+		handCount: 0,
+		champion: null,
+		handResults: [],
+		events: [],
+		stoppedHand: null,
+	};
+}
+
+function finishEngineTournamentRun(result, type, patch = {}) {
+	Object.assign(result, patch);
+	result.type = type;
+	return result;
+}
+
+function emitEngineTournamentEvent(result, eventSink, event) {
+	result.events.push(event);
+	if (eventSink) {
+		eventSink(event);
+	}
+}
+
+function mapEnginePayouts(totalPayoutByPlayer) {
+	return Array.from(totalPayoutByPlayer.entries()).map(([player, amount]) => ({
+		player: player.name,
+		seatIndex: player.seatIndex,
+		amount,
+	}));
+}
+
+function mapEnginePotResults(potResults) {
+	return potResults.map((potResult) => ({
+		...potResult,
+		players: potResult.players.slice(),
+	}));
+}
+
+function emitEngineHandEvents(gameState, handResult, tournamentResult, eventSink) {
+	emitEngineTournamentEvent(tournamentResult, eventSink, {
+		type: "hand_start",
+		...handResult.handStartState,
+	});
+
+	handResult.actions.forEach(({ phase, player, actionRequest, resolvedAction }) => {
+		emitEngineTournamentEvent(tournamentResult, eventSink, {
+			type: "decision",
+			handId: handResult.handId,
+			phase,
+			player: player.name,
+			seatIndex: player.seatIndex,
+			requestedAction: actionRequest?.action ?? null,
+			requestedAmount: actionRequest?.amount ?? null,
+			action: resolvedAction.action,
+			amount: resolvedAction.amount,
+		});
+	});
+
+	const showdownResult = handResult.showdownResult;
+	emitEngineTournamentEvent(tournamentResult, eventSink, {
+		type: "hand_result",
+		handId: handResult.handId,
+		communityCards: gameState.communityCards.slice(),
+		hadShowdown: showdownResult.hadShowdown,
+		uncontestedWinner: showdownResult.uncontestedWinner?.name ?? null,
+		mainPotWinners: showdownResult.mainPotWinners.map((player) => player.name),
+		winningPlayers: showdownResult.winningPlayers.map((player) => player.name),
+		potResults: mapEnginePotResults(showdownResult.potResults),
+		totalPayoutByPlayer: mapEnginePayouts(showdownResult.totalPayoutByPlayer),
+		totalPot: showdownResult.totalPot,
+	});
+}
+
+function emitEngineTransitionEvents(handResult, tournamentResult, eventSink) {
+	if (!handResult.nextHandPlan) {
+		return;
+	}
+	handResult.nextHandPlan.bustedPlayers.forEach((player) => {
+		emitEngineTournamentEvent(tournamentResult, eventSink, {
+			type: "player_bust",
+			handId: handResult.handId,
+			player: player.name,
+			seatIndex: player.seatIndex,
+		});
+	});
+}
+
+function getTournamentDealerRandomValue(options, handId, handIndex) {
+	if (typeof options.dealerRandomValue === "function") {
+		return options.dealerRandomValue(handId, handIndex);
+	}
+	return options.dealerRandomValue ?? 0;
+}
+
+export function runEngineTournament(gameState, actionProvider, options = {}) {
+	const maxHands = options.maxHands ?? 1000;
+	const startHandId = options.startHandId ?? gameState.handId ?? 1;
+	const eventSink = options.eventSink ?? null;
+	const result = createEngineTournamentResult(maxHands);
+
+	while (result.handCount < maxHands) {
+		const handId = startHandId + result.handCount;
+		const handResult = runEngineHand(gameState, actionProvider, {
+			chipUnit: options.chipUnit,
+			dealerRandomValue: getTournamentDealerRandomValue(
+				options,
+				handId,
+				result.handCount,
+			),
+			handId,
+			maxSteps: options.maxStepsPerHand ?? options.maxSteps,
+			shuffleFn: options.shuffleFn,
+		});
+		result.handResults.push(handResult);
+		emitEngineTransitionEvents(handResult, result, eventSink);
+
+		if (handResult.type === "game-over") {
+			const champion = handResult.nextHandPlan.champion;
+			emitEngineTournamentEvent(result, eventSink, {
+				type: "tournament_end",
+				handId,
+				champion: champion.name,
+				seatIndex: champion.seatIndex,
+			});
+			return finishEngineTournamentRun(result, "game-over", {
+				champion,
+			});
+		}
+
+		if (handResult.type !== "showdown") {
+			return finishEngineTournamentRun(result, handResult.type, {
+				stoppedHand: handResult,
+			});
+		}
+
+		emitEngineHandEvents(gameState, handResult, result, eventSink);
+		result.handCount++;
+	}
+
+	return finishEngineTournamentRun(result, "max-hands");
 }
 
 export function getBlindLevelUpdateForHand(totalHands, gameState) {

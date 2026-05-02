@@ -3,10 +3,10 @@ MODULE BOUNDARY: Main Table Runtime
 ================================================================================================== */
 
 // CURRENT STATE: Coordinates browser-facing game flow, bots, sync, timers, analytics, and DOM
-// effects. Showdown resolution/commit state, hand-end/next-hand transition state, a browserless
-// hand runner, hand-start setup, turn-action resolution, betting-round start state, betting-round
-// progress decisions, and street progression decisions are extracted; browser orchestration remains
-// here.
+// effects. Showdown resolution/commit state, hand-end/next-hand transition state, browserless
+// hand/tournament runners, hand-start setup, turn-action resolution, betting-round start state,
+// betting-round progress decisions, and street progression decisions are extracted; browser
+// orchestration remains here.
 // TARGET STATE: app.js should stay as the browser-facing orchestrator only. Pure poker rules and
 // state transforms should live in gameEngine.js, while reusable UI, sync, and control primitives
 // should live in shared/*.
@@ -23,6 +23,7 @@ Imports
 import {
 	chooseBotAction,
 	enqueueBotAction,
+	normalizeBotActionRequest,
 	setBotPlaybackFast,
 } from "./bot.js";
 import {
@@ -2146,29 +2147,6 @@ function applyTurnAction(player, actionRequest) {
 	return resolvedAction;
 }
 
-function normalizeBotActionRequest(decision) {
-	if (!decision) {
-		return null;
-	}
-
-	switch (decision.action) {
-		case "fold":
-		case "check":
-		case "call":
-		case "allin":
-			return { action: decision.action };
-		case "raise": {
-			const amount = Number.parseInt(decision.amount, 10);
-			if (Number.isNaN(amount)) {
-				return null;
-			}
-			return { action: "raise", amount };
-		}
-		default:
-			return null;
-	}
-}
-
 function runBotTurn({ player, cycles, nextPlayer }) {
 	setActiveTurnPlayer(player);
 	humanTurnController.hide();
@@ -2729,7 +2707,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-05-02-v10";
+const SERVICE_WORKER_VERSION = "2026-05-02-v12";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
