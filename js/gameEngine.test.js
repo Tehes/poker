@@ -19,6 +19,7 @@ import {
 	resetPlayersForNewHand,
 	resolveShowdown,
 	resolveTurnAction,
+	runEngineHand,
 } from "./gameEngine.js";
 
 function assertEquals(actual, expected, message = "") {
@@ -197,6 +198,13 @@ function createFlowGameState({ players, deck, smallBlind = 10, bigBlind = 20 }) 
 	};
 }
 
+function callOrCheckAction(gameState, player) {
+	if (player.roundBet < gameState.currentBet) {
+		return { action: "call" };
+	}
+	return { action: "check" };
+}
+
 function startEngineHand(gameState) {
 	const nextHandPlan = createNextHandTransitionPlan(gameState, gameState.handId ?? 1);
 	applyPlayerPatches(nextHandPlan.playerPatches);
@@ -225,50 +233,12 @@ function startEngineHand(gameState) {
 	};
 }
 
-function applyTurnActionForTest(gameState, player, actionRequest) {
-	const resolvedAction = resolveTurnAction(gameState, player, actionRequest);
-	if (!resolvedAction) {
-		throw new Error(`Unresolved action for ${player.name}: ${actionRequest.action}`);
-	}
-	Object.assign(player, resolvedAction.playerPatch);
-	Object.assign(gameState, resolvedAction.gameStatePatch);
-	return resolvedAction;
-}
-
 function applyBettingRoundStartPlanForTest(gameState) {
 	const roundStartPlan = createBettingRoundStartPlan(gameState);
 	applyPlayerPatches(roundStartPlan.playerPatches);
 	applyGameStatePatch(gameState, roundStartPlan.gameStatePatch);
 	applyHandContextPatch(gameState, roundStartPlan.handContextPatch);
 	return roundStartPlan;
-}
-
-function advancePhaseForTest(gameState) {
-	const phasePlan = getNextPhasePlan(gameState);
-	applyGameStatePatch(gameState, phasePlan.gameStatePatch);
-	applyHandContextPatch(gameState, phasePlan.handContextPatch);
-	if (phasePlan.cardsToDeal > 0) {
-		const dealPlan = dealCommunityCardsForPhase(gameState, phasePlan.cardsToDeal);
-		applyGameStatePatch(gameState, dealPlan.gameStatePatch);
-		applyBettingRoundStartPlanForTest(gameState);
-	}
-	return phasePlan;
-}
-
-function runOutToShowdownForTest(gameState) {
-	const phasePlans = [];
-	while (gameState.currentPhaseIndex < 4) {
-		phasePlans.push(advancePhaseForTest(gameState));
-	}
-	return phasePlans;
-}
-
-function applyShowdownCommitPlanForTest(gameState, result) {
-	const plan = createShowdownCommitPlan(gameState, result);
-	applyPlayerPatches(plan.playerPatches);
-	applyPlayerPatches(plan.payoutPlayerPatches);
-	applyGameStatePatch(gameState, plan.payoutGameStatePatch);
-	return plan;
 }
 
 Deno.test("resolveShowdown awards an uncontested pot", () => {
@@ -2098,25 +2068,20 @@ Deno.test("full engine flow plays a heads-up hand to showdown", () => {
 		],
 	});
 
-	startEngineHand(gameState);
-	applyTurnActionForTest(gameState, button, { action: "call" });
-	applyTurnActionForTest(gameState, bigBlind, { action: "check" });
-	advancePhaseForTest(gameState);
-	applyTurnActionForTest(gameState, bigBlind, { action: "check" });
-	applyTurnActionForTest(gameState, button, { action: "check" });
-	advancePhaseForTest(gameState);
-	applyTurnActionForTest(gameState, bigBlind, { action: "check" });
-	applyTurnActionForTest(gameState, button, { action: "check" });
-	advancePhaseForTest(gameState);
-	applyTurnActionForTest(gameState, bigBlind, { action: "check" });
-	applyTurnActionForTest(gameState, button, { action: "check" });
-	advancePhaseForTest(gameState);
-
-	const showdown = resolveShowdown(gameState.players, gameState.communityCards);
-	applyShowdownCommitPlanForTest(gameState, showdown);
+	const runResult = runEngineHand(gameState, callOrCheckAction, {
+		shuffleFn: (deck) => deck,
+	});
+	const showdown = runResult.showdownResult;
 
 	assertEquals({
+		runType: runResult.type,
+		actions: runResult.actions.map(({ player, resolvedAction }) => ({
+			player: player.name,
+			action: resolvedAction.action,
+		})),
+		phases: runResult.phasePlans.map((phasePlan) => phasePlan.phase),
 		currentPhaseIndex: gameState.currentPhaseIndex,
+		handInProgress: gameState.handInProgress,
 		communityCards: gameState.communityCards,
 		pot: gameState.pot,
 		totalBets: gameState.players.map((player) => ({
@@ -2131,7 +2096,20 @@ Deno.test("full engine flow plays a heads-up hand to showdown", () => {
 			chips: player.chips,
 		})),
 	}, {
+		runType: "showdown",
+		actions: [
+			{ player: "Button", action: "call" },
+			{ player: "Big Blind", action: "check" },
+			{ player: "Big Blind", action: "check" },
+			{ player: "Button", action: "check" },
+			{ player: "Big Blind", action: "check" },
+			{ player: "Button", action: "check" },
+			{ player: "Big Blind", action: "check" },
+			{ player: "Button", action: "check" },
+		],
+		phases: ["flop", "turn", "river", "showdown"],
 		currentPhaseIndex: 4,
+		handInProgress: false,
 		communityCards: ["7D", "9H", "TC", "4C", "6D"],
 		pot: 0,
 		totalBets: [
@@ -2191,18 +2169,21 @@ Deno.test("full engine flow removes a busted player after a three-player hand", 
 		],
 	});
 
-	startEngineHand(gameState);
-	applyTurnActionForTest(gameState, dealer, { action: "call" });
-	applyTurnActionForTest(gameState, smallBlind, { action: "call" });
-	runOutToShowdownForTest(gameState);
-	const showdown = resolveShowdown(gameState.players, gameState.communityCards);
-	applyShowdownCommitPlanForTest(gameState, showdown);
+	const runResult = runEngineHand(gameState, callOrCheckAction, {
+		shuffleFn: (deck) => deck,
+	});
+	const showdown = runResult.showdownResult;
 	const showdownSummary = summarizeShowdown(showdown);
 	const nextHandPlan = createNextHandTransitionPlan(gameState, 2);
 	applyPlayerPatches(nextHandPlan.playerPatches);
 	applyGameStatePatch(gameState, nextHandPlan.gameStatePatch);
 
 	assertEquals({
+		runType: runResult.type,
+		runActions: runResult.actions.map(({ player, resolvedAction }) => ({
+			player: player.name,
+			action: resolvedAction.action,
+		})),
 		nextHandType: nextHandPlan.type,
 		communityCards: gameState.communityCards,
 		showdown: showdownSummary,
@@ -2213,6 +2194,17 @@ Deno.test("full engine flow removes a busted player after a three-player hand", 
 			chips: player.chips,
 		})),
 	}, {
+		runType: "showdown",
+		runActions: [
+			{ player: "Dealer", action: "call" },
+			{ player: "Small Blind", action: "call" },
+			{ player: "Small Blind", action: "check" },
+			{ player: "Dealer", action: "check" },
+			{ player: "Small Blind", action: "check" },
+			{ player: "Dealer", action: "check" },
+			{ player: "Small Blind", action: "check" },
+			{ player: "Dealer", action: "check" },
+		],
 		nextHandType: "next-hand",
 		communityCards: [],
 		showdown: {
@@ -2267,16 +2259,20 @@ Deno.test("full engine flow runs out a preflop all-in", () => {
 		],
 	});
 
-	startEngineHand(gameState);
-	applyTurnActionForTest(gameState, button, { action: "call" });
+	const runResult = runEngineHand(gameState, callOrCheckAction, {
+		shuffleFn: (deck) => deck,
+	});
 	const isRunout = isAllInRunout(gameState.players, gameState.currentBet);
-	const phasePlans = runOutToShowdownForTest(gameState);
-	const showdown = resolveShowdown(gameState.players, gameState.communityCards);
-	applyShowdownCommitPlanForTest(gameState, showdown);
+	const showdown = runResult.showdownResult;
 
 	assertEquals({
+		runType: runResult.type,
 		isRunout,
-		phases: phasePlans.map((phasePlan) => phasePlan.phase),
+		phases: runResult.phasePlans.map((phasePlan) => phasePlan.phase),
+		actions: runResult.actions.map(({ player, resolvedAction }) => ({
+			player: player.name,
+			action: resolvedAction.action,
+		})),
 		currentPhaseIndex: gameState.currentPhaseIndex,
 		communityCards: gameState.communityCards,
 		shortAllIn: shortStack.allIn,
@@ -2286,34 +2282,44 @@ Deno.test("full engine flow runs out a preflop all-in", () => {
 			chips: player.chips,
 		})),
 	}, {
+		runType: "showdown",
 		isRunout: true,
 		phases: ["flop", "turn", "river", "showdown"],
+		actions: [],
 		currentPhaseIndex: 4,
 		communityCards: ["7D", "9H", "TC", "4C", "6D"],
 		shortAllIn: true,
 		showdown: {
 			activePlayers: ["Button", "Short"],
 			contributors: [
-				{ player: "Button", totalBet: 20 },
+				{ player: "Button", totalBet: 10 },
 				{ player: "Short", totalBet: 20 },
 			],
 			hadShowdown: true,
 			uncontestedWinner: null,
 			mainPotWinners: ["Short"],
 			winningPlayers: ["Short"],
-			transferQueue: [{ player: "Short", amount: 40 }],
+			transferQueue: [
+				{ player: "Short", amount: 20 },
+				{ player: "Short", amount: 10 },
+			],
 			potResults: [{
 				players: ["Short"],
-				amount: 40,
+				amount: 20,
 				hand: "Pair",
 				isRefundOnly: false,
+			}, {
+				players: ["Short"],
+				amount: 10,
+				hand: null,
+				isRefundOnly: true,
 			}],
-			totalPayoutByPlayer: [{ player: "Short", amount: 40 }],
-			totalPot: 40,
+			totalPayoutByPlayer: [{ player: "Short", amount: 30 }],
+			totalPot: 30,
 		},
 		chips: [
-			{ player: "Button", chips: 980 },
-			{ player: "Short", chips: 40 },
+			{ player: "Button", chips: 990 },
+			{ player: "Short", chips: 30 },
 		],
 	});
 });

@@ -6,9 +6,10 @@ MODULE BOUNDARY: Pure Poker Engine
 ================================================================================================== */
 
 // CURRENT STATE: Owns hand evaluation, payout math, showdown resolution, showdown commit state,
-// hand-end/next-hand transition state, hand-start setup, turn-action resolution, betting-round
-// start state, betting-round progress decisions, street progression decisions, and other pure poker
-// helpers used by the table runtime. Browser scheduling and rendering remain in app.js.
+// hand-end/next-hand transition state, a browserless hand runner, hand-start setup, turn-action
+// resolution, betting-round start state, betting-round progress decisions, street progression
+// decisions, and other pure poker helpers used by the table runtime. Browser scheduling and
+// rendering remain in app.js.
 // TARGET STATE: gameEngine.js should own every pure poker rule and state transform that can run
 // without DOM, fetch, timers, or view objects, while app.js only orchestrates browser-facing flow.
 // PUT HERE: Deterministic poker rules, hand evaluation, payouts, betting order helpers, and state
@@ -728,19 +729,21 @@ export function recordPlayerActionStats(gameState, player, actionName, actionMet
 	}
 
 	if (gameState.currentPhaseIndex === 0) {
-		if (isVoluntaryAction) {
+		if (player.stats && isVoluntaryAction) {
 			player.stats.vpip++;
 		}
-		if (isAggressiveAction) {
+		if (player.stats && isAggressiveAction) {
 			player.stats.pfr++;
+		}
+		if (isAggressiveAction) {
 			handContext.preflopRaiseCount++;
 			handContext.preflopAggressorSeatIndex = player.seatIndex;
 		}
 	} else {
-		if (isAggressiveAction) {
+		if (player.stats && isAggressiveAction) {
 			player.stats.aggressiveActs++;
 		}
-		if (actionName === "call") {
+		if (player.stats && actionName === "call") {
 			player.stats.calls++;
 		}
 	}
@@ -756,11 +759,11 @@ export function recordPlayerActionStats(gameState, player, actionName, actionMet
 		}
 	}
 
-	if (actionName === "allin") {
+	if (player.stats && actionName === "allin") {
 		player.stats.allins++;
 	}
 
-	if (actionName === "fold") {
+	if (player.stats && actionName === "fold") {
 		player.stats.folds++;
 		if (gameState.currentPhaseIndex === 0) {
 			player.stats.foldsPreflop++;
@@ -1082,6 +1085,258 @@ export function createNextHandTransitionPlan(gameState, handId) {
 			nextDecisionId: 1,
 		},
 	};
+}
+
+function applyEnginePlayerPatches(playerPatches) {
+	playerPatches.forEach(({ player, patch }) => {
+		Object.assign(player, patch);
+	});
+}
+
+function applyEngineGameStatePatch(gameState, gameStatePatch) {
+	Object.assign(gameState, gameStatePatch);
+}
+
+function applyEngineHandContextPatch(gameState, handContextPatch) {
+	if (!handContextPatch) {
+		return;
+	}
+	if (!gameState.handContext) {
+		gameState.handContext = createHandContextState();
+	}
+	Object.assign(gameState.handContext, handContextPatch);
+}
+
+function createEngineHandRunResult(handId, maxSteps) {
+	return {
+		type: "running",
+		handId,
+		maxSteps,
+		stepCount: 0,
+		nextHandPlan: null,
+		blindLevelUpdate: null,
+		dealerPlan: null,
+		blindPlan: null,
+		dealPlan: null,
+		roundStartPlans: [],
+		bettingSteps: [],
+		bettingRoundExits: [],
+		actions: [],
+		continuations: [],
+		phasePlans: [],
+		communityDealPlans: [],
+		showdownResult: null,
+		showdownCommitPlan: null,
+		handEndPlan: null,
+		invalidAction: null,
+	};
+}
+
+function finishEngineHandRun(result, type, patch = {}) {
+	Object.assign(result, patch);
+	result.type = type;
+	return result;
+}
+
+function commitResolvedEngineAction(gameState, player, actionRequest) {
+	const resolvedAction = resolveTurnAction(gameState, player, actionRequest);
+	if (!resolvedAction) {
+		return null;
+	}
+
+	Object.assign(player, resolvedAction.playerPatch);
+	Object.assign(gameState, resolvedAction.gameStatePatch);
+	recordPlayerActionStats(
+		gameState,
+		player,
+		resolvedAction.action,
+		resolvedAction.actionMeta,
+	);
+	return resolvedAction;
+}
+
+function runEngineBettingRound(gameState, actionProvider, result) {
+	const roundStartPlan = createBettingRoundStartPlan(gameState);
+	applyEnginePlayerPatches(roundStartPlan.playerPatches);
+	applyEngineGameStatePatch(gameState, roundStartPlan.gameStatePatch);
+	applyEngineHandContextPatch(gameState, roundStartPlan.handContextPatch);
+	result.roundStartPlans.push(roundStartPlan);
+
+	const startExit = getBettingRoundStartExit(gameState);
+	if (startExit) {
+		result.bettingRoundExits.push(startExit);
+		return { type: "advance", reason: startExit.reason };
+	}
+
+	let progressState = createBettingRoundProgressState(gameState);
+	while (true) {
+		result.stepCount++;
+		if (result.stepCount > result.maxSteps) {
+			return { type: "max-steps" };
+		}
+
+		const step = getNextBettingRoundStep(gameState, progressState);
+		result.bettingSteps.push(step);
+		if (step.progressState) {
+			progressState = step.progressState;
+		}
+
+		if (step.type === "skip") {
+			continue;
+		}
+		if (step.type === "advance") {
+			result.bettingRoundExits.push(step);
+			return { type: "advance", reason: step.reason };
+		}
+
+		const actionRequest = actionProvider(gameState, step.player, step, result);
+		const resolvedAction = commitResolvedEngineAction(
+			gameState,
+			step.player,
+			actionRequest,
+		);
+		if (!resolvedAction) {
+			return {
+				type: "invalid-action",
+				player: step.player,
+				actionRequest,
+				step,
+			};
+		}
+
+		result.actions.push({
+			phase: getCurrentPhase(gameState.currentPhaseIndex),
+			player: step.player,
+			actionRequest,
+			resolvedAction,
+			step,
+		});
+
+		const continuation = getResolvedTurnContinuation(gameState, step.cycles);
+		result.continuations.push({
+			player: step.player,
+			action: resolvedAction.action,
+			cycles: step.cycles,
+			continuation,
+		});
+		if (continuation.type === "advance") {
+			return { type: "advance", reason: resolvedAction.action };
+		}
+	}
+}
+
+function advanceEngineHandRunPhase(gameState, result) {
+	const phasePlan = getNextPhasePlan(gameState);
+	result.phasePlans.push(phasePlan);
+	if (phasePlan.reason === "onlyActivePlayer") {
+		return { type: "showdown" };
+	}
+
+	applyEngineGameStatePatch(gameState, phasePlan.gameStatePatch);
+	applyEngineHandContextPatch(gameState, phasePlan.handContextPatch);
+	if (phasePlan.type === "deal") {
+		const dealPlan = dealCommunityCardsForPhase(gameState, phasePlan.cardsToDeal);
+		if (!dealPlan) {
+			return { type: "deal-error", phasePlan };
+		}
+		applyEngineGameStatePatch(gameState, dealPlan.gameStatePatch);
+		result.communityDealPlans.push(dealPlan);
+		return { type: "continue" };
+	}
+
+	return { type: "showdown" };
+}
+
+function commitEngineShowdown(gameState, result, chipUnit) {
+	const showdownResult = resolveShowdown(gameState.players, gameState.communityCards, chipUnit);
+	const showdownCommitPlan = createShowdownCommitPlan(gameState, showdownResult);
+	applyEnginePlayerPatches(showdownCommitPlan.playerPatches);
+	applyEnginePlayerPatches(showdownCommitPlan.payoutPlayerPatches);
+	applyEngineGameStatePatch(gameState, showdownCommitPlan.payoutGameStatePatch);
+
+	const handEndPlan = createHandEndPlan(gameState);
+	applyEngineGameStatePatch(gameState, handEndPlan.gameStatePatch);
+
+	result.showdownResult = showdownResult;
+	result.showdownCommitPlan = showdownCommitPlan;
+	result.handEndPlan = handEndPlan;
+}
+
+export function runEngineHand(gameState, actionProvider, options = {}) {
+	const handId = options.handId ?? gameState.handId ?? 1;
+	const maxSteps = options.maxSteps ?? 1000;
+	const chipUnit = options.chipUnit ?? 10;
+	const dealerRandomValue = options.dealerRandomValue ?? 0;
+	const shuffleFn = options.shuffleFn ?? shuffleArray;
+	const result = createEngineHandRunResult(handId, maxSteps);
+
+	if (typeof actionProvider !== "function") {
+		return finishEngineHandRun(result, "invalid-action-provider");
+	}
+
+	const nextHandPlan = createNextHandTransitionPlan(gameState, handId);
+	applyEnginePlayerPatches(nextHandPlan.playerPatches);
+	applyEngineGameStatePatch(gameState, nextHandPlan.gameStatePatch);
+	result.nextHandPlan = nextHandPlan;
+	if (nextHandPlan.type === "game-over") {
+		return finishEngineHandRun(result, "game-over");
+	}
+	if (nextHandPlan.remainingPlayers.length === 0) {
+		return finishEngineHandRun(result, "no-players");
+	}
+
+	const dealerPlan = advanceDealer(gameState.players, dealerRandomValue);
+	if (!dealerPlan) {
+		return finishEngineHandRun(result, "no-dealer");
+	}
+	applyEnginePlayerPatches(dealerPlan.playerPatches);
+	gameState.players = dealerPlan.players;
+	result.dealerPlan = dealerPlan;
+
+	const blindLevelUpdate = getBlindLevelUpdateForHand(handId, gameState);
+	if (blindLevelUpdate) {
+		applyEngineGameStatePatch(gameState, blindLevelUpdate.gameStatePatch);
+	}
+	result.blindLevelUpdate = blindLevelUpdate;
+
+	const blindPlan = postBlinds(gameState);
+	applyEnginePlayerPatches(blindPlan.playerPatches);
+	applyEngineGameStatePatch(gameState, blindPlan.gameStatePatch);
+	result.blindPlan = blindPlan;
+
+	const dealPlan = dealHoleCardsForNewHand(gameState, shuffleFn);
+	applyEnginePlayerPatches(dealPlan.playerPatches);
+	applyEngineGameStatePatch(gameState, dealPlan.gameStatePatch);
+	result.dealPlan = dealPlan;
+
+	while (true) {
+		const bettingRoundResult = runEngineBettingRound(
+			gameState,
+			actionProvider,
+			result,
+		);
+		if (bettingRoundResult.type === "invalid-action") {
+			return finishEngineHandRun(result, "invalid-action", {
+				invalidAction: bettingRoundResult,
+			});
+		}
+		if (bettingRoundResult.type === "max-steps") {
+			return finishEngineHandRun(result, "max-steps");
+		}
+
+		const phaseResult = advanceEngineHandRunPhase(gameState, result);
+		if (phaseResult.type === "deal-error") {
+			return finishEngineHandRun(result, "deal-error", {
+				dealError: phaseResult,
+			});
+		}
+		if (phaseResult.type === "showdown") {
+			break;
+		}
+	}
+
+	commitEngineShowdown(gameState, result, chipUnit);
+	return finishEngineHandRun(result, "showdown");
 }
 
 export function getBlindLevelUpdateForHand(totalHands, gameState) {

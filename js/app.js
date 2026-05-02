@@ -3,9 +3,10 @@ MODULE BOUNDARY: Main Table Runtime
 ================================================================================================== */
 
 // CURRENT STATE: Coordinates browser-facing game flow, bots, sync, timers, analytics, and DOM
-// effects. Showdown resolution/commit state, hand-end/next-hand transition state, hand-start setup,
-// turn-action resolution, betting-round start state, betting-round progress decisions, and street
-// progression decisions are extracted; browser orchestration remains here.
+// effects. Showdown resolution/commit state, hand-end/next-hand transition state, a browserless
+// hand runner, hand-start setup, turn-action resolution, betting-round start state, betting-round
+// progress decisions, and street progression decisions are extracted; browser orchestration remains
+// here.
 // TARGET STATE: app.js should stay as the browser-facing orchestrator only. Pure poker rules and
 // state transforms should live in gameEngine.js, while reusable UI, sync, and control primitives
 // should live in shared/*.
@@ -2728,7 +2729,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-05-02-v8";
+const SERVICE_WORKER_VERSION = "2026-05-02-v9";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
