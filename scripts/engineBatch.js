@@ -35,7 +35,7 @@ import {
 	SPEEDMODE_EVENT_PREFIX,
 } from "./speedmodeAnalysis.js";
 
-const DEFAULT_RUN_COUNT = 1;
+const DEFAULT_RUN_COUNT = 100;
 const DEFAULT_MAX_HANDS = 1000;
 const DEFAULT_PLAYER_COUNT = 6;
 const DEFAULT_STARTING_CHIPS = 2000;
@@ -508,7 +508,7 @@ async function main() {
 	console.log(`postflop_spots=${aggregateMetrics.postflopSpots}`);
 	console.log(`postflop_made_hand_folds=${aggregateMetrics.postflop.madeHandFoldCount}`);
 	console.log(`preflop_premium_folds=${aggregateMetrics.preflop.premiumFoldCount}`);
-	console.log(`bluff_raises_with_made_hand=${aggregateMetrics.postflop.bluffRaiseClassCounts.madeHand ?? 0}`);
+	console.log(`bluff_raises_with_made_hand=${aggregateMetrics.postflop.bluffRaiseClassCounts["made-hand"] ?? 0}`);
 	console.log(`showdown_hands=${aggregateEngineMetrics.showdownHands}`);
 	console.log(`uncontested_hands=${aggregateEngineMetrics.uncontestedHands}`);
 	console.log(`player_busts=${aggregateEngineMetrics.playerBustCount}`);

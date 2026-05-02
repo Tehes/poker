@@ -9,9 +9,21 @@ Version log writing guide:
 - Group related tuning work into one coherent entry instead of listing every small internal step.
 */
 
-export const APP_VERSION = "1.0.30";
+export const APP_VERSION = "1.1.0";
 
 export const VERSION_LOG = [
+	{
+		version: "1.1.0",
+		date: "2026-05-02",
+		title: "Stronger game engine foundation",
+		notes: [
+			"Core poker flow now runs through clearer shared engine paths for actions, betting rounds, streets, hand starts, hand endings, and showdown results.",
+			"Bot tournaments can be validated across much larger simulated samples, making bot tuning less noisy and reducing the risk of rule regressions.",
+			"All-ins, side pots, heads-up blinds, action order, bustouts, and full-hand runouts now have broader direct coverage.",
+			"The visible table experience stays the same while the rules foundation becomes faster to validate and safer to evolve.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.0.30",
 		date: "2026-04-29",

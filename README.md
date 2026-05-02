@@ -114,8 +114,10 @@ The table works fully offline after the first complete load.
 ## 🛠️ Tech Stack
 
 - **Vanilla HTML, CSS, and JavaScript** – no frameworks
-- **Client-side game engine** – handles table state, betting flow, bots, and showdown logic in the
-  browser
+- **Client-side game engine** – handles table state, betting flow, bots, showdown logic, and
+  browserless engine test runs
+- **Deno batch runners** – browserless engine batches for fast bot/engine validation, plus browser
+  speedmode batches for end-to-end integration checks
 - **Service Worker caching** – supports offline play after the first load
 - **Optional Deno backend sync** – keeps multiplayer companion views and remote actions in sync
 - **qr-creator** – QR code generation for device joining
@@ -233,38 +235,58 @@ Core principles:
 
 ---
 
-## 🐞 Debug Logging
+## 🐞 Debugging and Batch Testing
 
 Set `DEBUG_FLOW` to `true` in `js/app.js` to print detailed, timestamped messages about the betting
 flow. Enable this flag when investigating hangs or unexpected behavior.
 
-### Automated Speedmode Runs
+### Automated Batch Runs
 
 For repeatable bot-vs-bot runs with detailed decision logs and aggregate bot-behavior metrics, use
-the repo-local Deno runner:
+the browserless engine batch runner first:
+
+```sh
+deno task engine:batch
+deno task engine:batch:500
+deno task engine:batch:1000
+```
+
+`engineBatch` runs full bot tournaments directly through the pure engine without launching a
+browser. It is the primary runner for bot tuning, poker-rule changes, tournament flow, outcome
+joining, and large samples. It writes one log plus one JSON summary per run. By default the output
+goes to `tmp/poker-engine-batch-YYYYMMDD-HHMMSS/` and includes a combined `summary.json`.
+`deno task engine:batch` runs 100 tournaments by default; use the 500 or 1000 task when a bot-tuning
+change is noisy and needs a larger sample.
+
+Use the browser speedmode runner only when you need an end-to-end browser smoke test:
 
 ```sh
 deno task speedmode
 deno task speedmode:10
 ```
 
-The runner starts a local static server, opens the table in headless Chrome with
+`speedmodeBatch` starts a local static server, opens the table in headless Chrome with
 `?speedmode=1&botdebug=detail`, and writes one log plus one JSON summary per run. By default the
-output goes to `/tmp/poker-speedmode-batch-YYYYMMDD-HHMMSS/` and includes a combined `summary.json`.
-The detailed bot log includes tags such as `PMH` (private made hand via positive edge), `Edge`
-(private score minus public board score), and `PRE` (private raise edge at `>= 0.05`) to make
-postflop validation easier. `LT` now distinguishes `none`, `kicker`, `meaningful`, and `structural`
-lifts.
+output goes to `tmp/poker-speedmode-batch-YYYYMMDD-HHMMSS/`. Use it for app integration, DOM,
+timer, notification, animation, bootstrap, and browser-context behavior.
 
-Recommended workflow: after general game-flow changes, run `deno task speedmode` once. After bot
-logic or bot-tuning changes, prefer `deno task speedmode:10` so you get a broader summary before
-judging the effect.
+Both runners share the same analysis layer. The detailed bot log includes tags such as `PMH`
+(private made hand via positive edge), `Edge` (private score minus public board score), and `PRE`
+(private raise edge at `>= 0.05`) to make postflop validation easier. `LT` distinguishes `none`,
+`kicker`, `meaningful`, and `structural` lifts.
+
+Recommended workflow: after bot logic, engine rules, or tournament-flow changes, run
+`deno task engine:batch` first. If the direction still looks plausible but noisy, run
+`engine:batch:500` or `engine:batch:1000`. After browser orchestration or UI-side-effect changes,
+run `deno task speedmode` or `deno task speedmode:10`.
 
 Useful overrides:
 
 ```sh
+deno task engine:batch -- --runs=25 --max-hands=500
+deno task engine:batch -- --out=tmp/poker-engine-latest
 CHROME_BIN="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" deno task speedmode -- --runs=3
-deno task speedmode -- --out=/tmp/poker-speedmode-latest
+deno task speedmode -- --out=tmp/poker-speedmode-latest
 ```
 
 ---
