@@ -3,8 +3,9 @@ MODULE BOUNDARY: Main Table Runtime
 ================================================================================================== */
 
 // CURRENT STATE: Coordinates browser-facing game flow, bots, sync, timers, analytics, and DOM
-// effects. Showdown, hand-start setup, turn-action resolution, betting-round progress decisions, and
-// street progression decisions are extracted; browser orchestration remains here.
+// effects. Showdown, hand-start setup, turn-action resolution, betting-round start state,
+// betting-round progress decisions, and street progression decisions are extracted; browser
+// orchestration remains here.
 // TARGET STATE: app.js should stay as the browser-facing orchestrator only. Pure poker rules and
 // state transforms should live in gameEngine.js, while reusable UI, sync, and control primitives
 // should live in shared/*.
@@ -25,6 +26,7 @@ import {
 } from "./bot.js";
 import {
 	advanceDealer,
+	createBettingRoundStartPlan,
 	calculateWinProbabilities,
 	createBettingRoundProgressState,
 	createHandContextState,
@@ -295,20 +297,6 @@ gameState.toJSON = function () {
 		timestamp: Date.now(),
 	};
 };
-
-function resetPlayerSpotStateForHand(player) {
-	player.spotState = createPlayerSpotState();
-}
-
-function resetPlayerSpotStateForStreet(player) {
-	if (!player.spotState) {
-		resetPlayerSpotStateForHand(player);
-		return;
-	}
-	player.spotState.actedThisStreet = false;
-	player.spotState.voluntaryThisStreet = false;
-	player.spotState.aggressiveThisStreet = false;
-}
 
 /* --------------------------------------------------------------------------------------------------
 Low-Level Utilities And Formatting Helpers
@@ -2234,19 +2222,19 @@ function runBotTurn({ player, cycles, nextPlayer }) {
 
 function startBettingRound() {
 	// --- Round Reset -------------------------------------------------------------
-	if (gameState.currentPhaseIndex > 0) {
-		// Reset state for post-flop rounds before any checks/logging
-		gameState.currentBet = 0;
-		gameState.lastRaise = gameState.bigBlind;
-		clearBotCheckRaiseIntents("street_reset");
-		clearBotPassiveValueCheckIntents("street_reset");
-		gameState.players.forEach((p) => resetPlayerRoundBet(p));
+	const roundStartPlan = createBettingRoundStartPlan(gameState);
+	if (roundStartPlan.botIntentResetReason) {
+		clearBotCheckRaiseIntents(roundStartPlan.botIntentResetReason);
+		clearBotPassiveValueCheckIntents(roundStartPlan.botIntentResetReason);
 	}
-	if (!gameState.handContext) {
-		gameState.handContext = createHandContextState();
-	}
-	gameState.handContext.streetAggressorSeatIndex = null;
-	gameState.players.forEach((p) => resetPlayerSpotStateForStreet(p));
+	applyPlayerPatches(roundStartPlan.playerPatches);
+	applyGameStatePatch(roundStartPlan.gameStatePatch);
+	applyHandContextPatch(roundStartPlan.handContextPatch);
+	roundStartPlan.playerPatches.forEach(({ player, patch }) => {
+		if ("roundBet" in patch) {
+			renderPlayerSeat(player);
+		}
+	});
 	logFlow("startBettingRound", {
 		phase: getCurrentPhase(gameState.currentPhaseIndex),
 		currentBet: gameState.currentBet,
@@ -2277,8 +2265,6 @@ function startBettingRound() {
 		index: progressState.nextIndex,
 		player: gameState.players[progressState.nextIndex].name,
 	});
-
-	gameState.raisesThisRound = 0;
 
 	// --- Turn Loop ----------------------------------------------------------------
 	function nextPlayer() {
@@ -2767,7 +2753,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-05-02-v5";
+const SERVICE_WORKER_VERSION = "2026-05-02-v6";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

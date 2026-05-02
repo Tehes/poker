@@ -1,6 +1,7 @@
 import {
 	advanceDealer,
 	createBettingRoundProgressState,
+	createBettingRoundStartPlan,
 	dealCommunityCardsForPhase,
 	dealHoleCardsForNewHand,
 	getBettingRoundStartExit,
@@ -189,11 +190,14 @@ function startEngineHand(gameState) {
 	applyPlayerPatches(dealPlan.playerPatches);
 	applyGameStatePatch(gameState, dealPlan.gameStatePatch);
 
+	const roundStartPlan = applyBettingRoundStartPlanForTest(gameState);
+
 	return {
 		resetPlan,
 		dealerPlan,
 		blindPlan,
 		dealPlan,
+		roundStartPlan,
 	};
 }
 
@@ -207,16 +211,12 @@ function applyTurnActionForTest(gameState, player, actionRequest) {
 	return resolvedAction;
 }
 
-function resetStreetForTest(gameState) {
-	gameState.currentBet = 0;
-	gameState.lastRaise = gameState.bigBlind;
-	gameState.raisesThisRound = 0;
-	gameState.players.forEach((player) => {
-		player.roundBet = 0;
-	});
-	if (gameState.handContext) {
-		gameState.handContext.streetAggressorSeatIndex = null;
-	}
+function applyBettingRoundStartPlanForTest(gameState) {
+	const roundStartPlan = createBettingRoundStartPlan(gameState);
+	applyPlayerPatches(roundStartPlan.playerPatches);
+	applyGameStatePatch(gameState, roundStartPlan.gameStatePatch);
+	applyHandContextPatch(gameState, roundStartPlan.handContextPatch);
+	return roundStartPlan;
 }
 
 function advancePhaseForTest(gameState) {
@@ -226,7 +226,7 @@ function advancePhaseForTest(gameState) {
 	if (phasePlan.cardsToDeal > 0) {
 		const dealPlan = dealCommunityCardsForPhase(gameState, phasePlan.cardsToDeal);
 		applyGameStatePatch(gameState, dealPlan.gameStatePatch);
-		resetStreetForTest(gameState);
+		applyBettingRoundStartPlanForTest(gameState);
 	}
 	return phasePlan;
 }
@@ -928,6 +928,230 @@ Deno.test("betting round progress helpers do not mutate inputs", () => {
 
 	assertEquals(gameState, gameStateBefore);
 	assertEquals(progressState, progressStateBefore);
+});
+
+Deno.test("createBettingRoundStartPlan keeps preflop blind bets", () => {
+	const button = createPlayer({
+		name: "Button",
+		smallBlind: true,
+		roundBet: 10,
+		spotState: {
+			actedThisStreet: true,
+			voluntaryThisStreet: true,
+			aggressiveThisStreet: true,
+			enteredPreflop: true,
+		},
+	});
+	const bigBlind = createPlayer({
+		name: "Big Blind",
+		seatIndex: 1,
+		bigBlind: true,
+		roundBet: 20,
+		spotState: {
+			actedThisStreet: true,
+			voluntaryThisStreet: false,
+			aggressiveThisStreet: false,
+			enteredPreflop: false,
+		},
+	});
+	const gameState = {
+		currentPhaseIndex: 0,
+		currentBet: 20,
+		lastRaise: 20,
+		bigBlind: 20,
+		raisesThisRound: 3,
+		handContext: {
+			streetAggressorSeatIndex: 1,
+		},
+		players: [button, bigBlind],
+	};
+	const gameStateBefore = structuredClone(gameState);
+
+	const result = createBettingRoundStartPlan(gameState);
+
+	assertEquals({
+		playerPatches: result.playerPatches.map(({ player, patch }) => ({
+			player: player.name,
+			patch,
+		})),
+		gameStatePatch: result.gameStatePatch,
+		handContextPatch: result.handContextPatch,
+		botIntentResetReason: result.botIntentResetReason,
+	}, {
+		playerPatches: [
+			{
+				player: "Button",
+				patch: {
+					spotState: {
+						actedThisStreet: false,
+						voluntaryThisStreet: false,
+						aggressiveThisStreet: false,
+						enteredPreflop: true,
+					},
+				},
+			},
+			{
+				player: "Big Blind",
+				patch: {
+					spotState: {
+						actedThisStreet: false,
+						voluntaryThisStreet: false,
+						aggressiveThisStreet: false,
+						enteredPreflop: false,
+					},
+				},
+			},
+		],
+		gameStatePatch: {
+			raisesThisRound: 0,
+		},
+		handContextPatch: {
+			streetAggressorSeatIndex: null,
+		},
+		botIntentResetReason: null,
+	});
+	assertEquals(gameState, gameStateBefore);
+});
+
+Deno.test("createBettingRoundStartPlan resets postflop betting state", () => {
+	const playerA = createPlayer({
+		name: "A",
+		roundBet: 80,
+		spotState: {
+			actedThisStreet: true,
+			voluntaryThisStreet: true,
+			aggressiveThisStreet: true,
+			enteredPreflop: true,
+		},
+	});
+	const playerB = createPlayer({
+		name: "B",
+		seatIndex: 1,
+		roundBet: 80,
+		spotState: {
+			actedThisStreet: true,
+			voluntaryThisStreet: true,
+			aggressiveThisStreet: false,
+			enteredPreflop: true,
+		},
+	});
+	const gameState = {
+		currentPhaseIndex: 2,
+		currentBet: 80,
+		lastRaise: 40,
+		bigBlind: 20,
+		raisesThisRound: 2,
+		handContext: {
+			streetAggressorSeatIndex: 0,
+		},
+		players: [playerA, playerB],
+	};
+	const gameStateBefore = structuredClone(gameState);
+
+	const result = createBettingRoundStartPlan(gameState);
+
+	assertEquals({
+		playerPatches: result.playerPatches.map(({ player, patch }) => ({
+			player: player.name,
+			patch,
+		})),
+		gameStatePatch: result.gameStatePatch,
+		handContextPatch: result.handContextPatch,
+		botIntentResetReason: result.botIntentResetReason,
+	}, {
+		playerPatches: [
+			{
+				player: "A",
+				patch: {
+					spotState: {
+						actedThisStreet: false,
+						voluntaryThisStreet: false,
+						aggressiveThisStreet: false,
+						enteredPreflop: true,
+					},
+					roundBet: 0,
+				},
+			},
+			{
+				player: "B",
+				patch: {
+					spotState: {
+						actedThisStreet: false,
+						voluntaryThisStreet: false,
+						aggressiveThisStreet: false,
+						enteredPreflop: true,
+					},
+					roundBet: 0,
+				},
+			},
+		],
+		gameStatePatch: {
+			raisesThisRound: 0,
+			currentBet: 0,
+			lastRaise: 20,
+		},
+		handContextPatch: {
+			streetAggressorSeatIndex: null,
+		},
+		botIntentResetReason: "street_reset",
+	});
+	assertEquals(gameState, gameStateBefore);
+});
+
+Deno.test("createBettingRoundStartPlan creates missing hand and spot state", () => {
+	const player = createPlayer({ roundBet: 30 });
+	const gameState = {
+		currentPhaseIndex: 1,
+		currentBet: 30,
+		lastRaise: 20,
+		bigBlind: 20,
+		raisesThisRound: 1,
+		handContext: null,
+		players: [player],
+	};
+	const gameStateBefore = structuredClone(gameState);
+
+	const result = createBettingRoundStartPlan(gameState);
+
+	assertEquals({
+		playerPatch: result.playerPatches[0].patch,
+		gameStatePatch: result.gameStatePatch,
+		handContextPatch: result.handContextPatch,
+	}, {
+		playerPatch: {
+			spotState: {
+				actedThisStreet: false,
+				voluntaryThisStreet: false,
+				aggressiveThisStreet: false,
+				enteredPreflop: false,
+			},
+			roundBet: 0,
+		},
+		gameStatePatch: {
+			raisesThisRound: 0,
+			currentBet: 0,
+			lastRaise: 20,
+			handContext: {
+				preflopRaiseCount: 0,
+				preflopAggressorSeatIndex: null,
+				streetAggressorSeatIndex: null,
+				flopCheckedThrough: false,
+				turnCheckedThrough: false,
+				streetCheckCounts: {
+					flop: 0,
+					turn: 0,
+					river: 0,
+				},
+				streetAggressiveActionCounts: {
+					flop: 0,
+					turn: 0,
+					river: 0,
+				},
+			},
+		},
+		handContextPatch: null,
+	});
+	assertEquals(gameState, gameStateBefore);
 });
 
 Deno.test("resetPlayersForNewHand prepares remaining players and removes busted players", () => {

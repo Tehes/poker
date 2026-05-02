@@ -6,8 +6,9 @@ MODULE BOUNDARY: Pure Poker Engine
 ================================================================================================== */
 
 // CURRENT STATE: Owns hand evaluation, payout math, showdown resolution, hand-start setup,
-// turn-action resolution, betting-round progress decisions, street progression decisions, and other
-// pure poker helpers used by the table runtime. Browser scheduling and rendering remain in app.js.
+// turn-action resolution, betting-round start state, betting-round progress decisions, street
+// progression decisions, and other pure poker helpers used by the table runtime. Browser scheduling
+// and rendering remain in app.js.
 // TARGET STATE: gameEngine.js should own every pure poker rule and state transform that can run
 // without DOM, fetch, timers, or view objects, while app.js only orchestrates browser-facing flow.
 // PUT HERE: Deterministic poker rules, hand evaluation, payouts, betting order helpers, and state
@@ -1187,6 +1188,46 @@ export function dealCommunityCardsForPhase(gameState, amount, maxCommunityCards 
 			cardGraveyard,
 			communityCards: gameState.communityCards.concat(dealtCards),
 		},
+	};
+}
+
+function buildStreetSpotState(player) {
+	const spotState = player.spotState ?? createPlayerSpotState();
+	return {
+		...spotState,
+		actedThisStreet: false,
+		voluntaryThisStreet: false,
+		aggressiveThisStreet: false,
+	};
+}
+
+export function createBettingRoundStartPlan(gameState) {
+	const isPostflop = gameState.currentPhaseIndex > 0;
+	const playerPatches = gameState.players.map((player) => {
+		const patch = {
+			spotState: buildStreetSpotState(player),
+		};
+		if (isPostflop) {
+			patch.roundBet = 0;
+		}
+		return { player, patch };
+	});
+	const gameStatePatch = {
+		raisesThisRound: 0,
+	};
+	if (isPostflop) {
+		gameStatePatch.currentBet = 0;
+		gameStatePatch.lastRaise = gameState.bigBlind;
+	}
+	if (!gameState.handContext) {
+		gameStatePatch.handContext = createHandContextState();
+	}
+
+	return {
+		playerPatches,
+		gameStatePatch,
+		handContextPatch: gameState.handContext ? { streetAggressorSeatIndex: null } : null,
+		botIntentResetReason: isPostflop ? "street_reset" : null,
 	};
 }
 
