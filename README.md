@@ -247,6 +247,7 @@ the browserless engine batch runner first:
 
 ```sh
 deno task engine:batch
+deno task engine:batch:equity
 deno task engine:batch:500
 deno task engine:batch:1000
 ```
@@ -257,6 +258,12 @@ joining, and large samples. It writes one log plus one JSON summary per run. By 
 goes to `tmp/poker-engine-batch-YYYYMMDD-HHMMSS/` and includes a combined `summary.json`.
 `deno task engine:batch` runs 100 tournaments by default; use the 500 or 1000 task when a bot-tuning
 change is noisy and needs a larger sample.
+
+`deno task engine:batch:equity` enables a slower diagnostic pass after each run. It enriches
+postflop decisions with approximate current equity against the still-active players' actual hole
+cards; Turn and River are exact, Flop is exact under the normal board cap, and Preflop stays off by
+default because hand family, position, domination, and playability are usually more useful there.
+Use `--equity-preflop` only when you explicitly want selective Preflop leak candidates included.
 
 Use the browser speedmode runner only when you need an end-to-end browser smoke test:
 
@@ -285,6 +292,8 @@ Useful overrides:
 ```sh
 deno task engine:batch -- --runs=25 --max-hands=500
 deno task engine:batch -- --out=tmp/poker-engine-latest
+deno task engine:batch -- --equity --equity-limit=1000
+deno task engine:batch -- --equity-preflop --runs=10
 CHROME_BIN="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" deno task speedmode -- --runs=3
 deno task speedmode -- --out=tmp/poker-speedmode-latest
 ```

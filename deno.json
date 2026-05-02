@@ -8,6 +8,7 @@
 	},
 	"tasks": {
 		"engine:batch": "deno run --allow-read=. --allow-write=.,/tmp ./scripts/engineBatch.js",
+		"engine:batch:equity": "deno run --allow-read=. --allow-write=.,/tmp ./scripts/engineBatch.js --equity",
 		"engine:batch:500": "deno run --allow-read=. --allow-write=.,/tmp ./scripts/engineBatch.js --runs=500",
 		"engine:batch:1000": "deno run --allow-read=. --allow-write=.,/tmp ./scripts/engineBatch.js --runs=1000",
 		"speedmode": "deno run --allow-env=CHROME_BIN --allow-net=127.0.0.1,localhost --allow-read=. --allow-write=.,/tmp --allow-run ./scripts/speedmodeBatch.js",

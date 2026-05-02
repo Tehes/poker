@@ -71,12 +71,12 @@ MODULE BOUNDARY: Bot Decision Engine
 // - Raise / call / fold must all remain live options postflop.
 // - SB heads-up and BTN 3-handed should keep healthy open / defend dynamics.
 // - firstBustAvg, firstBustMedian, early bust share <= 10, and early 800+ pots must not show
-//   clear multi-metric regression versus the latest 100-run baseline.
+//   clear multi-metric regression versus the latest 1000-run baseline.
 // - One noisy metric alone is not enough to fail a pass; clustered regressions are.
-// - Batch rule: speedmode:10 is the required structure check, speedmode:30 is the stability check
-//   for promising passes, and speedmode:100 is the acceptance run against the latest 100-run
-//   baseline; a candidate wins only if target metrics improve and core health metrics remain
-//   stable.
+// - Batch rule: engine:batch is the required structure check, engine:batch:500 is the stability
+//   check for promising passes, and engine:batch:1000 is the acceptance run against the latest
+//   1000-run baseline; a candidate wins only if target metrics improve and core health metrics
+//   remain stable.
 //
 // TUNING PRINCIPLE:
 // Prefer adjusting existing numeric thresholds, ratios, caps, and hand-context classification
