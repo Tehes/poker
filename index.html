@@ -285,7 +285,12 @@
 				<div class="cardslot"></div>
 			</section>
 			<section class="actions">
-				<button type="button" id="start-button" name="button">Start</button>
+				<div id="new-round-controls" class="new-round-controls">
+					<button type="button" id="start-button" name="button"><span
+							id="start-button-label">Start</span><span id="new-round-countdown" class="hidden"> in <span
+								id="new-round-countdown-value">20</span></span></button>
+					<button type="button" id="new-round-cancel-button" class="hidden" name="button">X</button>
+				</div>
 				<button type="button" id="instructions-button" name="button">Instructions</button>
 				<button type="button" id="stats-button" class="hidden" name="button">Stats</button>
 				<button type="button" id="log-button" class="hidden" name="button">Log</button>

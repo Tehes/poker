@@ -9,9 +9,20 @@ Version log writing guide:
 - Group related tuning work into one coherent entry instead of listing every small internal step.
 */
 
-export const APP_VERSION = "1.1.0";
+export const APP_VERSION = "1.2.0";
 
 export const VERSION_LOG = [
+	{
+		version: "1.2.0",
+		date: "2026-05-10",
+		title: "Automatic next round",
+		notes: [
+			"After a completed hand, the New Round button now shows a short countdown before the next hand starts automatically.",
+			"A compact cancel control can stop the automatic start while keeping the normal New Round button available.",
+			"Game-over summaries stay manual and do not start another hand.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.1.0",
 		date: "2026-05-02",

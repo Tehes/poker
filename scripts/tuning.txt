@@ -1,0 +1,428 @@
+Du arbeitest am Poker-Projekt.
+
+Aufgabe:
+Erzeuge zuerst eine frische 1000er-Baseline. Analysiere danach selbstständig, welche Bot-Metrik bzw. welcher Leak-Kandidat strategisch am sinnvollsten zu verbessern ist. Führe vor jeder Codeänderung eine Ursachenanalyse durch. Tune erst danach genau einen fokussierten Hebel in `js/bot.js`. Wiederhole diesen Prozess, bis ein Kandidat die frische 1000er-Baseline im finalen 1000er Acceptance Run schlägt oder bis keine plausible nächste Hypothese mehr übrig ist.
+
+Grundprinzip:
+Nicht sofort tunen.
+Erst frische Baseline erzeugen, messen, verstehen, Ursache lokalisieren, Hypothese bilden, dann genau eine Ursache adressieren.
+
+Leitsatz:
+Tune nicht die Metrik. Tune die Ursache.
+
+Erlaubte dauerhafte Dateiänderung:
+- Ausschließlich `js/bot.js`.
+
+Erlaubte temporäre Arbeiten:
+- Du darfst den Inhalt von `tmp/` vor Beginn löschen.
+- Du darfst neue Batch-Ausgaben in `tmp/` erzeugen.
+- Du darfst temporäre Analyse-Skripte oder Reports in `tmp/` erstellen und ausführen.
+- Du darfst keine relevanten Projektdateien außerhalb von `tmp/` löschen.
+
+Nicht ändern:
+- keine Engine-Dateien
+- keine Tests
+- keine Analyse-Dateien
+- keine Batch-Runner
+- keine Logging-Formate
+- keine Metrikdefinitionen
+- keine README-/Version-Dateien
+- keine Akzeptanzkriterien
+
+Phase 1: Frische Baseline erzeugen
+
+1. Lösche optional zuerst den Inhalt von `tmp/`, damit keine alten Batch-Runs die Analyse verfälschen.
+2. Starte einen frischen 1000er Engine-Batch als Baseline:
+
+   `deno task engine:batch:1000`
+
+3. Nutze ausschließlich diese neue 1000er-Baseline als Vergleichsbasis.
+4. Notiere den exakten Baseline-Pfad.
+5. Extrahiere die wichtigsten Kernmetriken, insbesondere:
+   - Hand-/Decision-Counts
+   - Showdown-Struktur
+   - Postflop-Action-Mix
+   - Preflop-Entry- und Route-Metriken
+   - MDF / Overfold-Metriken
+   - WinnerSide / ChipDelta, falls vorhanden
+   - Guardrails
+   - Early-Bust- und Tournament-Flow-Metriken
+
+6. Wenn der Baseline-Run fehlschlägt, ändere keinen Bot-Code. Berichte den Fehler und den letzten bekannten Zustand.
+
+Phase 2: Leak-Kandidaten entdecken
+
+Analysiere die frische 1000er-Baseline und finde selbst einen sinnvollen Ziel-Leak.
+
+Bevorzuge Kandidaten mit:
+- ausreichender Sample Size,
+- klarem strategischem Bezug,
+- erkennbarem Abstand zu gewünschtem Verhalten,
+- plausibler Beeinflussbarkeit durch `js/bot.js`,
+- geringer Gefahr, nur Noise oder Messartefakte zu optimieren.
+
+Mögliche Leak-Klassen:
+- schlechte Call-Qualität,
+- High-Equity-Folds,
+- Low-Equity-Calls,
+- Low-Equity-Raises,
+- chronischer Overfold nach Street, Spot oder Handklasse,
+- auffällige Preflop-Entry-Qualität,
+- trash-heavy Arrival-Ranges in späteren Spots,
+- zu passive oder zu aggressive No-Bet-Spots,
+- schlechte Line-Fortsetzung über mehrere Streets,
+- problematische River-Lines,
+- unplausible Sizing-/Commitment-Geometrie,
+- auffällige Bust- oder Tournament-Flow-Risiken.
+
+Wähle keine Metrik nur deshalb, weil sie numerisch auffällig ist.
+Wähle eine Metrik nur, wenn sie strategisch relevant, ausreichend belegt und durch Botlogik plausibel beeinflussbar ist.
+
+Phase 3: Meta-Diagnose vor jeder Änderung
+
+Bevor du Code änderst, analysiere nicht nur, wo die Metrik sichtbar wird, sondern wo der Leak wahrscheinlich entsteht.
+
+Kläre ausdrücklich:
+
+1. Sichtbarer Schaden
+   - Welche Metrik ist auffällig?
+   - Auf welcher Street, in welchem Spot oder in welcher Line wird sie sichtbar?
+   - Wie groß ist das Problem absolut und relativ?
+   - Wie groß ist die Sample Size?
+
+2. Entstehungsebene
+   Unterscheide mindestens:
+   - Arrival Quality:
+     Kommen die Bots bereits mit ungeeigneten Händen, Ranges, Positionen oder Stack-Konstellationen in den Spot?
+   - Spot Decision Quality:
+     Ist die konkrete Entscheidung im Spot falsch, obwohl die Ankunft plausibel ist?
+   - Line / Sequence Quality:
+     Entsteht der Leak durch vorherige Aktionen, z. B. Limp, Call, Check, Barrel-Abbruch, passive Line oder verpasste Aggression?
+   - Sizing / Pot Geometry:
+     Erzeugen frühere Bet-/Call-/Raise-Größen schlechte SPR-, Pot-Odds- oder Commitment-Situationen?
+   - Range Composition:
+     Ist die Range in diesem Spot zu trash-heavy, zu capped, zu value-arm, zu draw-arm oder zu bluff-heavy?
+   - Opponent / Table Dynamics:
+     Entsteht der Effekt durch Multiway/HU, Position, Blind-Kontext, Stackdruck, Aggression hinter dem Bot oder Gegnerreads?
+   - Metric Artifact / Noise:
+     Ist die Metrik auffällig, aber erklärbar durch Sample Size, gute Folds, Runout-Varianz, Outcome-Join-Effekte oder ungeeignete Aggregation?
+
+3. Ursachenpfad
+   Beantworte:
+   - Welche vorherigen Entscheidungen erzeugen die betroffenen Spots?
+   - Welche Ranges kommen dort an?
+   - Sind diese Ranges plausibel?
+   - Ist die Entscheidung im sichtbaren Spot plausibel?
+   - Ist die spätere Line nach dieser Entscheidung plausibel?
+   - Zeigen Outcome Join, WinnerSide, ChipDelta oder Equity, dass der Spot wirklich schlecht war?
+   - Liegt der beste Hebel upstream, im konkreten Spot oder downstream in der späteren Line?
+
+4. Breakdowns
+   Nutze je nach Leak passende Dimensionen:
+   - Street
+   - Action-Route
+   - vorherige Line
+   - Preflop-Route
+   - Position
+   - Seat
+   - Handfamilie
+   - Handklasse
+   - suited / gap / pair
+   - ChenScore / Playability / Domination
+   - Equity, falls verfügbar
+   - Pot Odds
+   - Stack Ratio / SPR / Commitment
+   - Raise-Level
+   - Multiway vs Heads-up
+   - Board Texture
+   - Draw-Klasse
+   - WinnerSide / ChipDelta
+
+Wenn vorhandene Summary-Metriken nicht ausreichen, erstelle temporäre Ad-hoc-Analysen in `tmp/`.
+Ändere dafür keine bestehenden Analyse-, Engine- oder Testdateien dauerhaft.
+
+Wichtig:
+Tune nicht automatisch an der Stelle, an der die Metrik sichtbar wird.
+Wenn ein Problem upstream durch Arrival Quality entsteht, tune die Entry-/Arrival-Ursache.
+Wenn ein Problem durch frühere Sizing- oder Commitment-Geometrie entsteht, tune dort.
+Wenn ein Problem durch spätere Line-Fortsetzung entsteht, tune die Line-Logik.
+Wenn ein Kandidat scheitert, aktualisiere die Diagnose, statt denselben Hebel einfach stärker zu drehen.
+
+Phase 4: Root-Cause- und Symptom-Fix-Gate
+
+Bevor ein Kandidat weiter validiert oder akzeptiert wird, prüfe ausdrücklich, ob die Verbesserung die Ursache löst oder nur den sichtbaren Schaden verschiebt.
+
+Eine Änderung ist verdächtig, wenn:
+- die Zielmetrik besser wird, aber eine verwandte Metrik schlechter wird,
+- der Schaden auf eine spätere Street wandert,
+- der Schaden in eine andere Action-Klasse wandert,
+- der Schaden in andere Handklassen wandert,
+- die gleiche Range nur anders behandelt wird, aber weiterhin schlecht in den Spot gelangt,
+- weniger schlechte Calls entstehen, aber mehr schlechte Folds,
+- weniger Overfold entsteht, aber mehr Trash-Calls,
+- weniger passive Fehler entstehen, aber mehr Spew,
+- bessere MDF-Werte entstehen, aber Equity-/WinnerSide-/ChipDelta-Signale schlechter werden,
+- eine Line lokal besser wirkt, aber spätere Line-Fortsetzung schlechter wird,
+- ein Kandidat Zielmetriken verbessert, aber Core Health durch Gegenbewegungen erkauft.
+
+Analysiere deshalb bei jeder Verbesserung:
+1. Welche Metrik wurde besser?
+2. Welche direkt verwandten Metriken wurden schlechter?
+3. Ist die Verbesserung kausal plausibel oder nur ein Verlagerungseffekt?
+4. Bleibt die Range, die in den Spot kommt, plausibel?
+5. Bleibt die Entscheidung im Spot plausibel?
+6. Bleibt die spätere Line nach der Entscheidung plausibel?
+7. Wird der Bot insgesamt strategisch besser oder nur in einer Messzahl sauberer?
+
+Akzeptiere keinen Kandidaten, wenn die Verbesserung hauptsächlich durch Problemverschiebung entsteht.
+
+Wenn eine Verbesserung mit klaren Gegenbewegungen erkauft wird:
+- nicht direkt akzeptieren,
+- nicht denselben Hebel weiter feinjustieren,
+- erst die Entstehungskette neu analysieren,
+- prüfen, ob der eigentliche Hebel upstream, im Spot selbst, downstream, in der Range-Komposition, in der Line-Logik oder in der Pot-Geometrie liegt.
+
+Phase 5: Zielmetrik festlegen
+
+Lege nach der Diagnose genau eine primäre Zielmetrik fest.
+
+Dokumentiere:
+- welche Metrik verbessert werden soll,
+- warum sie relevant ist,
+- welche Sample Size sie hat,
+- auf welcher Ursachenebene der Leak wahrscheinlich entsteht,
+- welche Teilmetriken zur Kontrolle nötig sind,
+- welche Metriken nicht schlechter werden dürfen,
+- warum diese Metrik ein echter Leak und kein Artefakt ist.
+
+Wenn die Diagnose zeigt, dass die auffällige Metrik wahrscheinlich kein echter Leak ist, wähle eine andere Metrik und analysiere diese genauso vor jeder Änderung.
+
+Phase 6: Hypothese formulieren
+
+Formuliere vor jeder Codeänderung eine konkrete Hypothese:
+
+- welche einzelne Ursache adressiert wird,
+- welcher konkrete Hebel geändert wird,
+- warum genau dieser Hebel,
+- welche Zielmetrik besser werden sollte,
+- auf welcher Ursachenebene der Hebel ansetzt,
+- welche Nebenwirkungen möglich sind,
+- welche Guardrails und Core-Metriken besonders überwacht werden müssen,
+- wodurch die Hypothese falsifiziert wäre.
+
+Ein Versuch = eine Ursache, ein fokussierter Hebel.
+
+Starte mit der kleinsten plausiblen Änderung.
+
+Eine fokussierte Ein-Hebel-Änderung darf sein:
+- eine bestehende Schwelle leicht verschieben,
+- eine Ratio oder ein Cap anpassen,
+- eine Score-Gewichtung verändern,
+- einen kleinen kontinuierlichen Bewertungs-Term ergänzen oder anpassen,
+- eine bestehende Bewertungsfunktion kontextsensitiver machen,
+- eine Handklasse sauberer unterscheiden,
+- eine vorhandene Barriere abhängig von Route, Position, Street oder Struktur justieren,
+- eine vorhandene Penalty dort anwenden, wo sie laut Diagnose fehlt.
+
+Die Änderung muss nicht zwingend nur eine Zahl sein.
+Wenn die Diagnose zeigt, dass der Leak strukturell entsteht, darf der Hebel eine kleine fokussierte Logikänderung sein. Sie muss aber weiterhin genau eine Ursache adressieren.
+
+Wenn ein Kandidat scheitert, weil der gewählte Hebel die erwartete Richtung trifft, aber zu stark wirkt, darf genau derselbe Hebel einmal moderater neu getestet werden.
+
+Voraussetzung dafür:
+- Die Fehlschlaganalyse zeigt klar, dass die Richtung grundsätzlich stimmt.
+- Die Regression ist plausibel durch zu hohe Intensität erklärbar.
+- Es wird keine zweite Ursache adressiert.
+- Wenn auch die moderate Variante scheitert, nicht weiter am gleichen Hebel drehen, sondern Hypothese aktualisieren und einen anderen Hebel suchen.
+
+Vermeide:
+- mehrere unabhängige Leaks gleichzeitig zu lösen,
+- breite neue Hard Guards,
+- viele Spot-Sonderregeln,
+- gleichzeitige Änderungen an mehreren unabhängigen Stellen,
+- Änderungen, die nur eine Metrik kosmetisch verbessern,
+- Änderungen, die das Messsystem umgehen.
+
+Wenn eine minimale Änderung nicht reicht:
+- erkläre, warum der Leak strukturell ist,
+- benenne die kleinste fokussierte strukturelle Änderung,
+- teste trotzdem nur diese eine Ursache,
+- validiere wie gewohnt mit 100 / 500 / 1000.
+
+Phase 7: Fokussiert tunen
+
+Ändere genau einen fokussierten Hebel in `js/bot.js`.
+
+Danach starte:
+
+`deno task engine:batch`
+
+Bewerte den 100er gegen die frische 1000er-Baseline.
+
+Wenn der 100er schlechter wird oder die Zielmetrik nicht verbessert:
+- analysiere zuerst genau, warum der Kandidat schlechter wurde oder nicht wirkt,
+- revertiere erst danach die Änderung,
+- aktualisiere die Diagnose,
+- formuliere eine neue Hypothese,
+- versuche einen anderen einzelnen Hebel.
+
+Die Fehlschlaganalyse muss prüfen:
+- Wurde die Zielmetrik wirklich schlechter oder ist das Ergebnis noisy?
+- Welche Teilmetriken haben sich verschlechtert?
+- Auf welchen Streets, Spots, Handklassen, Routen oder Lines trat die Verschlechterung auf?
+- Ist die Verschlechterung eine direkte Folge des geänderten Hebels?
+- Hat der Hebel nur ein Symptom beeinflusst, während die Ursache woanders liegt?
+- Hat der Hebel schlechte Ranges in spätere Spots verschoben?
+- Hat der Hebel bessere Folds verhindert?
+- Hat der Hebel Trash-Calls erhöht?
+- Hat der Hebel Value-Aggression reduziert?
+- Hat der Hebel Spew erzeugt?
+- War die ursprüngliche Hypothese falsch?
+- Muss der nächste Hebel upstream, im Spot selbst oder downstream liegen?
+
+Phase 8: Validierung
+
+Wenn der 100er die Zielmetrik verbessert und keine Guardrails bricht, starte:
+
+`deno task engine:batch:500`
+
+Wenn der 500er schlechter wird oder die Verbesserung nicht stabil bleibt:
+- analysiere ausführlich, warum der 500er die 100er-Verbesserung nicht bestätigt,
+- prüfe, ob der 100er nur Noise war,
+- prüfe, welche Teilmetriken kippen,
+- prüfe, ob der Hebel lokal hilft, aber global schadet,
+- prüfe, ob die Ursache falsch lokalisiert wurde,
+- revertiere die Änderung, wenn die Verbesserung nicht plausibel stabil ist,
+- versuche danach einen neuen einzelnen Hebel.
+
+Wenn der 500er weiter besser ist, starte:
+
+`deno task engine:batch:1000`
+
+Akzeptiere die Änderung nur, wenn:
+- der Kandidaten-1000er die frische Baseline in der gewählten Zielmetrik schlägt,
+- die Verbesserung strategisch plausibel ist,
+- alle Hard Guardrails stabil bleiben,
+- keine klare Core-Regression entsteht,
+- der Effekt nicht nur durch Noise, Trash-Calls, Spew, Problemverschiebung oder Messartefakte erklärbar ist.
+
+Wenn der 1000er scheitert:
+- analysiere den Fehlschlag,
+- revertiere den Kandidaten,
+- aktualisiere die Diagnose,
+- versuche einen anderen einzelnen Hebel, sofern noch plausible Hypothesen existieren.
+
+Phase 9: Hard Guardrails
+
+Diese Guardrails sind nicht verhandelbar:
+
+- `preflop_premium_folds` muss 0 bleiben.
+- `bluff_raises_with_made_hand` muss 0 bleiben.
+- `postflop_reraises_allin_edge_lt_1.0` muss 0 bleiben.
+- `postflop_reraises_edge_lt_1.0` muss selten bleiben und darf sich nicht deutlich verschlechtern.
+- Keine klare Regression bei Early-Bust-Metriken.
+- Keine klare Regression bei Showdown-Struktur.
+- Keine klare Regression beim Postflop-Action-Mix.
+- Keine klare Regression im Tournament-Flow.
+- Calls, Raises und Folds müssen echte Optionen bleiben.
+- Keine Verbesserung durch offensichtliche Trash-Calls.
+- Keine Verbesserung durch spewy Aggression.
+- Keine Verbesserung durch passives Overfolding an anderer Stelle.
+- Keine Verbesserung durch Problemverschiebung in andere Streets, Lines, Actions oder Handklassen.
+- Keine Verbesserung durch Änderung oder Umgehung von Logs, Metriken oder Analyse.
+
+Phase 10: Equity Enrichment
+
+Nutze Equity Enrichment gezielt als Diagnosewerkzeug, nicht als Hauptziel.
+
+Nutze Equity Enrichment besonders bei:
+- Postflop-Call-Qualität,
+- High-Equity-Folds,
+- Low-Equity-Calls,
+- Low-Equity-Raises,
+- widersprüchlichen MDF- und WinnerPct-Signalen,
+- ambivalenten 100er- oder 500er-Ergebnissen,
+- unklarer Entscheidungsqualität trotz scheinbar besserer Hauptmetrik,
+- Verdacht, dass eine Range zwar formal besser verteidigt, aber schlechtere Equity realisiert.
+
+Befehl:
+
+`deno task engine:batch -- --equity --equity-limit=1000`
+
+Für finale ambivalente Postflop-Decision-Quality-Kandidaten zusätzlich:
+
+`deno task engine:batch -- --runs=1000 --equity --equity-limit=1000`
+
+Equity ist Diagnose, nicht Hauptziel.
+Optimiere nicht direkt auf Equity-Diagnostics, wenn dadurch Range Defense, Playability, Showdown-Struktur oder Guardrails schlechter werden.
+
+Phase 11: Abschlussbericht
+
+Liefere am Ende einen kompakten, aber vollständigen Bericht.
+
+Der Bericht muss enthalten:
+
+1. Frische Baseline
+- Baseline-Pfad
+- relevante Kernmetriken
+- Guardrail-Status
+- warum diese Baseline verwendet wurde
+
+2. Leak Discovery
+- welche Metriken geprüft wurden
+- welche Kandidaten verworfen wurden und warum
+- welche Zielmetrik gewählt wurde
+- Sample Size
+- warum sie strategisch relevant ist
+
+3. Meta-Diagnose
+- wo der Leak sichtbar wird
+- wo der Leak wahrscheinlich entsteht
+- wichtigste Breakdowns
+- betroffene Ranges / Routen / Lines
+- vermutete Ursache
+- alternative Erklärungen
+- warum der gewählte Hebel an der richtigen Ebene ansetzt
+
+4. Root-Cause- und Symptom-Fix-Prüfung
+- welche verwandten Metriken sich mitbewegen
+- ob die Verbesserung kausal plausibel ist
+- ob Problemverschiebung ausgeschlossen werden kann
+- warum der Kandidat den Bot insgesamt strategisch verbessert und nicht nur eine Messzahl
+
+5. Hypothesen und Versuche
+Für jeden getesteten Hebel:
+- exakte Änderungsidee
+- erwarteter Effekt
+- 100er-Ergebnis
+- falls erreicht: 500er-Ergebnis
+- falls erreicht: 1000er-Ergebnis
+- Equity-Ergebnis, falls genutzt
+- Erklärung bei Fehlschlag
+- Erkenntnis für die nächste Hypothese
+
+6. Akzeptierter Kandidat, falls vorhanden
+- exakte Änderung
+- Diff-Zusammenfassung
+- Vergleich gegen die frische Baseline
+- 100er-Ergebnis
+- 500er-Ergebnis
+- 1000er-Ergebnis
+- Equity-Ergebnis, falls genutzt
+- Guardrail-Status
+- geprüfte Core-Regressionen
+- warum die Verbesserung strategisch plausibel ist
+
+7. Finale Entscheidung
+- `accepted` oder `rejected`
+
+Wenn accepted:
+- Lasse ausschließlich die akzeptierte Änderung in `js/bot.js` im Working Tree.
+- Entferne alle fehlgeschlagenen experimentellen Änderungen.
+- Lasse temporäre Batch-Ausgaben in `tmp/` bestehen.
+
+Wenn rejected:
+- Revertiere alle Änderungen.
+- Hinterlasse einen sauberen Working Tree.
+- Fasse die besten gescheiterten Hypothesen und ihre Erkenntnisse zusammen.
+- Erkläre, welche Ursache vermutlich weiter untersucht werden sollte.

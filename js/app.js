@@ -28,9 +28,9 @@ import {
 } from "./bot.js";
 import {
 	advanceDealer,
-	createBettingRoundStartPlan,
 	calculateWinProbabilities,
 	createBettingRoundProgressState,
+	createBettingRoundStartPlan,
 	createHandContextState,
 	createHandEndPlan,
 	createNextHandTransitionPlan,
@@ -53,8 +53,8 @@ import {
 	isAllInRunout,
 	postBlinds,
 	recordPlayerActionStats,
-	resolveTurnAction,
 	resolveShowdown,
+	resolveTurnAction,
 } from "./gameEngine.js";
 import QrCreator from "./qr-creator.js";
 import {
@@ -83,6 +83,13 @@ Configuration And DOM References
 ---------------------------------------------------------------------------------------------------*/
 
 const startButton = document.querySelector("#start-button");
+const newRoundControls = document.querySelector("#new-round-controls");
+const startButtonLabel = document.querySelector("#start-button-label");
+const newRoundCountdown = document.querySelector("#new-round-countdown");
+const newRoundCountdownValue = document.querySelector(
+	"#new-round-countdown-value",
+);
+const newRoundCancelButton = document.querySelector("#new-round-cancel-button");
 const instructionsButton = document.querySelector("#instructions-button");
 const rotateIcons = document.querySelectorAll(".seat .rotate");
 const nameBadges = document.querySelectorAll(".seat h3");
@@ -192,6 +199,8 @@ const FAST_FORWARD_CHIP_TRANSFER_DURATION = 160;
 const FAST_FORWARD_CHIP_TRANSFER_STEPS = 8;
 const DEFAULT_CHIP_TRANSFER_STEPS = 30;
 const WINNER_REACTION_DURATION = 2000;
+const NEW_ROUND_COUNTDOWN_SECONDS = 20;
+const NEW_ROUND_COUNTDOWN_INTERVAL = 1000;
 
 const HISTORY_LOG = false; // Set to true to enable history logging in the console
 let DEBUG_FLOW = false; // Set to true for verbose game-flow logging
@@ -218,6 +227,8 @@ let stateSyncTimer = null;
 let stateSyncTimerDelay = null;
 let runoutPhaseTimer = null;
 let chipTransferFinishTimer = null;
+let newRoundCountdownTimer = null;
+let newRoundCountdownSeconds = 0;
 let summaryButtonsVisible = false;
 let handFastForwardActive = false;
 let autoplayToGameEnd = false;
@@ -882,6 +893,95 @@ function syncLogUi() {
 function setSummaryButtonsVisible(isVisible) {
 	summaryButtonsVisible = isVisible;
 	syncLogUi();
+}
+
+function setStartButtonLabel(text) {
+	if (startButtonLabel) {
+		startButtonLabel.textContent = text;
+		startButtonLabel.classList.remove("hidden");
+		return;
+	}
+	startButton.textContent = text;
+}
+
+function showNewRoundCountdown(seconds) {
+	if (!newRoundCountdown || !newRoundCountdownValue) {
+		setStartButtonLabel(`New Round in ${seconds}`);
+		return;
+	}
+	newRoundCountdownValue.textContent = String(seconds);
+	newRoundCountdown.classList.remove("hidden");
+}
+
+function clearNewRoundCountdown({ notify } = { notify: false }) {
+	const wasActive = newRoundCountdownTimer !== null ||
+		newRoundCountdownSeconds > 0;
+	if (newRoundCountdownTimer !== null) {
+		clearTimeout(newRoundCountdownTimer);
+		newRoundCountdownTimer = null;
+	}
+	newRoundCountdownSeconds = 0;
+	if (newRoundControls) {
+		newRoundControls.classList.remove("new-round-countdown-active");
+	}
+	startButton.classList.remove("new-round-countdown-active");
+	if (newRoundCountdown) {
+		newRoundCountdown.classList.add("hidden");
+	}
+	if (newRoundCancelButton) {
+		newRoundCancelButton.classList.add("hidden");
+		newRoundCancelButton.classList.remove("new-round-countdown-active");
+	}
+	if (newRoundCountdownValue) {
+		newRoundCountdownValue.textContent = String(
+			NEW_ROUND_COUNTDOWN_SECONDS,
+		);
+	}
+	if (!newRoundCountdown || !newRoundCountdownValue) {
+		setStartButtonLabel("New Round");
+	}
+	if (notify && wasActive) {
+		enqueueNotification("New round countdown canceled.");
+	}
+}
+
+function tickNewRoundCountdown() {
+	newRoundCountdownSeconds--;
+	if (newRoundCountdownSeconds <= 0) {
+		clearNewRoundCountdown({ notify: false });
+		preFlop();
+		return;
+	}
+	showNewRoundCountdown(newRoundCountdownSeconds);
+	newRoundCountdownTimer = setTimeout(
+		tickNewRoundCountdown,
+		NEW_ROUND_COUNTDOWN_INTERVAL,
+	);
+}
+
+function startNewRoundCountdown() {
+	clearNewRoundCountdown({ notify: false });
+	if (SPEED_MODE || autoplayToGameEnd) {
+		return;
+	}
+	newRoundCountdownSeconds = NEW_ROUND_COUNTDOWN_SECONDS;
+	showNewRoundCountdown(newRoundCountdownSeconds);
+	if (newRoundControls) {
+		newRoundControls.classList.add("new-round-countdown-active");
+	}
+	startButton.classList.add("new-round-countdown-active");
+	if (newRoundCancelButton) {
+		newRoundCancelButton.classList.remove("hidden");
+		newRoundCancelButton.classList.add("new-round-countdown-active");
+	}
+	newRoundCountdownTimer = setTimeout(
+		tickNewRoundCountdown,
+		NEW_ROUND_COUNTDOWN_INTERVAL,
+	);
+}
+
+function cancelNewRoundCountdown() {
+	clearNewRoundCountdown({ notify: true });
 }
 
 /* --------------------------------------------------------------------------------------------------
@@ -1605,7 +1705,7 @@ function computeSpectatorWinProbabilities(reason = "") {
 Game Setup And Hand Lifecycle
 ---------------------------------------------------------------------------------------------------*/
 
-function startGame(event) {
+function startGame() {
 	if (!gameState.gameStarted) {
 		resetRuntimeFastForward();
 		totalHands = 0;
@@ -1630,7 +1730,7 @@ function startGame(event) {
 			for (const name of nameBadges) {
 				name.contentEditable = "false";
 			}
-			event.target.classList.add("hidden");
+			startButton.classList.add("hidden");
 			instructionsButton.classList.add("hidden");
 			closeAllOverlays();
 			gameState.gameStarted = true;
@@ -1813,6 +1913,7 @@ function dealCards() {
 // Execute the standard pre-flop steps: rotate dealer, post blinds, deal cards, start betting.
 function preFlop() {
 	// --- Hand Start And Reset ---------------------------------------------------
+	clearNewRoundCountdown({ notify: false });
 	// Analytics: count hands and mark start time
 	totalHands++;
 	if (runoutPhaseTimer) {
@@ -2123,7 +2224,12 @@ function applyResolvedTurnActionPatches(player, resolvedAction) {
 	if (Object.keys(resolvedAction.playerPatch).length > 0) {
 		renderPlayerSeat(player);
 	}
-	if (Object.prototype.hasOwnProperty.call(resolvedAction.gameStatePatch, "pot")) {
+	if (
+		Object.prototype.hasOwnProperty.call(
+			resolvedAction.gameStatePatch,
+			"pot",
+		)
+	) {
 		renderPot();
 	}
 }
@@ -2265,13 +2371,19 @@ function startBettingRound() {
 		}
 
 		if (step.reason === "waitUncalled") {
-			logFlow("already matched bet", { name: step.player.name, cycles: step.cycles });
+			logFlow("already matched bet", {
+				name: step.player.name,
+				cycles: step.cycles,
+			});
 			logFlow("wait uncalled", { name: step.player.name });
 			return setTimeout(nextPlayer, 0); // schedule asynchronously to break call chain
 		}
 
 		if (step.type === "advance") {
-			logFlow("already matched bet", { name: step.player.name, cycles: step.cycles });
+			logFlow("already matched bet", {
+				name: step.player.name,
+				cycles: step.cycles,
+			});
 			logFlow("advance phase", { name: step.player.name });
 			clearActiveTurnPlayer(false);
 			clearPendingAction();
@@ -2279,13 +2391,20 @@ function startBettingRound() {
 		}
 
 		if (step.reason === "firstPassMatched") {
-			logFlow("already matched bet", { name: step.player.name, cycles: step.cycles });
+			logFlow("already matched bet", {
+				name: step.player.name,
+				cycles: step.cycles,
+			});
 		}
 
 		// --- Bot Branch --------------------------------------------------------------
 		// If this is a bot, choose an action based on hand strength
 		if (step.player.isBot) {
-			return runBotTurn({ player: step.player, cycles: step.cycles, nextPlayer });
+			return runBotTurn({
+				player: step.player,
+				cycles: step.cycles,
+				nextPlayer,
+			});
 		}
 
 		// --- Human Branch ------------------------------------------------------------
@@ -2436,15 +2555,20 @@ function finishHandAfterShowdown() {
 	updateFastForwardButton();
 	renderStatsOverlay();
 	setSummaryButtonsVisible(true);
-	startButton.textContent = "New Round";
+	setStartButtonLabel("New Round");
 	startButton.classList.remove("hidden");
+	startNewRoundCountdown();
 	queueStateSync();
 }
 
 function doShowdown() {
 	// --- Active Players And Showdown State ---------------------------------------
 	const communityCards = getCommunityCardCodes();
-	const showdownResult = resolveShowdown(gameState.players, communityCards, CHIP_UNIT);
+	const showdownResult = resolveShowdown(
+		gameState.players,
+		communityCards,
+		CHIP_UNIT,
+	);
 	const {
 		activePlayers,
 		contributors,
@@ -2630,6 +2754,11 @@ function init() {
 		}
 	}, false);
 	startButton.addEventListener("click", startGame, false);
+	newRoundCancelButton.addEventListener(
+		"click",
+		cancelNewRoundCountdown,
+		false,
+	);
 	instructionsButton.addEventListener(
 		"click",
 		() => openOverlay("instructions"),
@@ -2707,7 +2836,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-05-02-v15";
+const SERVICE_WORKER_VERSION = "2026-05-10-v1";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

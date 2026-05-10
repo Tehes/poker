@@ -152,9 +152,51 @@ button:disabled {
 }
 
 #start-button,
+#new-round-cancel-button,
 #instructions-button,
 #fast-forward-button {
     width: auto;
+}
+
+#new-round-countdown-value {
+    display: inline-block;
+    min-width: 2ch;
+    text-align: left;
+    font-variant-numeric: tabular-nums;
+}
+
+.new-round-controls {
+    display: inline-flex;
+    align-items: center;
+}
+
+.new-round-controls.new-round-countdown-active {
+    margin: 0 2vmin;
+    border-radius: 1vmin;
+    box-shadow: var(--shadow);
+}
+
+#start-button.new-round-countdown-active {
+    margin: 0;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    box-shadow: none;
+}
+
+#new-round-cancel-button.new-round-countdown-active {
+    background-color: var(--blue-darker);
+    color: var(--yellow);
+    margin: 0;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    box-shadow: none;
+}
+
+#start-button.new-round-countdown-active:active,
+#new-round-cancel-button.new-round-countdown-active:active {
+    background-color: var(--blue);
+    box-shadow: none;
+    transform: none;
 }
 
 input[type=range] {
