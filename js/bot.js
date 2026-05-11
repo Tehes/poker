@@ -1331,6 +1331,9 @@ function getContextualPreflopDefendScore(
 	) {
 		defendScore += 0.10;
 	}
+	if (player?.bigBlind && context.facingAggression && profile.handFamily === "suitedJunk") {
+		defendScore -= 0.15;
+	}
 
 	if (
 		profile.handFamily === "weakAxo" ||

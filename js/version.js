@@ -9,9 +9,20 @@ Version log writing guide:
 - Group related tuning work into one coherent entry instead of listing every small internal step.
 */
 
-export const APP_VERSION = "1.2.0";
+export const APP_VERSION = "1.2.1";
 
 export const VERSION_LOG = [
+	{
+		version: "1.2.1",
+		date: "2026-05-11",
+		title: "Cleaner blind defense",
+		notes: [
+			"Bots now defend the big blind a little more selectively with weak suited hands after a raise.",
+			"Weak suited misses should reach the flop less often, while pairs, broadways, suited connectors, and other playable defenses keep their normal role.",
+			"Postflop action and showdown flow stay close to the previous version.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.2.0",
 		date: "2026-05-10",
