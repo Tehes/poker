@@ -9,9 +9,20 @@ Version log writing guide:
 - Group related tuning work into one coherent entry instead of listing every small internal step.
 */
 
-export const APP_VERSION = "1.2.2";
+export const APP_VERSION = "1.2.3";
 
 export const VERSION_LOG = [
+	{
+		version: "1.2.3",
+		date: "2026-05-11",
+		title: "Cleaner heads-up blind limps",
+		notes: [
+			"Heads-up small-blind bots now avoid open-limping the weakest offsuit ace hands, choosing a raise or fold more often instead.",
+			"Suited aces, suited kings, connectors, pairs, and normal raising ranges keep their active role.",
+			"Weak ace starts should create fewer high-card and weak-pair rescue spots without making the small blind broadly tighter.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.2.2",
 		date: "2026-05-11",

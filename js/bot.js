@@ -1178,6 +1178,12 @@ function getContextualPreflopOpenLimpScore(
 
 	if (player?.smallBlind && context.headsUp) {
 		openLimpScore += 0.70;
+		if (
+			profile.handFamily === "weakAxo" &&
+			RANK_ORDER.indexOf(profile.lowRank) <= RANK_ORDER.indexOf("5")
+		) {
+			openLimpScore -= 0.35;
+		}
 	} else if (preflopSeatClass === "button" && activePlayerCount === 3) {
 		openLimpScore += 0.10;
 	} else if (positionFactor >= 0.75) {
