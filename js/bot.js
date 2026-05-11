@@ -493,6 +493,7 @@ function getLegacyPreflopLogScores(cardA, cardB, context = {}) {
 		strengthScore: profile.chenScore,
 		playabilityScore: profile.playability,
 		dominationPenalty: profile.dominationRisk,
+		smallPair: profile.smallPair,
 		openRaiseScore,
 		openLimpScore,
 		flatScore,
@@ -1432,7 +1433,11 @@ function canOpenLimpPreflop({
 		activePlayerCount,
 	});
 	const handFamily = preflopScores.handFamily;
+	const smallPair = preflopScores.smallPair === true;
 
+	if (smallPair && !(player.smallBlind && spotContext.headsUp)) {
+		return false;
+	}
 	if (isPlayableOpenLimpFamily(handFamily)) {
 		return true;
 	}

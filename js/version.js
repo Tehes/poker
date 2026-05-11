@@ -9,9 +9,20 @@ Version log writing guide:
 - Group related tuning work into one coherent entry instead of listing every small internal step.
 */
 
-export const APP_VERSION = "1.2.1";
+export const APP_VERSION = "1.2.2";
 
 export const VERSION_LOG = [
+	{
+		version: "1.2.2",
+		date: "2026-05-11",
+		title: "Cleaner small-pair starts",
+		notes: [
+			"Bots now avoid open-limping the smallest pairs from most first-in seats, choosing a raise or fold instead.",
+			"Cheap heads-up small-blind limps stay available, so short-handed blind play keeps its lower-cost option.",
+			"Small pair starts should create fewer weak underpair flops without removing normal pair aggression.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.2.1",
 		date: "2026-05-11",
