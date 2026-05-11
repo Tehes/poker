@@ -175,6 +175,7 @@ const PREMIUM_POSTFLOP_RATIO = 0.55;
 const CHIP_LEADER_RAISE_DELTA = 0.05;
 const SHORTSTACK_CALL_DELTA = 0.05;
 const SHORTSTACK_RELATIVE = 0.6;
+const PASSIVE_CALL_WEAK_OFFSUIT_LOW_KICKER_MULTIWAY_RAISE_CAP = 2.00;
 const MIN_PREFLOP_BLUFF_RATIO = 0.45;
 const CHECK_RAISE_INTENT_CHANCE = 0.35;
 const CHECK_RAISE_TWO_PAIR_TRIPS_MAX_TEXTURE = 0.45;
@@ -1068,6 +1069,16 @@ function isPlayableOpenLimpFamily(handFamily) {
 		handFamily === "suitedJunk";
 }
 
+function isWeakOffsuitAceLowKicker(handFamily, lowRank) {
+	return handFamily === "weakAxo" &&
+		RANK_ORDER.indexOf(lowRank) <= RANK_ORDER.indexOf("5");
+}
+
+function isWeakOffsuitAceKingLowKicker(handFamily, lowRank) {
+	return (handFamily === "weakAxo" || handFamily === "weakKxo") &&
+		RANK_ORDER.indexOf(lowRank) <= RANK_ORDER.indexOf("5");
+}
+
 function isProtectedUnopenedActionSpot({ player, spotContext, preflopSeatClass, activePlayerCount }) {
 	return Boolean(player?.smallBlind && spotContext?.headsUp) ||
 		(preflopSeatClass === "button" && activePlayerCount === 3);
@@ -1179,17 +1190,15 @@ function getContextualPreflopOpenLimpScore(
 
 	if (player?.smallBlind && context.headsUp) {
 		openLimpScore += 0.70;
-		if (
-			profile.handFamily === "weakAxo" &&
-			RANK_ORDER.indexOf(profile.lowRank) <= RANK_ORDER.indexOf("5")
-		) {
-			openLimpScore -= 0.35;
-		}
 	} else if (preflopSeatClass === "button" && activePlayerCount === 3) {
 		openLimpScore += 0.10;
 	} else if (positionFactor >= 0.75) {
 		openLimpScore += 0.10;
 	}
+	openLimpScore += getOpenLimpRealizationAdjustment(profile, {
+		player,
+		spotContext: context,
+	});
 	if (earlyMultiway && isPassivePreflopTargetFamily(profile.handFamily)) {
 		openLimpScore -= 0.45;
 	}
@@ -1339,9 +1348,10 @@ function getContextualPreflopDefendScore(
 	) {
 		defendScore += 0.10;
 	}
-	if (player?.bigBlind && context.facingAggression && profile.handFamily === "suitedJunk") {
-		defendScore -= 0.15;
-	}
+	defendScore += getDefendScoreRealizationAdjustment(profile, {
+		player,
+		spotContext: context,
+	});
 
 	if (
 		profile.handFamily === "weakAxo" ||
@@ -1356,6 +1366,51 @@ function getContextualPreflopDefendScore(
 	return clampPreflopScore(defendScore);
 }
 
+function getOpenLimpRealizationAdjustment(profile, { player, spotContext }) {
+	if (
+		player?.smallBlind &&
+		spotContext.headsUp &&
+		isWeakOffsuitAceLowKicker(profile.handFamily, profile.lowRank)
+	) {
+		return -0.35;
+	}
+
+	return 0;
+}
+
+function getDefendScoreRealizationAdjustment(profile, { player, spotContext }) {
+	if (player?.bigBlind && spotContext.facingAggression && profile.handFamily === "suitedJunk") {
+		return -0.15;
+	}
+
+	return 0;
+}
+
+function getPassiveCallRealizationCap({
+	preflopScores,
+	spotContext,
+}) {
+	if (
+		spotContext.facingAggression &&
+		!spotContext.headsUp &&
+		isWeakOffsuitAceKingLowKicker(preflopScores.handFamily, preflopScores.lowRank)
+	) {
+		return PASSIVE_CALL_WEAK_OFFSUIT_LOW_KICKER_MULTIWAY_RAISE_CAP;
+	}
+
+	return null;
+}
+
+function applyPassiveCallRealization(passiveCallScore, context) {
+	const cap = getPassiveCallRealizationCap(context);
+
+	if (cap === null) {
+		return passiveCallScore;
+	}
+
+	return Math.min(passiveCallScore, cap);
+}
+
 function getPreflopPassiveCallScore({
 	preflopScores,
 	player,
@@ -1367,18 +1422,12 @@ function getPreflopPassiveCallScore({
 	const pricedLateDefense = potOdds <= 0.22 && positionFactor >= 0.5;
 	const shouldUseDefendScore = player.bigBlind || player.smallBlind ||
 		spotContext.headsUp || shortHandedUnopened || pricedLateDefense;
-	let passiveCallScore = shouldUseDefendScore ? preflopScores.defendScore : preflopScores.flatScore;
+	const passiveCallScore = shouldUseDefendScore ? preflopScores.defendScore : preflopScores.flatScore;
 
-	if (
-		spotContext.facingAggression &&
-		!spotContext.headsUp &&
-		(preflopScores.handFamily === "weakAxo" || preflopScores.handFamily === "weakKxo") &&
-		RANK_ORDER.indexOf(preflopScores.lowRank) <= RANK_ORDER.indexOf("5")
-	) {
-		passiveCallScore = Math.min(passiveCallScore, 2.00);
-	}
-
-	return passiveCallScore;
+	return applyPassiveCallRealization(passiveCallScore, {
+		preflopScores,
+		spotContext,
+	});
 }
 
 function getUnopenedPreflopRaiseThreshold({
@@ -1450,9 +1499,8 @@ function canOpenLimpPreflop({
 		activePlayerCount,
 	});
 	const handFamily = preflopScores.handFamily;
-	const smallPair = preflopScores.smallPair === true;
 
-	if (smallPair && !(player.smallBlind && spotContext.headsUp)) {
+	if (isOpenLimpBlockedByRealization({ preflopScores, player, spotContext })) {
 		return false;
 	}
 	if (isPlayableOpenLimpFamily(handFamily)) {
@@ -1473,6 +1521,14 @@ function canOpenLimpPreflop({
 	}
 
 	return false;
+}
+
+function isOpenLimpBlockedByRealization({
+	preflopScores,
+	player,
+	spotContext,
+}) {
+	return preflopScores.smallPair === true && !(player.smallBlind && spotContext.headsUp);
 }
 
 function isPremiumPreflopHand(cardA, cardB) {
