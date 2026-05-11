@@ -9,9 +9,20 @@ Version log writing guide:
 - Group related tuning work into one coherent entry instead of listing every small internal step.
 */
 
-export const APP_VERSION = "1.2.3";
+export const APP_VERSION = "1.2.4";
 
 export const VERSION_LOG = [
+	{
+		version: "1.2.4",
+		date: "2026-05-11",
+		title: "Cleaner multiway call defense",
+		notes: [
+			"Bots now avoid more weak offsuit ace and king calls with the lowest kickers when facing raises in multiway pots.",
+			"Heads-up blind defense, suited versions, stronger broadways, pairs, and aggressive preflop lines keep their normal role.",
+			"These hands should create fewer weak high-card and fragile pair spots after the flop without making playable hands broadly disappear.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.2.3",
 		date: "2026-05-11",

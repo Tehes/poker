@@ -494,6 +494,7 @@ function getLegacyPreflopLogScores(cardA, cardB, context = {}) {
 		playabilityScore: profile.playability,
 		dominationPenalty: profile.dominationRisk,
 		smallPair: profile.smallPair,
+		lowRank: profile.lowRank,
 		openRaiseScore,
 		openLimpScore,
 		flatScore,
@@ -1366,8 +1367,18 @@ function getPreflopPassiveCallScore({
 	const pricedLateDefense = potOdds <= 0.22 && positionFactor >= 0.5;
 	const shouldUseDefendScore = player.bigBlind || player.smallBlind ||
 		spotContext.headsUp || shortHandedUnopened || pricedLateDefense;
+	let passiveCallScore = shouldUseDefendScore ? preflopScores.defendScore : preflopScores.flatScore;
 
-	return shouldUseDefendScore ? preflopScores.defendScore : preflopScores.flatScore;
+	if (
+		spotContext.facingAggression &&
+		!spotContext.headsUp &&
+		(preflopScores.handFamily === "weakAxo" || preflopScores.handFamily === "weakKxo") &&
+		RANK_ORDER.indexOf(preflopScores.lowRank) <= RANK_ORDER.indexOf("5")
+	) {
+		passiveCallScore = Math.min(passiveCallScore, 2.00);
+	}
+
+	return passiveCallScore;
 }
 
 function getUnopenedPreflopRaiseThreshold({
