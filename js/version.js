@@ -9,9 +9,20 @@ Version log writing guide:
 - Group related tuning work into one coherent entry instead of listing every small internal step.
 */
 
-export const APP_VERSION = "1.2.4";
+export const APP_VERSION = "1.2.5";
 
 export const VERSION_LOG = [
+	{
+		version: "1.2.5",
+		date: "2026-05-12",
+		title: "Better flop defense",
+		notes: [
+			"Bots now defend more plausible high-card flops with ace-high, overcards, or useful backdoor potential when the price is close.",
+			"Very weak no-pair hands and bad weak draws are still released, so the added defense should not turn into broad loose calling.",
+			"Standard flop bluffs should have less automatic success against hands that still belong in a defended range.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.2.4",
 		date: "2026-05-11",

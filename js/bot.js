@@ -59,7 +59,13 @@ MODULE BOUNDARY: Bot Decision Engine
 //   price, street, position, and pressure must determine calls in the normal decision path.
 // - Slight tournament overfold is acceptable; chronic street-wide or overall overfold is not.
 //   Higher Flop overfold can be acceptable when the missing defense would otherwise come from
-//   trash, board-only hands, kicker-only hands, weak draws with bad price, or weak bluffcatchers.
+//   truly unplayable trash, board-only hands, kicker-only hands, weak draws with bad price, or weak
+//   bluffcatchers. If overfold is concentrated in range-relevant no-pair hands, weak draws,
+//   overcards, good blockers, or correctly priced continues, the fix belongs in postflop
+//   hand-context evaluation rather than preflop range tightening.
+// - Preflop tightening is not a valid MDF fix unless backtrace analysis shows a concentrated
+//   runtime-free preflop proxy. If flop overfold is spread across many preflop families and
+//   dominated by air / weak-draw classification, tune postflop defendability instead.
 // - When the pass targets calls, marginal_river_calls and marginal_facing_raise_calls should be
 //   monitored, but not improved at the cost of more trash calls.
 // - Good folds are part of playability: the bot should defend enough versus standard pressure,
@@ -115,6 +121,7 @@ if (DEBUG_DECISIONS_DETAIL) {
 }
 const SPEED_MODE = speedModeParam !== null && speedModeParam !== "0" &&
 	speedModeParam !== "false";
+const FLOP_AIR_DEFENDER_CALL_RELIEF = 0.03;
 if (SPEED_MODE) {
 	BOT_ACTION_DELAY = 0;
 	DEBUG_DECISIONS = true;
@@ -1875,6 +1882,95 @@ function getRequiredFoldRate(needToCall, potBefore) {
 	return Math.max(0, Math.min(1, needToCall / potBefore));
 }
 
+function getCardRankIndex(card) {
+	return typeof card === "string" ? RANK_ORDER.indexOf(card[0]) : -1;
+}
+
+function countBoardOvercards(holeCards, communityCards) {
+	const boardRanks = communityCards.map(getCardRankIndex);
+	const highestBoardRank = Math.max(...boardRanks);
+
+	return holeCards.filter((card) => getCardRankIndex(card) > highestBoardRank).length;
+}
+
+function hasAceHighCard(holeCards) {
+	return holeCards.some((card) => typeof card === "string" && card[0] === "A");
+}
+
+function hasBackdoorFlushCandidate(holeCards, communityCards) {
+	const [cardA, cardB] = holeCards;
+
+	if (!cardA || !cardB || cardA[1] !== cardB[1]) {
+		return false;
+	}
+
+	return communityCards.some((card) => card[1] === cardA[1]);
+}
+
+function hasBackdoorStraightCandidate(holeCards, communityCards) {
+	const ranks = new Set(
+		[...holeCards, ...communityCards]
+			.map(getCardRankIndex)
+			.filter((value) => value >= 0),
+	);
+
+	for (let start = 0; start <= RANK_ORDER.length - 5; start += 1) {
+		const window = [start, start + 1, start + 2, start + 3, start + 4];
+		const present = window.filter((value) => ranks.has(value)).length;
+
+		if (present >= 3) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+function getFlopAirDefenderCallRelief({
+	needsToCall,
+	preflop,
+	streetIndex,
+	preflopRaiseCount,
+	rawHandRank,
+	isDeadHand,
+	isWeakDraw,
+	holeCards,
+	communityCards,
+	potOdds,
+	marginToCall,
+	activePlayers,
+	spotContext,
+}) {
+	if (
+		!needsToCall ||
+		preflop ||
+		streetIndex !== 1 ||
+		preflopRaiseCount !== 1 ||
+		rawHandRank !== 1 ||
+		!isDeadHand ||
+		isWeakDraw ||
+		!(marginToCall > 0) ||
+		marginToCall > FLOP_AIR_DEFENDER_CALL_RELIEF ||
+		activePlayers > 3
+	) {
+		return 0;
+	}
+
+	const overcards = countBoardOvercards(holeCards, communityCards);
+	const backdoorCount = Number(hasBackdoorFlushCandidate(holeCards, communityCards)) +
+		Number(hasBackdoorStraightCandidate(holeCards, communityCards));
+	const fairPrice = potOdds <= 0.30;
+	const goodPrice = potOdds <= 0.25;
+	const aceHighClose = hasAceHighCard(holeCards) && fairPrice;
+	const twoOvercardsClose = overcards >= 2 && fairPrice;
+	const overcardBackdoorHeadsUp = overcards >= 1 && backdoorCount >= 1 &&
+		goodPrice && spotContext.headsUp;
+
+	return aceHighClose || twoOvercardsClose || overcardBackdoorHeadsUp
+		? FLOP_AIR_DEFENDER_CALL_RELIEF
+		: 0;
+}
+
 function getPostflopPriceQualityShift({
 	baseShift,
 	isDeadHand,
@@ -2821,6 +2917,22 @@ export function chooseBotAction(player, gameState) {
 		eliminationReliefApplied = adjustedEliminationPenalty < eliminationPenalty;
 	}
 	const eliminationBarrier = needsToCall ? Math.min(1, callBarrier + adjustedEliminationPenalty) : callBarrier;
+	const flopAirDefenderCallRelief = getFlopAirDefenderCallRelief({
+		needsToCall,
+		preflop,
+		streetIndex,
+		preflopRaiseCount,
+		rawHandRank,
+		isDeadHand,
+		isWeakDraw,
+		holeCards: player.holeCards,
+		communityCards,
+		potOdds,
+		marginToCall: eliminationBarrier - callGateStrengthRatio,
+		activePlayers: activeOpponents + 1,
+		spotContext,
+	});
+	const callDecisionStrengthRatio = Math.min(1, callGateStrengthRatio + flopAirDefenderCallRelief);
 	const mdfRequiredFoldRate = !preflop && needToCall > 0 ? getRequiredFoldRate(needToCall, pot) : 0;
 	let marginalDefenseBlocked = false;
 	let riverLowEdgeBlocked = false;
@@ -3785,7 +3897,7 @@ export function chooseBotAction(player, gameState) {
 					Math.abs(decisionStrength - raiseThreshold) <=
 						STRENGTH_TIE_DELTA
 				) {
-					const alt = (callGateStrengthRatio >= eliminationBarrier &&
+					const alt = (callDecisionStrengthRatio >= eliminationBarrier &&
 							passesPreflopCallLimit)
 						? { action: "call", amount: callAmt }
 						: { action: "fold" };
@@ -3795,11 +3907,11 @@ export function chooseBotAction(player, gameState) {
 				}
 			}
 		} else if (
-			callGateStrengthRatio >= eliminationBarrier && passesPreflopCallLimit
+			callDecisionStrengthRatio >= eliminationBarrier && passesPreflopCallLimit
 		) {
 			const callAmt = Math.min(player.chips, needToCall);
 			if (
-				Math.abs(callGateStrengthRatio - eliminationBarrier) <=
+				Math.abs(callDecisionStrengthRatio - eliminationBarrier) <=
 					ODDS_TIE_DELTA
 			) {
 				decision = Math.random() < 0.5 ? { action: "call", amount: callAmt } : { action: "fold" };
@@ -4156,8 +4268,8 @@ export function chooseBotAction(player, gameState) {
 		needsToCall &&
 		decision.action === "fold" &&
 		marginalCallPenalty > 0 &&
-		gateStrengthRatio < eliminationBarrier &&
-		gateStrengthRatio >= Math.max(
+		callDecisionStrengthRatio < eliminationBarrier &&
+		callDecisionStrengthRatio >= Math.max(
 				0,
 				eliminationBarrier - marginalCallPenalty,
 			)

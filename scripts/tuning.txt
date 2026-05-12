@@ -1,14 +1,24 @@
 Du arbeitest am Poker-Projekt.
 
 Aufgabe:
-Erzeuge zuerst eine frische 1000er-Baseline. Analysiere danach selbstständig, welche Bot-Metrik bzw. welcher Leak-Kandidat strategisch am sinnvollsten zu verbessern ist. Führe vor jeder Codeänderung eine Ursachenanalyse durch. Tune erst danach genau einen fokussierten Hebel in `js/bot.js`. Wiederhole diesen Prozess, bis ein Kandidat die frische 1000er-Baseline im finalen 1000er Acceptance Run schlägt oder bis keine plausible nächste Hypothese mehr übrig ist.
+Erzeuge zuerst eine frische 1000er-Core-Baseline. Analysiere danach selbstständig, welcher Bot-Leak strategisch am sinnvollsten zu verbessern ist. Nutze Equity Enrichment künftig als verpflichtende Diagnose- und Kalibrierungsschicht, sobald es um Call-Qualität, Preflop-Arrival, MDF-Range-Defense, High-Equity-Folds, Low-Equity-Calls, Low-Equity-Raises oder trash-heavy spätere Ranges geht.
+Bei MDF-, Overfold- und Range-Defense-Leaks muss vor einem Preflop-Tuning zusätzlich ein Backtrace von den betroffenen Facing-Bet-Spots zurück auf Preflop-Route, Handfamilie, Preis, Position und spätere Handklasse erfolgen.
+
+Führe vor jeder Codeänderung eine Ursachenanalyse durch. Tune erst danach genau einen fokussierten Hebel in `js/bot.js`. Wiederhole diesen Prozess, bis ein Kandidat die frische 1000er-Core-Baseline im finalen 1000er Acceptance Run schlägt oder bis keine plausible nächste Hypothese mehr übrig ist.
 
 Grundprinzip:
 Nicht sofort tunen.
-Erst frische Baseline erzeugen, messen, verstehen, Ursache lokalisieren, Hypothese bilden, dann genau eine Ursache adressieren.
+Erst frische Baseline erzeugen, messen, verstehen, Ursache lokalisieren, Equity-Diagnose nutzen, Runtime-Proxy finden, Hypothese bilden, dann genau eine Ursache adressieren.
 
 Leitsatz:
 Tune nicht die Metrik. Tune die Ursache.
+
+Equity-Leitsatz:
+Equity ist Diagnose- und Kalibrierungsschicht, nicht Runtime-Entscheidungsmodell.
+
+Der Bot bleibt heuristisch.
+Equity darf helfen, bessere Heuristiken zu kalibrieren.
+Equity darf nicht direkt als Entscheidungskriterium in `js/bot.js` eingebaut werden.
 
 Erlaubte dauerhafte Dateiänderung:
 - Ausschließlich `js/bot.js`.
@@ -29,15 +39,23 @@ Nicht ändern:
 - keine README-/Version-Dateien
 - keine Akzeptanzkriterien
 
-Phase 1: Frische Baseline erzeugen
+Ausnahme:
+- Analyse-Dateien und Metrikdefinitionen dürfen nur nach ausdrücklicher Zustimmung minimal erweitert werden, wenn bestehende Summary-Werte eine verpflichtende Root-Cause-Diagnose nicht abbilden.
+- Solche Änderungen dürfen keine Bot-Logik, Engine-Logik oder Logging-Formate verändern.
+- Neue Analysemetriken ersetzen keine 100/500/1000 Acceptance und dürfen nicht als Bot-Tuning-Hebel gelten.
+
+Phase 1: Frische Core-Baseline erzeugen
 
 1. Lösche optional zuerst den Inhalt von `tmp/`, damit keine alten Batch-Runs die Analyse verfälschen.
-2. Starte einen frischen 1000er Engine-Batch als Baseline:
+
+2. Starte einen frischen 1000er Engine-Batch als Core-Baseline:
 
    `deno task engine:batch:1000`
 
-3. Nutze ausschließlich diese neue 1000er-Baseline als Vergleichsbasis.
+3. Nutze ausschließlich diese neue 1000er-Core-Baseline als Vergleichsbasis für Acceptance.
+
 4. Notiere den exakten Baseline-Pfad.
+
 5. Extrahiere die wichtigsten Kernmetriken, insbesondere:
    - Hand-/Decision-Counts
    - Showdown-Struktur
@@ -47,26 +65,106 @@ Phase 1: Frische Baseline erzeugen
    - WinnerSide / ChipDelta, falls vorhanden
    - Guardrails
    - Early-Bust- und Tournament-Flow-Metriken
+   - Preflop passive Calls, Open-Limps, Iso-Raises, 3bets, Blind-Defense
+   - SB-HU-, BB-Defense-, BTN-/CO-Open-Dynamik
 
-6. Wenn der Baseline-Run fehlschlägt, ändere keinen Bot-Code. Berichte den Fehler und den letzten bekannten Zustand.
+6. Wenn der Baseline-Run fehlschlägt:
+   - ändere keinen Bot-Code,
+   - berichte den Fehler,
+   - berichte den letzten bekannten Zustand,
+   - finale Entscheidung: `rejected`.
+
+Phase 1b: Equity-Diagnose der Baseline
+
+Nach der frischen 1000er-Core-Baseline muss ein separater Equity-Diagnoserun auf derselben Bot-Version erzeugt werden, sofern der vermutete Leak eine der folgenden Klassen betrifft:
+- Call-Qualität
+- Preflop-Arrival
+- MDF-Range-Defense
+- High-Equity-Folds
+- Low-Equity-Calls
+- Low-Equity-Raises
+- trash-heavy spätere Ranges
+- widersprüchliche MDF-/WinnerPct-/ChipDelta-Signale
+- unklare Decision Quality trotz plausibler Summary-Metriken
+
+Standard-Diagnose für Postflop-Decision-Quality:
+
+`deno task engine:batch -- --runs=300 --equity --equity-limit=1000`
+
+Standard-Diagnose für Preflop-Arrival-, passive Call- und MDF-Range-Probleme:
+
+`deno task engine:batch -- --runs=300 --equity-preflop --equity-limit=3000`
+
+Wenn der 300er Equity-Diagnoserun klare Cluster zeigt oder ein Kandidat daraus abgeleitet werden soll, zusätzlich:
+
+`deno task engine:batch -- --runs=500 --equity-preflop --equity-limit=3000`
+
+Equity-Diagnose ist keine neue Core-Baseline und ersetzt nicht die frische 1000er-Core-Baseline.
+Die frische 1000er-Core-Baseline bleibt Vergleichsbasis für Acceptance.
+Der Equity-Run dient zur Ursachenanalyse, Candidate-Gate-Prüfung, Runtime-Proxy-Findung und Counterfactual-Exposure-Markierung.
+
+Werte mindestens aus:
+- equity candidates / attempted / enriched / capped / skipped
+- phase
+- action
+- signal
+- candidate.reason
+- equityPct
+- potOddsPct
+- marginPct = equityPct - potOddsPct
+- equityRank
+- activePlayers
+- route / spotKey
+- handClass
+- position / seat / blind context
+- HU/MW
+- facing raise / limped / unopened
+- potOdds bucket
+- margin bucket
+- flatScore / defendScore / playabilityScore / dominationPenalty, falls vorhanden
+- spätere Flop-/Turn-/River-Arrival-Klasse
+- Trash:Defendable
+- Facing-Bet-Fold
+- Later-Fold
+- WinnerSide / ChipDelta, falls vorhanden
+
+Bei Preflop-Arrival-Problemen priorisiere:
+- passive Preflop-Calls
+- `preflopWeakCall | lowEquityCall`
+- `SR/MW/FR`
+- `L/MW/NF`
+- `SR/HU/FR`
+- `dominatedOffsuitBroadway`
+- `offsuitJunk`
+- `suitedJunk`
+- `weakAxo`
+- `weakKxo`
+
+Ein Equity-Signal darf nur als Kandidat verwendet werden, wenn es aggregiert stabil ist.
+Einzelbeispiele sind keine Wahrheit.
+Equity ist Diagnose, nicht Hauptziel.
 
 Phase 2: Leak-Kandidaten entdecken
 
-Analysiere die frische 1000er-Baseline und finde selbst einen sinnvollen Ziel-Leak.
+Analysiere die frische 1000er-Core-Baseline und die passenden Equity-Diagnoseruns. Finde selbst einen sinnvollen Ziel-Leak.
 
 Bevorzuge Kandidaten mit:
 - ausreichender Sample Size,
 - klarem strategischem Bezug,
 - erkennbarem Abstand zu gewünschtem Verhalten,
 - plausibler Beeinflussbarkeit durch `js/bot.js`,
-- geringer Gefahr, nur Noise oder Messartefakte zu optimieren.
+- geringer Gefahr, nur Noise oder Messartefakte zu optimieren,
+- belastbarer Equity-, WinnerSide-, ChipDelta- oder Arrival-Bestätigung,
+- einem Runtime-Proxy ohne direkte Equity-Nutzung.
 
 Mögliche Leak-Klassen:
 - schlechte Call-Qualität,
+- passive Preflop-LowEquityCalls,
 - High-Equity-Folds,
 - Low-Equity-Calls,
 - Low-Equity-Raises,
 - chronischer Overfold nach Street, Spot oder Handklasse,
+- MDF-Overfold bei gleichzeitig trash-heavy Candidate Range,
 - auffällige Preflop-Entry-Qualität,
 - trash-heavy Arrival-Ranges in späteren Spots,
 - zu passive oder zu aggressive No-Bet-Spots,
@@ -77,6 +175,30 @@ Mögliche Leak-Klassen:
 
 Wähle keine Metrik nur deshalb, weil sie numerisch auffällig ist.
 Wähle eine Metrik nur, wenn sie strategisch relevant, ausreichend belegt und durch Botlogik plausibel beeinflussbar ist.
+
+Bei MDF-, Range-Defense- und Arrival-Problemen reicht eine reine Summary-Metrik nicht mehr aus.
+Nutze Backtrace- und Equity-Diagnose verpflichtend, um zwischen diesen Fällen zu unterscheiden:
+
+1. Gute Range, falsche Spot-Entscheidung
+   - genügend plausible defendable Hände vorhanden,
+   - aber zu viele High-Equity-Folds, priced Folds, range-relevante Air-Folds, weak-draw Folds oder defendable Folds.
+
+2. Schlechte Range, schlechtes Arrival
+   - viele lowEquityCalls oder negative Equity-Margins in früheren passiven Routen,
+   - spätere MDF-Spots sind trash-heavy,
+   - Defense würde nur durch Trash-Calls aufgefüllt.
+
+3. Gute Hände werden durch Line/Sizing falsch in spätere Spots geführt
+   - Equity/Handqualität plausibel,
+   - aber spätere Line erzeugt schlechte Pot-Geometrie, capped Range oder unnötigen Pressure.
+
+Wenn Equity zeigt, dass die Range schon upstream schlecht ist, darf nicht im späteren MDF-Spot gelockert werden.
+Dann ist der Hebel upstream zu suchen.
+
+Wenn der MDF-Backtrace zeigt, dass der Overfold über viele Preflop-Familien verteilt ist und hauptsächlich durch Air-, no-pair-, weak-draw-, Overcard- oder Blocker-Klassifikation entsteht, ist Preflop-Tightening kein gültiger Hebel.
+Dann muss die Postflop-Defendability im konkreten Spot geprüft werden.
+
+Ein Preflop-Hebel für ein MDF-Problem ist nur zulässig, wenn ein konzentrierter runtime-freier Preflop-Proxy einen relevanten Anteil des Excess-Folds erklärt und nicht nur generische Flop-Air-Folds abbildet.
 
 Phase 3: Meta-Diagnose vor jeder Änderung
 
@@ -89,25 +211,36 @@ Kläre ausdrücklich:
    - Auf welcher Street, in welchem Spot oder in welcher Line wird sie sichtbar?
    - Wie groß ist das Problem absolut und relativ?
    - Wie groß ist die Sample Size?
+   - Gibt es Equity-, WinnerSide-, ChipDelta- oder Arrival-Bestätigung?
+   - Ist das Signal stabil oder vermutlich Noise?
 
 2. Entstehungsebene
+
    Unterscheide mindestens:
+
    - Arrival Quality:
      Kommen die Bots bereits mit ungeeigneten Händen, Ranges, Positionen oder Stack-Konstellationen in den Spot?
+
    - Spot Decision Quality:
      Ist die konkrete Entscheidung im Spot falsch, obwohl die Ankunft plausibel ist?
+
    - Line / Sequence Quality:
      Entsteht der Leak durch vorherige Aktionen, z. B. Limp, Call, Check, Barrel-Abbruch, passive Line oder verpasste Aggression?
+
    - Sizing / Pot Geometry:
      Erzeugen frühere Bet-/Call-/Raise-Größen schlechte SPR-, Pot-Odds- oder Commitment-Situationen?
+
    - Range Composition:
      Ist die Range in diesem Spot zu trash-heavy, zu capped, zu value-arm, zu draw-arm oder zu bluff-heavy?
+
    - Opponent / Table Dynamics:
      Entsteht der Effekt durch Multiway/HU, Position, Blind-Kontext, Stackdruck, Aggression hinter dem Bot oder Gegnerreads?
+
    - Metric Artifact / Noise:
-     Ist die Metrik auffällig, aber erklärbar durch Sample Size, gute Folds, Runout-Varianz, Outcome-Join-Effekte oder ungeeignete Aggregation?
+     Ist die Metrik auffällig, aber erklärbar durch Sample Size, gute Folds, Runout-Varianz, Outcome-Join-Effekte, Equity-Sampling oder ungeeignete Aggregation?
 
 3. Ursachenpfad
+
    Beantworte:
    - Welche vorherigen Entscheidungen erzeugen die betroffenen Spots?
    - Welche Ranges kommen dort an?
@@ -116,8 +249,37 @@ Kläre ausdrücklich:
    - Ist die spätere Line nach dieser Entscheidung plausibel?
    - Zeigen Outcome Join, WinnerSide, ChipDelta oder Equity, dass der Spot wirklich schlecht war?
    - Liegt der beste Hebel upstream, im konkreten Spot oder downstream in der späteren Line?
+   - Gibt es einen Runtime-Proxy ohne Equity?
 
-4. Breakdowns
+4. Equity-Root-Cause bei Preflop- und Arrival-Leaks
+
+   Kläre zusätzlich:
+   - Welche passiven Preflop-Routen erzeugen die späteren Problemspots?
+   - Welche Handklassen haben negative Equity-Margins gegen den Preis?
+   - Sind die betroffenen Calls nur knapp schlecht oder deutlich unter Preis?
+   - Sind Low-Equity-Calls mindestens doppelt so stark betroffen wie priced/playable Calls derselben Route?
+   - Erzeugen diese Calls später mehr Trash-Arrival, mehr Facing-Bet-Folds, schlechteren AvgDelta oder schlechteren MedianDelta?
+   - Sind die betroffenen Routen durch vorhandene Runtime-Signale abbildbar?
+
+   Zulässige Runtime-Proxies:
+   - route / spotKey
+   - handClass
+   - potOdds bucket
+   - position / blind context
+   - MW/HU
+   - facing raise / limp / unopened
+   - flatScore
+   - defendScore
+   - playabilityScore
+   - dominationPenalty
+   - preflopRaiseCount / raiseLevel
+   - passive reentry
+   - suited / gap / pair
+   - weak offsuit family
+   - protectedActionSpot
+
+5. Breakdowns
+
    Nutze je nach Leak passende Dimensionen:
    - Street
    - Action-Route
@@ -125,18 +287,26 @@ Kläre ausdrücklich:
    - Preflop-Route
    - Position
    - Seat
+   - Blind-Kontext
    - Handfamilie
    - Handklasse
    - suited / gap / pair
    - ChenScore / Playability / Domination
    - Equity, falls verfügbar
+   - Equity-Margin
+   - Equity-Rank
    - Pot Odds
    - Stack Ratio / SPR / Commitment
    - Raise-Level
    - Multiway vs Heads-up
    - Board Texture
    - Draw-Klasse
+   - PairClass
+   - LiftType
    - WinnerSide / ChipDelta
+   - Later-Fold
+   - Facing-Bet-Fold
+   - Trash:Defendable
 
 Wenn vorhandene Summary-Metriken nicht ausreichen, erstelle temporäre Ad-hoc-Analysen in `tmp/`.
 Ändere dafür keine bestehenden Analyse-, Engine- oder Testdateien dauerhaft.
@@ -148,7 +318,71 @@ Wenn ein Problem durch frühere Sizing- oder Commitment-Geometrie entsteht, tune
 Wenn ein Problem durch spätere Line-Fortsetzung entsteht, tune die Line-Logik.
 Wenn ein Kandidat scheitert, aktualisiere die Diagnose, statt denselben Hebel einfach stärker zu drehen.
 
-Phase 4: Root-Cause- und Symptom-Fix-Gate
+Phase 4: MDF-Range-Defense- und Arrival-Prüfung
+
+Wenn der Ziel-Leak mit MDF, Overfold oder Range-Defense zusammenhängt, prüfe ausdrücklich, ob das Problem ein Defense-Threshold-Problem oder ein Arrival-Problem ist.
+
+Pflicht-Backtrace bei MDF-/Overfold-Leaks:
+- Erstelle bei Bedarf ein temporäres Analyse-Skript in `tmp/`, das spätere Facing-Bet-Entscheidungen pro Hand/Sitz mit der letzten Preflop-Nonfold-Entscheidung joint.
+- Analysiere mindestens Street, Preflop-Route, finalPreflopRoute, spotKey, Handfamilie, Seat, Blind-Kontext, Preflop-PotOdds-Bucket, flatScore/defendScore/playability/domination, Flop-Handklasse, PairClass, DrawFlag, LiftType, Position, aktive Spieler, Flop-PotOdds-Bucket und MDF-Margin.
+- Berichte Excess-Folds gegenüber MDF-Erwartung, nicht nur Fold-Rate.
+- Trenne runtime-freie Preflop-Proxies von Postflop-Zustandsklassen.
+- Weise aus, welcher Anteil des Excess-Folds durch den besten runtime-freien Preflop-Proxy erklärt wird.
+
+Preflop-Hebel-Gate für MDF-Probleme:
+- Ein Preflop-Hebel ist nur qualifiziert, wenn der beste runtime-freie Preflop-Proxy ausreichend konzentriert ist.
+- Richtwert: Der Proxy sollte mindestens 15% des Ziel-Excess-Folds erklären oder mehrere eng verwandte Proxies müssen zusammen eine klare, robuste Ursache bilden.
+- Wenn der beste Proxy nur kleine Randcluster erklärt oder erst zusammen mit `flop:air` auffällig wird, ist das kein Preflop-Arrival-Hebel.
+- Wenn Pairs/Made-Hands ausreichend verteidigen, aber `air`, `pair:none|draw:-`, weak draws, Overcards oder Blocker fast komplett folden, liegt die Ursache in Postflop-Defendability.
+- Keine Preflop-Verschärfung testen, wenn der Backtrace zeigt, dass sie nur kleine Teilmengen entfernt und die eigentliche MDF-Lücke postflop weiterbesteht.
+
+Für jeden relevanten Facing-Bet-Spot klassifiziere die ankommende Range mindestens in:
+- value
+- defendable
+- acceptableThin
+- trash
+
+Berechne pro Street und Spot-Gruppe:
+- requiredDefenseCount
+- actualDefenseCount
+- missingDefenseCount
+- defendableCoverage
+- trashArrivalShare
+- trashDefenseShare
+- defendableFoldShare
+- thinFoldShare
+- trashFoldShare
+- Facing-Bet-Fold
+- Later-Fold
+- WinnerSide / ChipDelta, falls vorhanden
+- Equity-Margin, falls verfügbar
+
+Unterscheide:
+
+1. Gute Range, falsche Entscheidung
+   - defendableCoverage ausreichend,
+   - defendableFoldShare hoch,
+   - trashDefenseShare niedrig.
+   Dann kann ein Spot-Decision-Hebel sinnvoll sein.
+   Dazu zählen auch ausgewählte no-pair Hände mit Overcards, Ace-high/K-high, Backdoor-/Gutshot-/Weak-Draw-Eigenschaften, gutem Preis, Position oder Blocker-Wert, wenn der Backtrace zeigt, dass sie überproportional zum Excess-Fold beitragen.
+
+2. Schlechte Range, MDF-Defizit
+   - defendableCoverage zu niedrig,
+   - trashArrivalShare hoch,
+   - actualDefense enthält trotzdem viel Trash oder würde durch Lockerung viel Trash enthalten.
+   Dann ist es Arrival Quality.
+   Nicht im Facing-Bet-Spot lockern.
+
+3. Gute Hände kommen an, werden aber falsch geführt
+   - defendable Hände existieren früher,
+   - landen aber durch Check/Call/passive Line, Barrel-Abbruch, verpasste Aggression oder Sizing in schlechten späteren Facing-Bet-Spots.
+   Dann ist es Line / Sequence Quality oder Pot Geometry.
+
+Ein MDF-Defizit ist nur dann ein Call-Threshold-Problem, wenn die betroffene Range genügend plausible defendable Hände enthält und diese trotzdem foldet.
+
+Keine Verbesserung darf akzeptiert werden, wenn sie MDF nur durch mehr Trash-Calls verbessert.
+
+Phase 5: Root-Cause- und Symptom-Fix-Gate
 
 Bevor ein Kandidat weiter validiert oder akzeptiert wird, prüfe ausdrücklich, ob die Verbesserung die Ursache löst oder nur den sichtbaren Schaden verschiebt.
 
@@ -163,7 +397,9 @@ Eine Änderung ist verdächtig, wenn:
 - weniger passive Fehler entstehen, aber mehr Spew,
 - bessere MDF-Werte entstehen, aber Equity-/WinnerSide-/ChipDelta-Signale schlechter werden,
 - eine Line lokal besser wirkt, aber spätere Line-Fortsetzung schlechter wird,
-- ein Kandidat Zielmetriken verbessert, aber Core Health durch Gegenbewegungen erkauft.
+- ein Kandidat Zielmetriken verbessert, aber Core Health durch Gegenbewegungen erkauft,
+- passive Preflop-Calls sinken, aber SB-HU / BB-Defense / BTN-Action unplausibel austrocknen,
+- LowEquityCalls sinken, aber priced/playable Calls derselben Route überproportional mitverschwinden.
 
 Analysiere deshalb bei jeder Verbesserung:
 1. Welche Metrik wurde besser?
@@ -173,6 +409,9 @@ Analysiere deshalb bei jeder Verbesserung:
 5. Bleibt die Entscheidung im Spot plausibel?
 6. Bleibt die spätere Line nach der Entscheidung plausibel?
 7. Wird der Bot insgesamt strategisch besser oder nur in einer Messzahl sauberer?
+8. Werden schlechte Arrivals reduziert oder nur anders behandelt?
+9. Wird MDF besser, ohne TrashDefenseShare zu erhöhen?
+10. Bleiben SB-HU, BB-Defense, BTN-/CO-Opens und Core-Action-Mix stabil?
 
 Akzeptiere keinen Kandidaten, wenn die Verbesserung hauptsächlich durch Problemverschiebung entsteht.
 
@@ -182,7 +421,7 @@ Wenn eine Verbesserung mit klaren Gegenbewegungen erkauft wird:
 - erst die Entstehungskette neu analysieren,
 - prüfen, ob der eigentliche Hebel upstream, im Spot selbst, downstream, in der Range-Komposition, in der Line-Logik oder in der Pot-Geometrie liegt.
 
-Phase 5: Zielmetrik festlegen
+Phase 6: Zielmetrik festlegen
 
 Lege nach der Diagnose genau eine primäre Zielmetrik fest.
 
@@ -193,11 +432,145 @@ Dokumentiere:
 - auf welcher Ursachenebene der Leak wahrscheinlich entsteht,
 - welche Teilmetriken zur Kontrolle nötig sind,
 - welche Metriken nicht schlechter werden dürfen,
-- warum diese Metrik ein echter Leak und kein Artefakt ist.
+- warum diese Metrik ein echter Leak und kein Artefakt ist,
+- welche Equity-Diagnose sie stützt, falls verwendet,
+- welcher Runtime-Proxy ohne Equity verwendet werden kann.
 
 Wenn die Diagnose zeigt, dass die auffällige Metrik wahrscheinlich kein echter Leak ist, wähle eine andere Metrik und analysiere diese genauso vor jeder Änderung.
 
-Phase 6: Hypothese formulieren
+Wenn die Zielmetrik aus Equity-Diagnose abgeleitet wird, muss sie als Runtime-freier Proxy formulierbar sein.
+
+Nicht zulässig:
+- „Equity soll steigen“
+- „lowEquityCall blind minimieren“
+- „alle Calls mit negativer Equity-Margin entfernen“
+- „equityPct direkt in `js/bot.js` verwenden“
+- „equityRank direkt in `js/bot.js` verwenden“
+
+Zulässig:
+- passive Preflop-LowEquityCalls im qualifizierten Zielcluster senken,
+- priced/playable Calls derselben Route schützen,
+- spätere Trash-Arrival-Rate senken,
+- MDF-/Facing-Bet-Fold nicht durch mehr Trash-Calls verbessern,
+- Core-Action-Engines stabil halten.
+
+Gute Zielmetrik-Beispiele:
+- `preflop lowEquityCall` in `SR/MW/FR dominatedOffsuitBroadway` senken,
+- `preflop lowEquityCall` in `SR/MW/FR offsuitJunk` senken,
+- `preflop lowEquityCall` in `L/MW/NF offsuitJunk` senken,
+- Trash:Defendable nach betroffenen Preflop-Routen verbessern,
+- Facing-Bet-Fold nach betroffenen Arrival-Routen senken, ohne TrashDefenseShare zu erhöhen,
+- MDF-Overfold senken, falls defendableCoverage ausreichend ist,
+- Flop-Excess-Folds in `callVsRaise` bei range-relevanter Air / weak draws / Overcards senken,
+- `pair:none|draw:W` oder ähnliche weak-draw Buckets verteidigbarer machen, falls Preis, Position und Margin das stützen.
+
+Schlechte Zielmetrik-Beispiele:
+- overall Calls senken,
+- overall Folds senken,
+- overall Equity erhöhen,
+- postflop MDF durch mehr Trash-Calls verbessern,
+- postflop MDF durch pauschales Any-Air-Calling verbessern,
+- Preflop-Calls senken, obwohl der Backtrace keinen konzentrierten Preflop-Proxy zeigt,
+- Preflop allgemein tighter machen,
+- suited Hände global abwerten,
+- OOP global abwerten.
+
+Phase 7: Equity-Candidate-Gate
+
+Wenn die Hypothese aus Equity-Diagnose stammt, muss sie vor Codeänderung ein Candidate-Gate bestehen.
+
+Ein Kandidat ist nur qualifiziert, wenn:
+
+1. Sample Size:
+   - mindestens 300 Fälle im 500er Equity-Diagnoserun,
+   - oder ein sehr klarer Cluster im 300er Discovery-Run, der durch weitere Breakdowns plausibel bestätigt ist.
+
+2. Equity-Margin:
+   - durchschnittliche Equity-Margin <= -12pp,
+   - oder klare Unterdeckung gegenüber PotOdds mit robustem Abstand.
+
+3. Cluster-Schärfe:
+   - Low-Equity-Calls sind mindestens 2x so stark betroffen wie priced/playable Calls derselben Route.
+
+4. Spätere Realisierung:
+   Die spätere Realisierung ist schlechter als bei priced/playable Calls derselben Route, insbesondere durch mindestens eines:
+   - höheres Trash:Defendable-Verhältnis,
+   - schlechterer AvgDelta,
+   - schlechterer MedianDelta,
+   - mehr Facing-Bet-Fold,
+   - mehr Later-Fold,
+   - schlechtere WinnerSide,
+   - schlechtere MDF-Folgewerte ohne plausible Kompensation.
+
+5. Runtime-Proxy:
+   Der Hebel ist ohne Runtime-Equity abbildbar, z. B. durch:
+   - route / spotKey,
+   - handClass,
+   - potOdds bucket,
+   - position,
+   - MW/HU,
+   - Blind-Kontext,
+   - Facing-Raise-Kontext,
+   - flatScore,
+   - defendScore,
+   - playabilityScore,
+   - dominationPenalty,
+   - passive reentry,
+   - suited / gap / pair.
+
+6. Strategische Plausibilität:
+   Der Kandidat adressiert eine echte Ursache und nicht nur eine Messzahl.
+
+7. Schutz vor Kollateralschaden:
+   Priced/playable Calls derselben Route dürfen nicht überproportional entfernt werden.
+   BB-Defense, SB-HU, BTN-/CO-Opens und Core-Action-Mix müssen geschützt bleiben.
+
+Wenn diese Gates nicht erfüllt sind:
+- keine Codeänderung für diesen Kandidaten,
+- Kandidat verwerfen oder weiter diagnostizieren,
+- finale Entscheidung bei fehlenden Alternativen: `no-qualified-candidate` bzw. `rejected`.
+
+Phase 8: Counterfactual-Exposure vor Codeänderung
+
+Bevor ein equity-basierter Kandidat in `js/bot.js` umgesetzt wird, erstelle einen temporären Counterfactual-Exposure-Report in `tmp/`.
+
+Dieser Counterfactual ist keine echte Simulation des alternativen Handverlaufs.
+Er ist nur eine historische Exposure-Markierung.
+
+Er zeigt:
+- welche vergangenen Calls durch einen Runtime-freien Proxy vermutlich unter die Call-Schwelle gefallen wären,
+- wie viele LowEquityCalls entfernt worden wären,
+- wie viele priced/playable Calls versehentlich mitentfernt worden wären,
+- welche Routen und Handklassen betroffen wären,
+- wie die entfernten Calls später angekommen sind,
+- ob Trash:Defendable, Facing-Bet-Fold, Later-Fold, AvgDelta und MedianDelta eine echte Ursache stützen.
+
+Nicht behaupten:
+- dass der alternative Handverlauf exakt so passiert wäre,
+- dass Potgröße, Spieleranzahl, Position, spätere Action oder MDF-Anforderungen unverändert geblieben wären,
+- dass der Counterfactual ein echter Re-Sim ist.
+
+Berichte im Counterfactual:
+- Zielcluster,
+- Proxy-Regel,
+- betroffene Decision-Anzahl,
+- entfernte LowEquityCalls,
+- mitentfernte priced/playable Calls,
+- Ratio schlechter zu guter entfernter Calls,
+- betroffene Routen,
+- betroffene Handklassen,
+- PotOdds-Buckets,
+- Position / Blind-Kontext,
+- spätere Arrival-Klassen,
+- Trash:Defendable,
+- Facing-Bet-Fold,
+- Later-Fold,
+- AvgDelta / MedianDelta,
+- mögliche Nebenwirkungen.
+
+Nur wenn der Counterfactual klar zeigt, dass der Proxy überwiegend schlechte Exposures entfernt und gute/playable Exposures schützt, darf ein Code-Hebel getestet werden.
+
+Phase 9: Hypothese formulieren
 
 Formuliere vor jeder Codeänderung eine konkrete Hypothese:
 
@@ -206,6 +579,8 @@ Formuliere vor jeder Codeänderung eine konkrete Hypothese:
 - warum genau dieser Hebel,
 - welche Zielmetrik besser werden sollte,
 - auf welcher Ursachenebene der Hebel ansetzt,
+- welche Equity-Diagnose und welcher Counterfactual die Hypothese stützen,
+- welcher Runtime-Proxy verwendet wird,
 - welche Nebenwirkungen möglich sind,
 - welche Guardrails und Core-Metriken besonders überwacht werden müssen,
 - wodurch die Hypothese falsifiziert wäre.
@@ -222,10 +597,36 @@ Eine fokussierte Ein-Hebel-Änderung darf sein:
 - eine bestehende Bewertungsfunktion kontextsensitiver machen,
 - eine Handklasse sauberer unterscheiden,
 - eine vorhandene Barriere abhängig von Route, Position, Street oder Struktur justieren,
-- eine vorhandene Penalty dort anwenden, wo sie laut Diagnose fehlt.
+- eine vorhandene Penalty dort anwenden, wo sie laut Diagnose fehlt,
+- einen kleinen Proxy-Malus in einer bestehenden Preflop-Call-Bewertung ergänzen,
+- eine bestehende passive Preflop-Call-Score-Berechnung für einen qualifizierten Cluster kalibrieren.
 
 Die Änderung muss nicht zwingend nur eine Zahl sein.
-Wenn die Diagnose zeigt, dass der Leak strukturell entsteht, darf der Hebel eine kleine fokussierte Logikänderung sein. Sie muss aber weiterhin genau eine Ursache adressieren.
+Wenn die Diagnose zeigt, dass der Leak strukturell entsteht, darf der Hebel eine kleine fokussierte Logikänderung sein.
+Sie muss aber weiterhin genau eine Ursache adressieren.
+
+Bevorzugte Hebel-Orte bei passiven Preflop-Arrival-Leaks:
+- `getPreflopPassiveCallScore(...)`,
+- `getContextualPreflopFlatScore(...)`,
+- `getContextualPreflopDefendScore(...)`,
+- bestehende passive Realization Caps oder passive Call Realization Adjustments.
+
+Bevorzugte Hebel-Orte bei postflop bestätigten MDF-Defendability-Leaks:
+- bestehende Call-Barriere-, Marginal-Defense- oder Hand-Context-Bewertung im konkreten Facing-Bet-Spot,
+- bestehende Klassifikation von no-pair / weak-draw / Overcard / Blocker / Backdoor-Defense,
+- kleine kontinuierliche Anpassungen für Street, Preis, Position, aktive Spieler, LiftType, PairClass und DrawFlag,
+- kein globaler MDF-Frequency-Backfill.
+
+Nicht bevorzugt:
+- globale OOP-Mali,
+- globale suited-Mali,
+- globale Blind-Defense-Mali,
+- Postflop-MDF-Backfill,
+- globale Air-Call-Freigaben,
+- Preflop-Mali ohne Backtrace-Gate,
+- direkte Equity-Checks,
+- breite neue Hard Guards,
+- gleichzeitige Raise-/Sizing-/Call-Änderungen.
 
 Wenn ein Kandidat scheitert, weil der gewählte Hebel die erwartete Richtung trifft, aber zu stark wirkt, darf genau derselbe Hebel einmal moderater neu getestet werden.
 
@@ -241,7 +642,9 @@ Vermeide:
 - viele Spot-Sonderregeln,
 - gleichzeitige Änderungen an mehreren unabhängigen Stellen,
 - Änderungen, die nur eine Metrik kosmetisch verbessern,
-- Änderungen, die das Messsystem umgehen.
+- Änderungen, die das Messsystem umgehen,
+- direkte Optimierung auf Equity-Diagnostics,
+- globale Tightness ohne Root-Cause-Bezug.
 
 Wenn eine minimale Änderung nicht reicht:
 - erkläre, warum der Leak strukturell ist,
@@ -249,15 +652,19 @@ Wenn eine minimale Änderung nicht reicht:
 - teste trotzdem nur diese eine Ursache,
 - validiere wie gewohnt mit 100 / 500 / 1000.
 
-Phase 7: Fokussiert tunen
+Phase 10: Fokussiert tunen
 
 Ändere genau einen fokussierten Hebel in `js/bot.js`.
+
+Vor dem ersten Batch nach Codeänderung:
+
+`deno check js/bot.js`
 
 Danach starte:
 
 `deno task engine:batch`
 
-Bewerte den 100er gegen die frische 1000er-Baseline.
+Bewerte den 100er gegen die frische 1000er-Core-Baseline.
 
 Wenn der 100er schlechter wird oder die Zielmetrik nicht verbessert:
 - analysiere zuerst genau, warum der Kandidat schlechter wurde oder nicht wirkt,
@@ -277,10 +684,12 @@ Die Fehlschlaganalyse muss prüfen:
 - Hat der Hebel Trash-Calls erhöht?
 - Hat der Hebel Value-Aggression reduziert?
 - Hat der Hebel Spew erzeugt?
+- Hat der Hebel gute/priced/playable Preflop-Calls überproportional entfernt?
+- Hat der Hebel SB-HU, BB-Defense, BTN-/CO-Open-Dynamik oder Action-Mix beschädigt?
 - War die ursprüngliche Hypothese falsch?
 - Muss der nächste Hebel upstream, im Spot selbst oder downstream liegen?
 
-Phase 8: Validierung
+Phase 11: Validierung
 
 Wenn der 100er die Zielmetrik verbessert und keine Guardrails bricht, starte:
 
@@ -292,6 +701,8 @@ Wenn der 500er schlechter wird oder die Verbesserung nicht stabil bleibt:
 - prüfe, welche Teilmetriken kippen,
 - prüfe, ob der Hebel lokal hilft, aber global schadet,
 - prüfe, ob die Ursache falsch lokalisiert wurde,
+- prüfe, ob der Hebel gute/priced/playable Calls entfernt,
+- prüfe, ob MDF nur durch Problemverschiebung oder Trash-Defense scheinbar besser wird,
 - revertiere die Änderung, wenn die Verbesserung nicht plausibel stabil ist,
 - versuche danach einen neuen einzelnen Hebel.
 
@@ -299,12 +710,37 @@ Wenn der 500er weiter besser ist, starte:
 
 `deno task engine:batch:1000`
 
+Für equity-basierte Kandidaten muss zusätzlich mindestens ein Equity-Diagnoserun auf dem Kandidaten erzeugt werden:
+
+Für Postflop-Decision-Quality:
+
+`deno task engine:batch -- --runs=300 --equity --equity-limit=1000`
+
+Für Preflop-/Arrival-Kandidaten:
+
+`deno task engine:batch -- --runs=300 --equity-preflop --equity-limit=3000`
+
+Wenn der 1000er Acceptance Run oder die begleitende Equity-Diagnose ambivalent ist, darf zusätzlich ein 1000er Equity-Diagnoserun erzeugt werden:
+
+Postflop:
+
+`deno task engine:batch -- --runs=1000 --equity --equity-limit=1000`
+
+Preflop/Arrival:
+
+`deno task engine:batch -- --runs=1000 --equity-preflop --equity-limit=3000`
+
 Akzeptiere die Änderung nur, wenn:
-- der Kandidaten-1000er die frische Baseline in der gewählten Zielmetrik schlägt,
+- der Kandidaten-1000er die frische Core-Baseline in der gewählten Zielmetrik schlägt,
 - die Verbesserung strategisch plausibel ist,
 - alle Hard Guardrails stabil bleiben,
 - keine klare Core-Regression entsteht,
-- der Effekt nicht nur durch Noise, Trash-Calls, Spew, Problemverschiebung oder Messartefakte erklärbar ist.
+- der Effekt nicht nur durch Noise, Trash-Calls, Spew, Problemverschiebung oder Messartefakte erklärbar ist,
+- Equity-Diagnose die Ursache stützt oder zumindest nicht widerspricht,
+- priced/playable Calls nicht überproportional entfernt wurden,
+- spätere Arrival-Qualität stabil oder besser ist,
+- MDF/Facing-Bet-Fold nicht durch Trash-Defense erkauft wird,
+- SB-HU, BB-Defense, BTN-/CO-Opens und Core-Action-Mix stabil bleiben.
 
 Wenn der 1000er scheitert:
 - analysiere den Fehlschlag,
@@ -312,7 +748,7 @@ Wenn der 1000er scheitert:
 - aktualisiere die Diagnose,
 - versuche einen anderen einzelnen Hebel, sofern noch plausible Hypothesen existieren.
 
-Phase 9: Hard Guardrails
+Phase 12: Hard Guardrails
 
 Diese Guardrails sind nicht verhandelbar:
 
@@ -330,52 +766,149 @@ Diese Guardrails sind nicht verhandelbar:
 - Keine Verbesserung durch passives Overfolding an anderer Stelle.
 - Keine Verbesserung durch Problemverschiebung in andere Streets, Lines, Actions oder Handklassen.
 - Keine Verbesserung durch Änderung oder Umgehung von Logs, Metriken oder Analyse.
+- Keine direkte Runtime-Nutzung von Equity.
+- Keine direkte Runtime-Nutzung von Equity-Rank.
+- Keine direkte Optimierung auf Einzelbeispiele aus Equity-Diagnostics.
+- Keine globale Tightness-Erhöhung ohne Root-Cause-Bezug.
+- Keine klare Regression bei SB-HU Action Engine.
+- Keine klare Regression bei BB-Defense gegen reasonable price.
+- Keine klare Regression bei BTN-/CO-Opens.
+- Keine klare Regression bei 1-Limper-Iso, 3bet und OpenRaise-Struktur.
+- Keine überproportionale Entfernung von priced/playable Calls im Zielcluster.
 
-Phase 10: Equity Enrichment
+Phase 13: Equity Enrichment als Pflicht-Diagnoseschicht
 
-Nutze Equity Enrichment gezielt als Diagnosewerkzeug, nicht als Hauptziel.
+Equity Enrichment ist Diagnose- und Kalibrierungsschicht, nicht Runtime-Entscheidungsmodell.
 
-Nutze Equity Enrichment besonders bei:
-- Postflop-Call-Qualität,
-- High-Equity-Folds,
-- Low-Equity-Calls,
-- Low-Equity-Raises,
-- widersprüchlichen MDF- und WinnerPct-Signalen,
-- ambivalenten 100er- oder 500er-Ergebnissen,
-- unklarer Entscheidungsqualität trotz scheinbar besserer Hauptmetrik,
-- Verdacht, dass eine Range zwar formal besser verteidigt, aber schlechtere Equity realisiert.
+Equity darf:
+- Leak-Kandidaten trennen,
+- Root-Cause-Hypothesen prüfen,
+- schlechte Arrivals sichtbar machen,
+- Call-/Fold-/Raise-Qualität plausibilisieren,
+- Counterfactual-Exposures markieren,
+- Ambivalenzen zwischen MDF, WinnerPct, ChipDelta und Handlabels auflösen,
+- Heuristiken kalibrieren.
 
-Befehl:
+Equity darf nicht:
+- direkt in `js/bot.js` als Entscheidungskriterium eingebaut werden,
+- als alleinige Zielmetrik optimiert werden,
+- Einzelbeispiele überbewerten,
+- Guardrails, Playability, Range Defense oder Tournament-Flow überstimmen,
+- Logs, Metriken oder Analyse umgehen,
+- als Ersatz für 100/500/1000 Acceptance dienen.
 
-`deno task engine:batch -- --equity --equity-limit=1000`
+Standard-Equity-Diagnose für Postflop-Decision-Quality:
 
-Für finale ambivalente Postflop-Decision-Quality-Kandidaten zusätzlich:
+`deno task engine:batch -- --runs=300 --equity --equity-limit=1000`
+
+Für Preflop-Arrival-, passive Call- und MDF-Range-Probleme:
+
+`deno task engine:batch -- --runs=300 --equity-preflop --equity-limit=3000`
+
+Zur Kandidatenqualifikation bei Preflop-/Arrival-Leaks:
+
+`deno task engine:batch -- --runs=500 --equity-preflop --equity-limit=3000`
+
+Für finale ambivalente Postflop-Decision-Quality-Kandidaten:
 
 `deno task engine:batch -- --runs=1000 --equity --equity-limit=1000`
 
-Equity ist Diagnose, nicht Hauptziel.
-Optimiere nicht direkt auf Equity-Diagnostics, wenn dadurch Range Defense, Playability, Showdown-Struktur oder Guardrails schlechter werden.
+Für finale ambivalente Preflop-/Arrival-Kandidaten:
 
-Phase 11: Abschlussbericht
+`deno task engine:batch -- --runs=1000 --equity-preflop --equity-limit=3000`
+
+Equity-Signale müssen immer aggregiert nach Route, Handklasse, Preis, Position und späterer Realisierung geprüft werden.
+
+Pflicht-Breakdowns bei Preflop-Arrival-Leaks:
+- route / spotKey
+- handClass
+- action
+- signal
+- equityPct
+- potOddsPct
+- marginPct
+- equityRank
+- activePlayers
+- potOdds bucket
+- position / seat / blind context
+- flatScore / defendScore / playabilityScore / dominationPenalty, falls vorhanden
+- spätere Flop-/Turn-/River-Arrival-Klasse
+- Trash:Defendable
+- Facing-Bet-Fold
+- Later-Fold
+- WinnerSide / ChipDelta, falls vorhanden
+
+Counterfactuals:
+Ein Equity-Counterfactual ist nur eine historische Exposure-Markierung.
+Er zeigt, welche vergangenen Entscheidungen durch einen Runtime-freien Proxy vermutlich anders behandelt worden wären.
+Er ist keine echte Simulation des alternativen Handverlaufs, weil Fold/Call-Änderungen Potgröße, Spieleranzahl, Position, Action und spätere MDF-Anforderungen verändern.
+
+Ein Kandidat darf nur aus Equity-Diagnose abgeleitet werden, wenn ein nicht-Equity-Runtime-Proxy existiert.
+
+Beispiele:
+- Route
+- Handklasse
+- PotOdds-Bucket
+- Position
+- MW/HU
+- Blind-Kontext
+- Facing-Raise-Kontext
+- FlatScore
+- DefendScore
+- Playability
+- Domination
+
+Nicht zulässig:
+- direkte Optimierung auf `equityPct`
+- direkte Optimierung auf `equityRank`
+- direkte Optimierung auf `lowEquityCall` ohne Proxy
+- globale Tightness-Erhöhung ohne Root-Cause-Bezug
+- globale Suited-/OOP-/Blind-Mali ohne Cluster-Beleg
+
+Akzeptiere Equity-basierte Kandidaten nur, wenn:
+- das Zielcluster verbessert wird,
+- priced/playable Calls derselben Route nicht überproportional verschwinden,
+- spätere Trash-Arrival-Rate sinkt oder stabil bleibt,
+- MDF/Facing-Bet-Fold nicht durch mehr Trash-Defense erkauft wird,
+- AvgDelta/MedianDelta nicht klar schlechter werden,
+- SB-HU, BB-Defense, BTN-/CO-Opens und Core-Action-Mix stabil bleiben,
+- Hard Guardrails sauber bleiben.
+
+Phase 14: Abschlussbericht
 
 Liefere am Ende einen kompakten, aber vollständigen Bericht.
 
 Der Bericht muss enthalten:
 
-1. Frische Baseline
+1. Frische Core-Baseline
 - Baseline-Pfad
 - relevante Kernmetriken
 - Guardrail-Status
 - warum diese Baseline verwendet wurde
 
-2. Leak Discovery
+2. Equity-Diagnose, falls verwendet
+- Equity-Run-Pfad
+- equity candidates / attempted / enriched / capped / skipped
+- wichtigste Equity-Signale
+- Zielcluster nach Route / Handklasse / Margin
+- Vergleich lowEquityCall vs priced/playable Calls derselben Route
+- Equity-Margin
+- Equity-Rank
+- PotOdds-Buckets
+- Counterfactual-Exposure
+- mitentfernte gute/priced/playable Calls
+- spätere Arrival-/MDF-/Delta-Auswirkung
+- warum der gewählte Runtime-Proxy die Equity-Ursache abbildet
+- warum nicht direkt auf Equity optimiert wurde
+
+3. Leak Discovery
 - welche Metriken geprüft wurden
 - welche Kandidaten verworfen wurden und warum
 - welche Zielmetrik gewählt wurde
 - Sample Size
 - warum sie strategisch relevant ist
 
-3. Meta-Diagnose
+4. Meta-Diagnose
 - wo der Leak sichtbar wird
 - wo der Leak wahrscheinlich entsteht
 - wichtigste Breakdowns
@@ -384,16 +917,23 @@ Der Bericht muss enthalten:
 - alternative Erklärungen
 - warum der gewählte Hebel an der richtigen Ebene ansetzt
 
-4. Root-Cause- und Symptom-Fix-Prüfung
+5. Root-Cause- und Symptom-Fix-Prüfung
 - welche verwandten Metriken sich mitbewegen
 - ob die Verbesserung kausal plausibel ist
 - ob Problemverschiebung ausgeschlossen werden kann
+- ob Arrival-Qualität wirklich besser wurde oder nur spätere Decisions anders aussehen
+- ob MDF besser wurde, ohne TrashDefenseShare zu erhöhen
+- ob priced/playable Calls geschützt wurden
 - warum der Kandidat den Bot insgesamt strategisch verbessert und nicht nur eine Messzahl
 
-5. Hypothesen und Versuche
+6. Hypothesen und Versuche
+
 Für jeden getesteten Hebel:
 - exakte Änderungsidee
 - erwarteter Effekt
+- Ursachenebene
+- Runtime-Proxy
+- Equity-/Counterfactual-Begründung, falls verwendet
 - 100er-Ergebnis
 - falls erreicht: 500er-Ergebnis
 - falls erreicht: 1000er-Ergebnis
@@ -401,28 +941,36 @@ Für jeden getesteten Hebel:
 - Erklärung bei Fehlschlag
 - Erkenntnis für die nächste Hypothese
 
-6. Akzeptierter Kandidat, falls vorhanden
+7. Akzeptierter Kandidat, falls vorhanden
 - exakte Änderung
 - Diff-Zusammenfassung
-- Vergleich gegen die frische Baseline
+- Vergleich gegen die frische Core-Baseline
 - 100er-Ergebnis
 - 500er-Ergebnis
 - 1000er-Ergebnis
 - Equity-Ergebnis, falls genutzt
 - Guardrail-Status
 - geprüfte Core-Regressionen
+- geprüfte SB-HU-/BB-Defense-/BTN-/CO-/Action-Mix-Stabilität
 - warum die Verbesserung strategisch plausibel ist
 
-7. Finale Entscheidung
-- `accepted` oder `rejected`
+8. Finale Entscheidung
+- `accepted`, `rejected` oder `no-qualified-candidate`
 
 Wenn accepted:
 - Lasse ausschließlich die akzeptierte Änderung in `js/bot.js` im Working Tree.
 - Entferne alle fehlgeschlagenen experimentellen Änderungen.
 - Lasse temporäre Batch-Ausgaben in `tmp/` bestehen.
+- Berichte, welcher einzelne Hebel akzeptiert wurde.
 
 Wenn rejected:
 - Revertiere alle Änderungen.
 - Hinterlasse einen sauberen Working Tree.
 - Fasse die besten gescheiterten Hypothesen und ihre Erkenntnisse zusammen.
 - Erkläre, welche Ursache vermutlich weiter untersucht werden sollte.
+
+Wenn no-qualified-candidate:
+- Ändere keinen Code.
+- Berichte, welche Equity-/MDF-/Arrival-Kandidaten geprüft wurden.
+- Erkläre, warum kein Kandidat die Gates erfüllt hat.
+- Benenne die beste nächste Diagnosefrage.
