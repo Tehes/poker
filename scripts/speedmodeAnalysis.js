@@ -1844,6 +1844,16 @@ function isRaiseAllIn(decision) {
 		(decision.amount ?? 0) >= decision.chipsBefore;
 }
 
+function isExplainableBelowTripsAllInReraise(decision) {
+	return decision.rawHand === "Two Pair" &&
+		decision.activePlayers === 2 &&
+		decision.hasPrivateMadeHand === true &&
+		decision.liftType === "structural" &&
+		decision.checkRaiseIntentAction === "fired" &&
+		typeof decision.edge === "number" &&
+		decision.edge >= 2.0;
+}
+
 function isProtectiveFoldDecision(decision) {
 	if (
 		decision.action !== "fold" || decision.phase !== "postflop" || decision.toCall <= 0 ||
@@ -2311,6 +2321,7 @@ function createEmptyPostflopMetrics() {
 			flopMultiway5PlusCount: 0,
 			allInCount: 0,
 			allInBelowTripsCount: 0,
+			allInBelowTripsExplainableCount: 0,
 			allInLowEdgeCount: 0,
 			allInActivePlayers4PlusCount: 0,
 			allInActivePlayers5PlusCount: 0,
@@ -2360,6 +2371,7 @@ export function createEmptyMetrics() {
 			postflopReraise4Plus: [],
 			postflopFlopReraiseMultiway: [],
 			postflopAllInReraiseBelowTrips: [],
+			postflopAllInReraiseBelowTripsExplainable: [],
 			postflopAllInReraiseLowEdge: [],
 			bluffRaiseAir: [],
 			bluffRaiseDraw: [],
@@ -2731,8 +2743,13 @@ export function analyzeRunDecisions(decisions, hands) {
 					metrics.postflop.reraises.allInActivePlayers5PlusCount += 1;
 				}
 				if (BELOW_TRIPS_POSTFLOP_HANDS.has(decision.rawHand)) {
-					metrics.postflop.reraises.allInBelowTripsCount += 1;
-					pushExample(metrics.examples.postflopAllInReraiseBelowTrips, line);
+					if (isExplainableBelowTripsAllInReraise(decision)) {
+						metrics.postflop.reraises.allInBelowTripsExplainableCount += 1;
+						pushExample(metrics.examples.postflopAllInReraiseBelowTripsExplainable, line);
+					} else {
+						metrics.postflop.reraises.allInBelowTripsCount += 1;
+						pushExample(metrics.examples.postflopAllInReraiseBelowTrips, line);
+					}
 				}
 				if (isLowEdgeReraise) {
 					metrics.postflop.reraises.allInLowEdgeCount += 1;
@@ -3616,6 +3633,9 @@ export function mergeRunMetrics(target, source) {
 	);
 	source.examples.postflopAllInReraiseBelowTrips.forEach((line) =>
 		pushExample(target.examples.postflopAllInReraiseBelowTrips, line)
+	);
+	source.examples.postflopAllInReraiseBelowTripsExplainable.forEach((line) =>
+		pushExample(target.examples.postflopAllInReraiseBelowTripsExplainable, line)
 	);
 	source.examples.postflopAllInReraiseLowEdge.forEach((line) =>
 		pushExample(target.examples.postflopAllInReraiseLowEdge, line)

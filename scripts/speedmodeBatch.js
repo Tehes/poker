@@ -666,6 +666,9 @@ async function main() {
 			`postflop_reraises_allin_below_trips=${aggregateMetrics.postflop.reraises.allInBelowTripsCount}`,
 		);
 		console.log(
+			`postflop_reraises_allin_below_trips_explainable=${aggregateMetrics.postflop.reraises.allInBelowTripsExplainableCount}`,
+		);
+		console.log(
 			`postflop_reraises_allin_edge_lt_${
 				RERAISE_LOW_EDGE_THRESHOLD.toFixed(1)
 			}=${aggregateMetrics.postflop.reraises.allInLowEdgeCount}`,
