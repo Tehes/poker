@@ -1953,6 +1953,11 @@ function preFlop() {
 		getPlayerSeatEl(player)?.classList.add("hidden");
 		enqueueNotification(`${player.name} is out of the game!`);
 		logFlow("player_bust", { name: player.name });
+		logSpeedmodeEvent("player_bust", {
+			handId: gameState.handId,
+			player: player.name,
+			seatIndex: player.seatIndex,
+		});
 	});
 
 	updateWinProbabilityDisplays();
@@ -2836,7 +2841,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-05-12-v1";
+const SERVICE_WORKER_VERSION = "2026-05-13-v1";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

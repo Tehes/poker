@@ -457,7 +457,7 @@ async function runSingleTournament(
 	}
 
 	const { payload, outcome: runOutcome } = await waitForSettledRunPayload(page);
-	const runMetrics = analyzeRunDecisions(runOutcome.decisions, runOutcome.hands);
+	const runMetrics = analyzeRunDecisions(runOutcome.decisions, runOutcome.hands, runOutcome.playerBusts);
 	mergeRunMetrics(aggregateMetrics, runMetrics);
 	mergeOutcomeMetrics(aggregateOutcomeMetrics, runOutcome.rawMetrics);
 	incrementCount(champions, state.champion || "unknown");
@@ -496,6 +496,7 @@ async function runSingleTournament(
 				logCount: payload.logs.length,
 				hands: runOutcome.hands,
 				decisions: runOutcome.decisions,
+				playerBusts: runOutcome.playerBusts,
 				outcomeMetrics: runOutcome.metrics,
 			},
 			null,

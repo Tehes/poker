@@ -9,9 +9,20 @@ Version log writing guide:
 - Group related tuning work into one coherent entry instead of listing every small internal step.
 */
 
-export const APP_VERSION = "1.2.5";
+export const APP_VERSION = "1.2.6";
 
 export const VERSION_LOG = [
+	{
+		version: "1.2.6",
+		date: "2026-05-13",
+		title: "More active tournament play",
+		notes: [
+			"Bots now play short-handed tournament spots more actively, especially when stealing blinds or defending against steals.",
+			"Button and small-blind situations should create more realistic pressure instead of waiting too often for premium hands.",
+			"Marginal blind defenses are still trimmed in the riskiest spots, so the added action stays more disciplined.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.2.5",
 		date: "2026-05-12",

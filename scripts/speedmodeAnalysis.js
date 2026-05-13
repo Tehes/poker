@@ -519,6 +519,52 @@ function bucketMarginToCall(marginToCall) {
 	return ">0.12";
 }
 
+function bucketEquityMarginPct(marginPct) {
+	if (typeof marginPct !== "number") {
+		return "n/a";
+	}
+	if (marginPct <= -20) {
+		return "<=-20pp";
+	}
+	if (marginPct <= -10) {
+		return "-20..-10pp";
+	}
+	if (marginPct < 0) {
+		return "-10..0pp";
+	}
+	if (marginPct < 10) {
+		return "0..10pp";
+	}
+	if (marginPct < 20) {
+		return "10..20pp";
+	}
+	return ">=20pp";
+}
+
+function getEquityDiagnosticSignal(decision) {
+	return decision.equityDiagnostic?.signal ?? "no-equity";
+}
+
+function getEquityDiagnosticReason(decision) {
+	return decision.equityDiagnostic?.candidate?.reason ?? "no-candidate";
+}
+
+function getEquityDiagnosticHandClass(decision) {
+	return decision.equityDiagnostic?.candidate?.handClass ?? classifyPreflopHandFamily(decision.holeCards);
+}
+
+function getEquityMarginPct(decision) {
+	const equity = decision.equityDiagnostic?.equity;
+	if (
+		!equity ||
+		typeof equity.equityPct !== "number" ||
+		typeof equity.potOddsPct !== "number"
+	) {
+		return null;
+	}
+	return equity.equityPct - equity.potOddsPct;
+}
+
 function pushExample(target, line, limit = 10) {
 	if (target.length < limit) {
 		target.push(line);
@@ -807,6 +853,71 @@ export function createMdfAnalysis(mdfMetrics) {
 	};
 }
 
+function createEmptyBlindDefenseProfileMetrics() {
+	return {
+		bySeatAndHandFamily: {},
+		bySeatAndStrengthScore: {},
+		bySeatAndDefendScore: {},
+		bySeatActionAndHandFamily: {},
+	};
+}
+
+function createEmptySbHuOpenTransitionMetrics() {
+	return {
+		attempts: 0,
+		bigBlindFold: 0,
+		bigBlindCall: 0,
+		bigBlindRaise: 0,
+		bbDefend: 0,
+		uncontested: 0,
+		flopSeen: 0,
+		defenseProfile: createEmptyBlindDefenseProfileMetrics(),
+	};
+}
+
+function createEmptySbHuLimpTransitionMetrics() {
+	return {
+		attempts: 0,
+		bigBlindCheck: 0,
+		bigBlindRaise: 0,
+		flopSeen: 0,
+	};
+}
+
+function createEmptyBtn3OpenTransitionMetrics() {
+	return {
+		attempts: 0,
+		smallBlindFold: 0,
+		smallBlindCall: 0,
+		smallBlindRaise: 0,
+		bigBlindFold: 0,
+		bigBlindCall: 0,
+		bigBlindRaise: 0,
+		smallBlindDefend: 0,
+		bigBlindDefend: 0,
+		blindsDefend: 0,
+		bothBlindsDefend: 0,
+		secondBlindDefend: 0,
+		blindsFoldedThrough: 0,
+		flopSeen: 0,
+		defenseProfile: createEmptyBlindDefenseProfileMetrics(),
+	};
+}
+
+function createEmptyBtn3LimpTransitionMetrics() {
+	return {
+		attempts: 0,
+		smallBlindFold: 0,
+		smallBlindCall: 0,
+		smallBlindRaise: 0,
+		bigBlindCheck: 0,
+		bigBlindCall: 0,
+		bigBlindRaise: 0,
+		blindRaise: 0,
+		flopSeen: 0,
+	};
+}
+
 function createEmptyPreflopTransitionMetrics() {
 	return {
 		unopenedRaiseAttemptsBySeatAndPlayers: {},
@@ -814,44 +925,12 @@ function createEmptyPreflopTransitionMetrics() {
 		unopenedRaiseFlopSeenBySeatAndPlayers: {},
 		unopenedCallAttemptsBySeatAndPlayers: {},
 		unopenedCallFlopSeenBySeatAndPlayers: {},
-		sbHuOpen: {
-			attempts: 0,
-			bigBlindFold: 0,
-			bigBlindCall: 0,
-			bigBlindRaise: 0,
-			bbDefend: 0,
-			uncontested: 0,
-			flopSeen: 0,
-		},
-		sbHuLimp: {
-			attempts: 0,
-			bigBlindCheck: 0,
-			bigBlindRaise: 0,
-			flopSeen: 0,
-		},
-		btn3Open: {
-			attempts: 0,
-			smallBlindFold: 0,
-			smallBlindCall: 0,
-			smallBlindRaise: 0,
-			bigBlindFold: 0,
-			bigBlindCall: 0,
-			bigBlindRaise: 0,
-			blindsDefend: 0,
-			blindsFoldedThrough: 0,
-			flopSeen: 0,
-		},
-		btn3Limp: {
-			attempts: 0,
-			smallBlindFold: 0,
-			smallBlindCall: 0,
-			smallBlindRaise: 0,
-			bigBlindCheck: 0,
-			bigBlindCall: 0,
-			bigBlindRaise: 0,
-			blindRaise: 0,
-			flopSeen: 0,
-		},
+		sbHuOpen: createEmptySbHuOpenTransitionMetrics(),
+		sbHuOpenShortRun: createEmptySbHuOpenTransitionMetrics(),
+		sbHuLimp: createEmptySbHuLimpTransitionMetrics(),
+		btn3Open: createEmptyBtn3OpenTransitionMetrics(),
+		btn3OpenShortRun: createEmptyBtn3OpenTransitionMetrics(),
+		btn3Limp: createEmptyBtn3LimpTransitionMetrics(),
 	};
 }
 
@@ -872,6 +951,77 @@ function incrementTrackedBlindResponse(target, seatClass, action) {
 		? "Check"
 		: "Raise";
 	incrementCount(target, `${seatPrefix}${actionSuffix}`);
+}
+
+function isBlindDefenseAction(action) {
+	return action === "call" || action === "raise";
+}
+
+function recordBlindDefenseProfile(target, decision) {
+	if (!decision || !isBlindDefenseAction(decision.action)) {
+		return;
+	}
+
+	const seatKey = decision.preflopSeat ?? "-";
+	const handFamily = classifyPreflopHandFamily(decision.holeCards);
+	incrementNestedCount(target.bySeatAndHandFamily, seatKey, handFamily);
+	incrementNestedCount(target.bySeatAndStrengthScore, seatKey, decision.strengthScoreBucket);
+	incrementNestedCount(target.bySeatAndDefendScore, seatKey, decision.defendScoreBucket);
+	incrementTripleNestedCount(target.bySeatActionAndHandFamily, seatKey, decision.action, handFamily);
+}
+
+function recordSbHuOpenTransition(target, bbResponse, uncontested, sawFlop) {
+	target.attempts += 1;
+	if (bbResponse) {
+		incrementTrackedBlindResponse(target, "bigBlind", bbResponse.action);
+		if (isBlindDefenseAction(bbResponse.action)) {
+			target.bbDefend += 1;
+			recordBlindDefenseProfile(target.defenseProfile, bbResponse);
+		}
+	}
+	if (uncontested) {
+		target.uncontested += 1;
+	}
+	if (sawFlop) {
+		target.flopSeen += 1;
+	}
+}
+
+function recordBtn3OpenTransition(target, sbResponse, bbResponse, sawFlop) {
+	const smallBlindDefended = sbResponse && isBlindDefenseAction(sbResponse.action);
+	const bigBlindDefended = bbResponse && isBlindDefenseAction(bbResponse.action);
+	const blindsFoldedThrough = sbResponse?.action === "fold" && bbResponse?.action === "fold";
+
+	target.attempts += 1;
+	if (sbResponse) {
+		incrementTrackedBlindResponse(target, "smallBlind", sbResponse.action);
+		if (smallBlindDefended) {
+			target.smallBlindDefend += 1;
+			recordBlindDefenseProfile(target.defenseProfile, sbResponse);
+		}
+	}
+	if (bbResponse) {
+		incrementTrackedBlindResponse(target, "bigBlind", bbResponse.action);
+		if (bigBlindDefended) {
+			target.bigBlindDefend += 1;
+			recordBlindDefenseProfile(target.defenseProfile, bbResponse);
+		}
+	}
+	if (smallBlindDefended || bigBlindDefended) {
+		target.blindsDefend += 1;
+	}
+	if (smallBlindDefended && bigBlindDefended) {
+		target.bothBlindsDefend += 1;
+	}
+	if (smallBlindDefended && bigBlindDefended) {
+		target.secondBlindDefend += 1;
+	}
+	if (blindsFoldedThrough) {
+		target.blindsFoldedThrough += 1;
+	}
+	if (sawFlop) {
+		target.flopSeen += 1;
+	}
 }
 
 function formatDecisionExample(decision) {
@@ -1375,6 +1525,7 @@ function analyzeRiverHuOopDoubleCheckedThroughFollowups(decisions, metrics) {
 
 function analyzePreflopTransitions(decisions, hands, metrics) {
 	const decisionsByHandId = groupDecisionsByHandId(decisions);
+	const shortRun = hands.length <= 50;
 
 	for (const hand of hands) {
 		const handDecisions = decisionsByHandId.get(hand.handId) ?? [];
@@ -1421,57 +1572,28 @@ function analyzePreflopTransitions(decisions, hands, metrics) {
 
 			if (seatKey === "smallBlind" && openDecision.activePlayers === 2) {
 				const bbResponse = remainingPreflopDecisions.find((decision) => decision.preflopSeat === "bigBlind");
-				metrics.preflop.transitions.sbHuOpen.attempts += 1;
-				if (bbResponse) {
-					incrementTrackedBlindResponse(
-						metrics.preflop.transitions.sbHuOpen,
-						"bigBlind",
-						bbResponse.action,
+				recordSbHuOpenTransition(metrics.preflop.transitions.sbHuOpen, bbResponse, uncontested, sawFlop);
+				if (shortRun) {
+					recordSbHuOpenTransition(
+						metrics.preflop.transitions.sbHuOpenShortRun,
+						bbResponse,
+						uncontested,
+						sawFlop,
 					);
-					if (bbResponse.action === "call" || bbResponse.action === "raise") {
-						metrics.preflop.transitions.sbHuOpen.bbDefend += 1;
-					}
-				}
-				if (uncontested) {
-					metrics.preflop.transitions.sbHuOpen.uncontested += 1;
-				}
-				if (sawFlop) {
-					metrics.preflop.transitions.sbHuOpen.flopSeen += 1;
 				}
 			}
 
 			if (seatKey === "button" && openDecision.activePlayers === 3) {
 				const sbResponse = remainingPreflopDecisions.find((decision) => decision.preflopSeat === "smallBlind");
 				const bbResponse = remainingPreflopDecisions.find((decision) => decision.preflopSeat === "bigBlind");
-				const blindsDefended = [sbResponse, bbResponse].some((decision) =>
-					decision && (decision.action === "call" || decision.action === "raise")
-				);
-				const blindsFoldedThrough = sbResponse?.action === "fold" &&
-					bbResponse?.action === "fold";
-
-				metrics.preflop.transitions.btn3Open.attempts += 1;
-				if (sbResponse) {
-					incrementTrackedBlindResponse(
-						metrics.preflop.transitions.btn3Open,
-						"smallBlind",
-						sbResponse.action,
+				recordBtn3OpenTransition(metrics.preflop.transitions.btn3Open, sbResponse, bbResponse, sawFlop);
+				if (shortRun) {
+					recordBtn3OpenTransition(
+						metrics.preflop.transitions.btn3OpenShortRun,
+						sbResponse,
+						bbResponse,
+						sawFlop,
 					);
-				}
-				if (bbResponse) {
-					incrementTrackedBlindResponse(
-						metrics.preflop.transitions.btn3Open,
-						"bigBlind",
-						bbResponse.action,
-					);
-				}
-				if (blindsDefended) {
-					metrics.preflop.transitions.btn3Open.blindsDefend += 1;
-				}
-				if (blindsFoldedThrough) {
-					metrics.preflop.transitions.btn3Open.blindsFoldedThrough += 1;
-				}
-				if (sawFlop) {
-					metrics.preflop.transitions.btn3Open.flopSeen += 1;
 				}
 			}
 		}
@@ -1568,6 +1690,113 @@ function classifyMadeHandFold(decision) {
 		isDeadOrNearDead,
 		isLive: !isDeadOrNearDead,
 	};
+}
+
+function getDecisionPositionKey(decision) {
+	return `${decision.preflopSeat ?? "-"}/${decision.preflopSeatContext ?? "-"}`;
+}
+
+function getDecisionStrengthKey(decision) {
+	if (decision.phase === "preflop") {
+		return decision.strengthScoreBucket;
+	}
+	return decision.qualityClass;
+}
+
+function recordDecisionContextBreakdown(target, decision) {
+	target.total += 1;
+	incrementCount(target.byPhase, decision.phase);
+	incrementCount(target.byZone, decision.mZone);
+	incrementCount(target.byPosition, getDecisionPositionKey(decision));
+	incrementCount(target.byAction, decision.action);
+	incrementCount(target.bySpot, decision.spotKey);
+	incrementCount(target.byStrength, getDecisionStrengthKey(decision));
+	incrementCount(target.byHandClass, getEquityDiagnosticHandClass(decision));
+	incrementCount(target.byEquitySignal, getEquityDiagnosticSignal(decision));
+	incrementCount(target.byEquityMargin, bucketEquityMarginPct(getEquityMarginPct(decision)));
+}
+
+function recordEquityDiagnosticDecision(metrics, decision) {
+	if (!decision.equityDiagnostic) {
+		return;
+	}
+
+	const signal = getEquityDiagnosticSignal(decision);
+	const reason = getEquityDiagnosticReason(decision);
+	const handClass = getEquityDiagnosticHandClass(decision);
+	const marginBucket = bucketEquityMarginPct(getEquityMarginPct(decision));
+	const seatKey = decision.preflopSeat ?? "-";
+	const phaseActionKey = `${decision.phase}/${decision.action}`;
+
+	metrics.decisions += 1;
+	incrementCount(metrics.bySignal, signal);
+	incrementCount(metrics.byReason, reason);
+	incrementCount(metrics.byHandClass, handClass);
+	incrementCount(metrics.byMargin, marginBucket);
+	incrementNestedCount(metrics.byPhaseActionSignal, phaseActionKey, signal);
+	incrementNestedCount(metrics.bySpotSignal, decision.spotKey, signal);
+	incrementNestedCount(metrics.bySeatSignal, seatKey, signal);
+	incrementNestedCount(metrics.byReasonAndMargin, reason, marginBucket);
+}
+
+function findBustDecision(decisionsByHandPlayer, bust) {
+	const player = bust.player ?? bust.name ?? null;
+	if (!player || typeof bust.handId !== "number") {
+		return null;
+	}
+	return decisionsByHandPlayer.get(`${bust.handId - 1}|${player}`) ??
+		decisionsByHandPlayer.get(`${bust.handId}|${player}`) ??
+		null;
+}
+
+function analyzeTournamentFlow(decisions, hands, playerBusts, metrics) {
+	if (!Array.isArray(playerBusts) || playerBusts.length === 0) {
+		return;
+	}
+
+	const shortRun = hands.length <= 50;
+	const decisionsByHandPlayer = new Map();
+	for (const decision of decisions) {
+		decisionsByHandPlayer.set(`${decision.handId}|${decision.player}`, decision);
+	}
+
+	let firstBustHandId = null;
+	for (const bust of playerBusts) {
+		if (typeof bust.handId !== "number") {
+			continue;
+		}
+		if (firstBustHandId === null || bust.handId < firstBustHandId) {
+			firstBustHandId = bust.handId;
+		}
+	}
+
+	for (const bust of playerBusts) {
+		metrics.tournamentFlow.playerBustCount += 1;
+		if (shortRun) {
+			metrics.tournamentFlow.shortRunBustCount += 1;
+		}
+
+		const decision = findBustDecision(decisionsByHandPlayer, bust);
+		if (!decision) {
+			metrics.tournamentFlow.unmappedBustCount += 1;
+			continue;
+		}
+
+		const firstBust = firstBustHandId !== null && bust.handId === firstBustHandId;
+		metrics.tournamentFlow.mappedBustDecisionCount += 1;
+		recordDecisionContextBreakdown(metrics.tournamentFlow.bustDecisions, decision);
+		if (firstBust) {
+			metrics.tournamentFlow.firstBustCount += 1;
+			recordDecisionContextBreakdown(metrics.tournamentFlow.firstBustDecisions, decision);
+		}
+		if (shortRun) {
+			recordDecisionContextBreakdown(metrics.tournamentFlow.shortRunBustDecisions, decision);
+			if (firstBust) {
+				metrics.tournamentFlow.shortRunFirstBustCount += 1;
+				recordDecisionContextBreakdown(metrics.tournamentFlow.shortRunFirstBustDecisions, decision);
+			}
+		}
+	}
 }
 
 function getHighestBoardRankIndex(decision) {
@@ -1902,6 +2131,7 @@ function buildJoinedHandRecord(handId, handStart, handResult) {
 export function analyzeOutcomeLogs(logs) {
 	const handStarts = new Map();
 	const handResults = new Map();
+	const playerBusts = [];
 	const decisionEvents = [];
 
 	for (const line of logs) {
@@ -1920,6 +2150,9 @@ export function analyzeOutcomeLogs(logs) {
 				if (typeof event.handId === "number") {
 					handResults.set(event.handId, event);
 				}
+				break;
+			case "player_bust":
+				playerBusts.push(event);
 				break;
 			case "bot_decision":
 				decisionEvents.push(event);
@@ -2071,6 +2304,7 @@ export function analyzeOutcomeLogs(logs) {
 	return {
 		hands,
 		decisions,
+		playerBusts,
 		rawMetrics: metrics,
 		metrics: finalizeOutcomeMetrics(metrics),
 	};
@@ -2106,6 +2340,50 @@ function createEmptyPreflopMetrics() {
 		uoActionsByActivePlayers: {},
 		uoActionsBySeatAndPlayers: {},
 		transitions: createEmptyPreflopTransitionMetrics(),
+	};
+}
+
+function createEmptyDecisionContextBreakdown() {
+	return {
+		total: 0,
+		byPhase: {},
+		byZone: {},
+		byPosition: {},
+		byAction: {},
+		bySpot: {},
+		byStrength: {},
+		byHandClass: {},
+		byEquitySignal: {},
+		byEquityMargin: {},
+	};
+}
+
+function createEmptyTournamentFlowMetrics() {
+	return {
+		playerBustCount: 0,
+		mappedBustDecisionCount: 0,
+		unmappedBustCount: 0,
+		firstBustCount: 0,
+		shortRunBustCount: 0,
+		shortRunFirstBustCount: 0,
+		bustDecisions: createEmptyDecisionContextBreakdown(),
+		firstBustDecisions: createEmptyDecisionContextBreakdown(),
+		shortRunBustDecisions: createEmptyDecisionContextBreakdown(),
+		shortRunFirstBustDecisions: createEmptyDecisionContextBreakdown(),
+	};
+}
+
+function createEmptyEquityDecisionMetrics() {
+	return {
+		decisions: 0,
+		bySignal: {},
+		byReason: {},
+		byHandClass: {},
+		byMargin: {},
+		byPhaseActionSignal: {},
+		bySpotSignal: {},
+		bySeatSignal: {},
+		byReasonAndMargin: {},
 	};
 }
 
@@ -2354,6 +2632,8 @@ export function createEmptyMetrics() {
 		actionsByNonValueBlock: {},
 		preflop: createEmptyPreflopMetrics(),
 		postflop: createEmptyPostflopMetrics(),
+		tournamentFlow: createEmptyTournamentFlowMetrics(),
+		equityDiagnostics: createEmptyEquityDecisionMetrics(),
 		examples: {
 			preflopPremiumFold: [],
 			preflopUnopenedCall: [],
@@ -2417,7 +2697,7 @@ export function createEmptyMetrics() {
 	};
 }
 
-export function analyzeRunDecisions(decisions, hands) {
+export function analyzeRunDecisions(decisions, hands, playerBusts = []) {
 	const metrics = createEmptyMetrics();
 	const normalizedDecisions = decisions
 		.map((decision) => normalizeStructuredDecision(decision))
@@ -2483,6 +2763,7 @@ export function analyzeRunDecisions(decisions, hands) {
 			decision.nonValueBlocked ? "yes" : "no",
 			decision.action,
 		);
+		recordEquityDiagnosticDecision(metrics.equityDiagnostics, decision);
 
 		if (decision.phase === "preflop") {
 			metrics.preflop.decisions += 1;
@@ -3558,6 +3839,7 @@ export function analyzeRunDecisions(decisions, hands) {
 	analyzeAutoValueCheckFollowups(normalizedDecisions, metrics);
 	analyzeRiverHuOopDoubleCheckedThroughFollowups(normalizedDecisions, metrics);
 	analyzePreflopTransitions(normalizedDecisions, hands, metrics);
+	analyzeTournamentFlow(normalizedDecisions, hands, playerBusts, metrics);
 	return metrics;
 }
 
@@ -3586,6 +3868,8 @@ export function mergeRunMetrics(target, source) {
 	deepMergeCounts(target.actionsByNonValueBlock, source.actionsByNonValueBlock);
 	deepMergeCounts(target.preflop, source.preflop);
 	deepMergeCounts(target.postflop, source.postflop);
+	deepMergeCounts(target.tournamentFlow, source.tournamentFlow);
+	deepMergeCounts(target.equityDiagnostics, source.equityDiagnostics);
 	deepMergeCounts(target.liftCounts, source.liftCounts);
 	deepMergeCounts(target.publicHandCounts, source.publicHandCounts);
 	deepMergeCounts(target.actionByLift, source.actionByLift);

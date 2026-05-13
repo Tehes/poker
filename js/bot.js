@@ -14,85 +14,52 @@ MODULE BOUNDARY: Bot Decision Engine
 // with M-ratio zones and a light elimination-risk guardrail for large calls.
 //
 // BOT NORTH STAR:
-// Build lively, plausible, hard-to-exploit tournament poker, not solver-clean but lifeless play.
-// Calls are a core action path. Raise / call / fold must all stay real options.
-// SB heads-up and BTN 3-handed are the main action engines, so avoid open patterns that kill blind
-// defense and produce too many uncontested pots.
-// Prefer playability over sterile tightness: suited hands, connected hands, broadways, and pairs
-// should reach the flop at healthy frequencies, while weak dominated offsuit hands should be
-// dampened on purpose.
-// Postflop, protect hands with real equity from collapsing into automatic folds. Defense should be
-// carried by plausible, range-relevant hand classes with credible equity; weak bluffcatchers should
-// not be used merely to fill defense frequency.
-// Core safety guardrails are non-negotiable: no premium preflop folds, no bluff raises with made
-// hands, no absurd kicker or board-made folds, and no broken multi-raised lines.
+// Build lively, plausible, hard-to-exploit winner-take-all tournament poker. The bot should create
+// pressure, defend enough to avoid being run over, and still make disciplined tournament folds.
+// This is not a solver: human-readable, strategically coherent play is more important than sterile
+// equilibrium frequencies.
 //
 // STRATEGIC INVARIANTS:
-// - Dead / Red / Orange zones must preserve real push-fold pressure.
-// - Deep and healthy stacks must not drift into panic shoves or shallow-stack behavior.
-// - Multiway ranges must stay tighter and more value-heavy than heads-up ranges.
-// - Thin raises and loose bluffcatch calls should be rarer multiway.
-// - Position must remain meaningful.
-// - BTN / CO should keep wider profitable opens and more flexible continues than early position or
-//   OOP spots.
-// - Strong value should keep aggression priority over marginal fancy lines.
-// - Fixes must not solve one leak by reducing obvious value betting or obvious value raising.
+// - Raise, call, and fold must all stay live options. Do not fix leaks by turning the bot into a
+//   pure raise/fold machine or a passive caller.
+// - Stack pressure matters. Dead / Red / Orange zones must preserve real push-fold pressure, while
+//   deep and healthy stacks must not drift into panic shoves.
+// - Position and player count matter. Button, cutoff, small-blind heads-up, and button 3-handed
+//   should drive action; early, out-of-position, and multiway spots should stay more disciplined.
+// - Hand quality matters beyond raw rank. Suitedness, connectivity, blockers, domination risk,
+//   private contribution, board texture, and realization should shape decisions.
+// - Multiway ranges must be more value-heavy than heads-up ranges. Thin raises and weak
+//   bluffcatch calls should be rarer when several players can continue.
+// - Defense should come from plausible, range-relevant hands with credible price/equity, not from
+//   trash calls made only to satisfy a frequency.
+// - Strong value keeps priority. Tuning must not reduce obvious value betting or value raising to
+//   hide another leak.
+// - Short tournaments and early busts are not failures by themselves in winner-take-all play; judge
+//   them by clustered evidence of weak hand quality, bad price, poor position, and unnecessary
+//   stack risk.
+// - Equity diagnostics, MDF, and range-defense reports are measurement layers, not autopilots.
+//   Price matters, but position, realization, stack pressure, hand class, and exploitability still
+//   shape the normal decision path.
 //
 // ACCEPTANCE CRITERIA:
-// - Judge changes by decision quality and strategic coherence, not by raw tightness.
-// - A pass is acceptable only if it improves the target leak without pushing the bot into a
-//   clearly overfolding, spewy, or degenerate style.
-// - Hard fails: preflop_premium_folds must stay 0, bluff_raises_with_made_hand must stay 0, and
-//   postflop_reraises_allin_edge_lt_1.0 must stay 0.
-// - Watchpoints: postflop_reraises_edge_lt_1.0 must stay rare and must not materially worsen vs
-//   baseline; non-target regressions such as marginal raises, weak calls, and early large pots
-//   must not clearly rise as a side effect.
-// - Defense guardrails: range-defense overfold is only a problem when it comes from plausible
-//   defending range segments collapsing, or when street-wide regression remains chronic after
-//   hand-quality review.
-// - candidateOverall.overfold is diagnostic only. It must be interpreted by hand-quality class;
-//   defendable and thin candidates should not collapse, while trash candidates may overfold.
-// - Call quality must be judged by range defense and context, not only by showdown win rate.
-// - Not every profitable defense call is a pure value call; some marginal calls are strategically
-//   required heads-up versus polarized aggression to prevent exploitable overfolding.
-// - MDF / range-defense analysis is a measurement layer, not a decision engine. Hand quality,
-//   price, street, position, and pressure must determine calls in the normal decision path.
-// - Slight tournament overfold is acceptable; chronic street-wide or overall overfold is not.
-//   Higher Flop overfold can be acceptable when the missing defense would otherwise come from
-//   truly unplayable trash, board-only hands, kicker-only hands, weak draws with bad price, or weak
-//   bluffcatchers. If overfold is concentrated in range-relevant no-pair hands, weak draws,
-//   overcards, good blockers, or correctly priced continues, the fix belongs in postflop
-//   hand-context evaluation rather than preflop range tightening.
-// - Preflop tightening is not a valid MDF fix unless backtrace analysis shows a concentrated
-//   runtime-free preflop proxy. If flop overfold is spread across many preflop families and
-//   dominated by air / weak-draw classification, tune postflop defendability instead.
-// - When the pass targets calls, marginal_river_calls and marginal_facing_raise_calls should be
-//   monitored, but not improved at the cost of more trash calls.
-// - Good folds are part of playability: the bot should defend enough versus standard pressure,
-//   but still release weak pairs, board-only hands, weak draws, dead hands, and kicker-only hands
-//   in bad contexts.
-// - Weak bluffcatchers and weak pair classes should fold more often in bad contexts.
-// - overpair, top-pair, and good second-pair must remain defendable when price and structure are
-//   reasonable.
-// - Raise / call / fold must all remain live options postflop.
-// - SB heads-up and BTN 3-handed should keep healthy open / defend dynamics.
-// - firstBustAvg, firstBustMedian, early bust share <= 10, and early 800+ pots must not show
-//   clear multi-metric regression versus the latest 1000-run baseline.
-// - One noisy metric alone is not enough to fail a pass; clustered regressions are.
-// - Batch rule: engine:batch is the required structure check, engine:batch:500 is the stability
-//   check for promising passes, and engine:batch:1000 is the acceptance run against the latest
-//   1000-run baseline; a candidate wins only if target metrics improve and core health metrics
-//   remain stable.
+// - Judge changes by decision quality and strategic coherence, not by raw tightness or looseness.
+// - A pass is acceptable only if it improves the target leak without pushing the bot into a clearly
+//   overfolding, spewy, or degenerate style.
+// - Hard fails: premium preflop folds, bluff raises with made hands, and low-edge postflop all-in
+//   reraises must remain at zero.
+// - Watchpoints: low-edge reraises, weak calls, marginal raises, early large pots, early bust
+//   clusters, and short-handed open/defend dynamics must not materially regress.
+// - One noisy metric is not enough to fail a pass. Clustered regressions across hand quality,
+//   price/equity, position, street, stack pressure, and outcome are.
+// - Validation should compare against the latest accepted baseline with staged engine batches.
+//   Candidate builds need stable core health metrics, not just improvement in the targeted leak.
 //
 // TUNING PRINCIPLE:
-// Prefer adjusting existing numeric thresholds, ratios, caps, and hand-context classification
-// before adding new hard guards or binary filters.
-// New guardrails should be rare and reserved for true safety or coherence failures, not as the
-// default fix for ordinary balance leaks.
-// When a leak appears, first try to solve it by improving continuous evaluation so the bot stays
-// readable, playable, and less fragmented across many spot-specific rules.
-// Batch rule: measure first, then change. One lever per pass. A change is only good if it creates
-// more plausible poker or more real postflop play without breaking the core safety guardrails.
+// Prefer continuous tuning of thresholds, ratios, caps, and hand-context classification before
+// adding hard guards or binary filters.
+// New guardrails should be rare and reserved for true safety or coherence failures.
+// Measure first, then change. Keep each pass focused enough that its effect can be understood.
+// A change is good only if it creates more plausible poker without breaking the core guardrails.
 
 import { Card, Hand } from "./pokersolver.js";
 import { getPlayerActionState } from "./shared/actionModel.js";
@@ -476,6 +443,7 @@ function buildLegacyLogSpotContext({
 		facingAggression: facingRaise,
 		actingSlotIndex: actingSlotIndex === -1 ? 0 : actingSlotIndex,
 		actingSlotCount: Math.max(1, actionableOrder.length),
+		voluntaryOpponentCount: voluntaryOpponents.length,
 	};
 }
 
@@ -501,8 +469,10 @@ function getLegacyPreflopLogScores(cardA, cardB, context = {}) {
 		strengthScore: profile.chenScore,
 		playabilityScore: profile.playability,
 		dominationPenalty: profile.dominationRisk,
+		highRank: profile.highRank,
 		smallPair: profile.smallPair,
 		lowRank: profile.lowRank,
+		gap: profile.gap,
 		openRaiseScore,
 		openLimpScore,
 		flatScore,
@@ -1091,6 +1061,174 @@ function isProtectedUnopenedActionSpot({ player, spotContext, preflopSeatClass, 
 		(preflopSeatClass === "button" && activePlayerCount === 3);
 }
 
+function isDecentShortHandedOffsuitJunk(profile) {
+	if (profile.handFamily !== "offsuitJunk") {
+		return false;
+	}
+
+	const highIndex = RANK_ORDER.indexOf(profile.highRank);
+	const lowIndex = RANK_ORDER.indexOf(profile.lowRank);
+
+	return highIndex >= RANK_ORDER.indexOf("T") &&
+		lowIndex >= RANK_ORDER.indexOf("7") &&
+		profile.gap <= 2;
+}
+
+function isButtonThreeHandedBlindDefense({ player, spotContext, preflopRaiseCount, preflopAggressorSeatClass }) {
+	return Boolean(
+		(player?.bigBlind || player?.smallBlind) &&
+			spotContext?.facingAggression &&
+			preflopRaiseCount === 1 &&
+			preflopAggressorSeatClass === "button" &&
+			(spotContext.headsUp || spotContext.actingSlotCount <= 3),
+	);
+}
+
+function isSecondBlindButtonDefense({ player, spotContext, preflopRaiseCount, preflopAggressorSeatClass }) {
+	return Boolean(
+		player?.bigBlind &&
+			isButtonThreeHandedBlindDefense({
+				player,
+				spotContext,
+				preflopRaiseCount,
+				preflopAggressorSeatClass,
+			}) &&
+			!spotContext.headsUp &&
+			spotContext.voluntaryOpponentCount >= 2,
+	);
+}
+
+function getShortHandedOpenScoreBoost(profile, {
+	player,
+	spotContext,
+	preflopSeatClass,
+	activePlayerCount,
+}) {
+	const smallBlindHeadsUp = Boolean(player?.smallBlind && spotContext?.headsUp);
+	const buttonThreeHanded = preflopSeatClass === "button" && activePlayerCount === 3;
+	if (!smallBlindHeadsUp && !buttonThreeHanded) {
+		return 0;
+	}
+
+	let boost = buttonThreeHanded ? 0.35 : 0.25;
+	if (profile.pair) {
+		boost += profile.smallPair ? 0.15 : 0.25;
+	} else if (profile.handFamily === "suitedBroadway") {
+		boost += 0.30;
+	} else if (profile.handFamily === "premiumOffsuitBroadway") {
+		boost += 0.20;
+	} else if (profile.handFamily === "weakAxs") {
+		boost += 0.30;
+	} else if (profile.handFamily === "weakKxs") {
+		boost += 0.25;
+	} else if (profile.handFamily === "suitedConnector") {
+		boost += 0.35;
+	} else if (profile.handFamily === "suitedGapper") {
+		boost += 0.30;
+	} else if (profile.handFamily === "suitedJunk") {
+		boost += 0.18;
+	} else if (profile.handFamily === "dominatedOffsuitBroadway") {
+		boost += 0.30;
+	} else if (profile.handFamily === "weakAxo") {
+		boost += 0.22;
+	} else if (profile.handFamily === "weakKxo") {
+		boost += 0.15;
+	} else if (isDecentShortHandedOffsuitJunk(profile)) {
+		boost += 0.18;
+	} else if (profile.handFamily === "offsuitJunk") {
+		boost -= 0.15;
+	}
+
+	return boost;
+}
+
+function getShortHandedOpenLimpScoreBoost(profile, context) {
+	const openBoost = getShortHandedOpenScoreBoost(profile, context);
+	if (openBoost === 0) {
+		return 0;
+	}
+	if (profile.handFamily === "offsuitJunk" && !isDecentShortHandedOffsuitJunk(profile)) {
+		return 0;
+	}
+
+	return Math.max(0, openBoost * 0.75);
+}
+
+function getShortHandedDefendScoreBoost(
+	profile,
+	{ player, spotContext, potOdds, preflopRaiseCount, preflopAggressorSeatClass },
+) {
+	const blindDefense = Boolean(player?.bigBlind || player?.smallBlind);
+	const shortHandedDefense = blindDefense && spotContext?.facingAggression &&
+		(spotContext.headsUp || spotContext.actingSlotCount <= 3);
+	if (!shortHandedDefense) {
+		return 0;
+	}
+
+	const headsUpBigBlind = Boolean(player?.bigBlind && spotContext.headsUp);
+	const buttonThreeHandedBlindDefense = isButtonThreeHandedBlindDefense({
+		player,
+		spotContext,
+		preflopRaiseCount,
+		preflopAggressorSeatClass,
+	});
+	const secondBlindButtonDefense = isSecondBlindButtonDefense({
+		player,
+		spotContext,
+		preflopRaiseCount,
+		preflopAggressorSeatClass,
+	});
+	let boost = headsUpBigBlind ? 0.45 : buttonThreeHandedBlindDefense && player.smallBlind ? 0.10 : 0.22;
+	if (profile.pair) {
+		boost += profile.smallPair ? 0.25 : 0.40;
+	} else if (profile.handFamily === "suitedBroadway") {
+		boost += 0.42;
+	} else if (profile.handFamily === "premiumOffsuitBroadway") {
+		boost += 0.30;
+	} else if (profile.handFamily === "weakAxs") {
+		boost += 0.38;
+	} else if (profile.handFamily === "weakKxs") {
+		boost += 0.30;
+	} else if (profile.handFamily === "suitedConnector") {
+		boost += 0.42;
+	} else if (profile.handFamily === "suitedGapper") {
+		boost += 0.34;
+	} else if (profile.handFamily === "suitedJunk") {
+		boost += 0.22;
+	} else if (profile.handFamily === "dominatedOffsuitBroadway") {
+		boost += 0.32;
+	} else if (profile.handFamily === "weakAxo") {
+		boost += 0.28;
+	} else if (profile.handFamily === "weakKxo") {
+		boost += 0.22;
+	} else if (isDecentShortHandedOffsuitJunk(profile)) {
+		boost += 0.24;
+	} else if (profile.handFamily === "offsuitJunk") {
+		boost -= 0.12;
+	}
+
+	if (buttonThreeHandedBlindDefense) {
+		if (player.smallBlind && isPassivePreflopTargetFamily(profile.handFamily)) {
+			boost -= 0.18;
+		} else if (player.smallBlind && profile.handFamily === "suitedJunk") {
+			boost -= 0.10;
+		}
+		if (secondBlindButtonDefense && isPassivePreflopTargetFamily(profile.handFamily)) {
+			boost -= 0.16;
+		} else if (secondBlindButtonDefense && profile.handFamily === "suitedJunk") {
+			boost -= 0.08;
+		}
+	}
+
+	if (potOdds <= 0.25) {
+		boost += 0.10;
+	} else if (potOdds >= 0.36) {
+		boost -= 0.15;
+	}
+
+	return boost;
+}
+
 function getContextualPreflopOpenRaiseScore(
 	profile,
 	{ player, spotContext, positionFactor, preflopSeatClass, activePlayerCount },
@@ -1141,6 +1279,12 @@ function getContextualPreflopOpenRaiseScore(
 	if (player?.smallBlind && context.headsUp) {
 		openRaiseScore += 0.20;
 	}
+	openRaiseScore += getShortHandedOpenScoreBoost(profile, {
+		player,
+		spotContext: context,
+		preflopSeatClass,
+		activePlayerCount,
+	});
 	if (earlyMultiway) {
 		openRaiseScore -= isPassivePreflopTargetFamily(profile.handFamily) ? 0.25 : 0.10;
 	}
@@ -1202,6 +1346,12 @@ function getContextualPreflopOpenLimpScore(
 	} else if (positionFactor >= 0.75) {
 		openLimpScore += 0.10;
 	}
+	openLimpScore += getShortHandedOpenLimpScoreBoost(profile, {
+		player,
+		spotContext: context,
+		preflopSeatClass,
+		activePlayerCount,
+	});
 	openLimpScore += getOpenLimpRealizationAdjustment(profile, {
 		player,
 		spotContext: context,
@@ -1302,7 +1452,7 @@ function getContextualPreflopFlatScore(
 
 function getContextualPreflopDefendScore(
 	profile,
-	{ player, spotContext, potOdds, positionFactor, preflopRaiseCount },
+	{ player, spotContext, potOdds, positionFactor, preflopRaiseCount, preflopAggressorSeatClass },
 	baseFlatScore = profile.flatScore,
 ) {
 	const context = spotContext || {};
@@ -1355,9 +1505,28 @@ function getContextualPreflopDefendScore(
 	) {
 		defendScore += 0.10;
 	}
+	defendScore += getShortHandedDefendScoreBoost(profile, {
+		player,
+		spotContext: context,
+		potOdds,
+		preflopRaiseCount,
+		preflopAggressorSeatClass,
+	});
 	defendScore += getDefendScoreRealizationAdjustment(profile, {
 		player,
 		spotContext: context,
+	});
+	const buttonThreeHandedBlindDefense = isButtonThreeHandedBlindDefense({
+		player,
+		spotContext: context,
+		preflopRaiseCount,
+		preflopAggressorSeatClass,
+	});
+	const secondBlindButtonDefense = isSecondBlindButtonDefense({
+		player,
+		spotContext: context,
+		preflopRaiseCount,
+		preflopAggressorSeatClass,
 	});
 
 	if (
@@ -1365,9 +1534,32 @@ function getContextualPreflopDefendScore(
 		profile.handFamily === "weakKxo" ||
 		profile.handFamily === "dominatedOffsuitBroadway"
 	) {
-		defendScore = Math.min(defendScore, blindDefense || context.headsUp ? 5.40 : 4.90);
+		let shortHandedCap = blindDefense && context.facingAggression &&
+				(context.headsUp || context.actingSlotCount <= 3)
+			? 6.10
+			: 5.40;
+		if (buttonThreeHandedBlindDefense && player.smallBlind) {
+			shortHandedCap = Math.min(shortHandedCap, 5.75);
+		}
+		if (secondBlindButtonDefense) {
+			shortHandedCap = Math.min(shortHandedCap, 5.85);
+		}
+		defendScore = Math.min(defendScore, blindDefense || context.headsUp ? shortHandedCap : 4.90);
 	} else if (profile.handFamily === "offsuitJunk") {
-		defendScore = Math.min(defendScore, blindDefense || context.headsUp ? 4.90 : 4.30);
+		let shortHandedCap = blindDefense && context.facingAggression &&
+				(context.headsUp || context.actingSlotCount <= 3)
+			? 5.35
+			: 4.90;
+		if (buttonThreeHandedBlindDefense && player.smallBlind) {
+			shortHandedCap = Math.min(shortHandedCap, 4.95);
+		}
+		if (secondBlindButtonDefense) {
+			shortHandedCap = Math.min(shortHandedCap, 5.05);
+		}
+		defendScore = Math.min(defendScore, blindDefense || context.headsUp ? shortHandedCap : 4.30);
+	} else if (profile.handFamily === "suitedJunk" && buttonThreeHandedBlindDefense) {
+		const shortHandedCap = player.smallBlind || secondBlindButtonDefense ? 5.55 : 5.90;
+		defendScore = Math.min(defendScore, shortHandedCap);
 	}
 
 	return clampPreflopScore(defendScore);
@@ -1445,6 +1637,12 @@ function getUnopenedPreflopRaiseThreshold({
 	preflopSeatClass,
 	activePlayerCount,
 }) {
+	const protectedActionSpot = isProtectedUnopenedActionSpot({
+		player,
+		spotContext,
+		preflopSeatClass,
+		activePlayerCount,
+	});
 	let threshold = baseRaiseThreshold + 0.90;
 
 	if (activePlayerCount <= 3) {
@@ -1454,16 +1652,18 @@ function getUnopenedPreflopRaiseThreshold({
 		threshold -= 0.15;
 	}
 	if (player.smallBlind && spotContext.headsUp) {
-		threshold -= 0.30;
+		threshold -= 1.55;
+	} else if (preflopSeatClass === "button" && activePlayerCount === 3) {
+		threshold -= 1.55;
 	}
-	if (!spotContext.headsUp && positionFactor < 0.75) {
+	if (!protectedActionSpot && !spotContext.headsUp && positionFactor < 0.75) {
 		threshold += 0.20;
 	}
-	if (!spotContext.headsUp && positionFactor < 0.45) {
+	if (!protectedActionSpot && !spotContext.headsUp && positionFactor < 0.45) {
 		threshold += 0.15;
 	}
 
-	return Math.max(4.40, Math.min(8.50, threshold));
+	return Math.max(4.20, Math.min(8.50, threshold));
 }
 
 function getUnopenedPreflopLimpThreshold({
@@ -1474,10 +1674,10 @@ function getUnopenedPreflopLimpThreshold({
 	activePlayerCount,
 }) {
 	if (player.smallBlind && spotContext.headsUp) {
-		return 0.35;
+		return 0.25;
 	}
 	if (preflopSeatClass === "button" && activePlayerCount === 3) {
-		return 0.41;
+		return 0.32;
 	}
 
 	let threshold = positionFactor >= 0.75 ? 0.41 : 0.45;
@@ -1524,6 +1724,9 @@ function canOpenLimpPreflop({
 		return protectedActionSpot || positionFactor >= 0.80;
 	}
 	if (handFamily === "offsuitJunk") {
+		if (protectedActionSpot && isDecentShortHandedOffsuitJunk(preflopScores)) {
+			return preflopScores.openLimpScore >= 3.00;
+		}
 		return protectedActionSpot && preflopScores.openLimpScore >= 4.40;
 	}
 
@@ -2387,6 +2590,7 @@ function decideHarringtonAction({
 	deadPushThreshold,
 	redPushThreshold,
 	orangePushThreshold,
+	orangeRaiseThreshold,
 	yellowRaiseThreshold,
 	yellowShoveThreshold,
 	redCallThreshold,
@@ -2442,6 +2646,12 @@ function decideHarringtonAction({
 			}
 		} else if (canShove && strengthRatio >= orangePushThreshold) {
 			decision = { action: "raise", amount: playerChips };
+		} else if (
+			orangeRaiseThreshold !== null &&
+			canRaise &&
+			strengthRatio >= orangeRaiseThreshold
+		) {
+			decision = { action: "raise", amount: yellowRaiseSize() };
 		} else {
 			decision = needsToCall ? { action: "fold" } : { action: "check" };
 		}
@@ -2546,6 +2756,10 @@ export function chooseBotAction(player, gameState) {
 		players.filter((currentPlayer) => currentPlayer !== player),
 	);
 	const preflopSeatClass = preflop ? getPreflopSeatClass(players, player) : null;
+	const preflopAggressor = preflop ? getLastPreflopAggressor(players, handContext) : null;
+	const preflopAggressorSeatClass = preflopAggressor
+		? getPreflopSeatClass(players, preflopAggressor)
+		: null;
 	const preflopScores = getLegacyPreflopLogScores(
 		player.holeCards[0],
 		player.holeCards[1],
@@ -2557,6 +2771,7 @@ export function chooseBotAction(player, gameState) {
 			positionFactor,
 			preflopRaiseCount,
 			preflopSeatClass,
+			preflopAggressorSeatClass,
 			activePlayerCount: active.length,
 		},
 	);
@@ -2716,6 +2931,71 @@ export function chooseBotAction(player, gameState) {
 		1,
 		yellowCallThreshold + eliminationPenalty,
 	);
+	const shortHandedZoneStrategy = preflop && !isGreenZone &&
+		(spotContext.headsUp || active.length <= 3);
+	let harringtonStrengthRatio = strengthRatio;
+	let contextualDeadPushThreshold = deadPushThreshold;
+	let contextualRedPushThreshold = redPushThreshold;
+	let contextualOrangePushThreshold = orangePushThreshold;
+	let contextualOrangeRaiseThreshold = null;
+	let contextualYellowRaiseThreshold = yellowRaiseThreshold;
+	let contextualYellowShoveThreshold = yellowShoveThreshold;
+	let contextualRedCallThreshold = riskAdjustedRedCallThreshold;
+	let contextualOrangeCallThreshold = riskAdjustedOrangeCallThreshold;
+	let contextualYellowCallThreshold = riskAdjustedYellowCallThreshold;
+	if (shortHandedZoneStrategy) {
+		if (spotContext.unopened && !facingRaise) {
+			harringtonStrengthRatio = Math.max(
+				harringtonStrengthRatio,
+				preflopScores.openRaiseScore / 10,
+			);
+		} else if (needsToCall && spotContext.facingAggression) {
+			harringtonStrengthRatio = Math.max(
+				harringtonStrengthRatio,
+				preflopScores.defendScore / 10,
+			);
+		}
+
+		if (spotContext.headsUp) {
+			contextualDeadPushThreshold = Math.min(contextualDeadPushThreshold, 0.35);
+			contextualRedPushThreshold = Math.min(contextualRedPushThreshold, 0.55);
+			contextualOrangePushThreshold = Math.min(contextualOrangePushThreshold, 0.72);
+			contextualOrangeRaiseThreshold = 0.45;
+			contextualYellowRaiseThreshold = Math.min(contextualYellowRaiseThreshold, 0.45);
+			contextualYellowShoveThreshold = Math.min(contextualYellowShoveThreshold, 0.80);
+			contextualRedCallThreshold = Math.min(
+				contextualRedCallThreshold,
+				0.48 + eliminationPenalty * 0.35,
+			);
+			contextualOrangeCallThreshold = Math.min(
+				contextualOrangeCallThreshold,
+				0.56 + eliminationPenalty * 0.35,
+			);
+			contextualYellowCallThreshold = Math.min(
+				contextualYellowCallThreshold,
+				0.58 + eliminationPenalty * 0.35,
+			);
+		} else {
+			contextualDeadPushThreshold = Math.min(contextualDeadPushThreshold, 0.35);
+			contextualRedPushThreshold = Math.min(contextualRedPushThreshold, 0.60);
+			contextualOrangePushThreshold = Math.min(contextualOrangePushThreshold, 0.78);
+			contextualOrangeRaiseThreshold = 0.55;
+			contextualYellowRaiseThreshold = Math.min(contextualYellowRaiseThreshold, 0.52);
+			contextualYellowShoveThreshold = Math.min(contextualYellowShoveThreshold, 0.82);
+			contextualRedCallThreshold = Math.min(
+				contextualRedCallThreshold,
+				0.58 + eliminationPenalty * 0.55,
+			);
+			contextualOrangeCallThreshold = Math.min(
+				contextualOrangeCallThreshold,
+				0.62 + eliminationPenalty * 0.55,
+			);
+			contextualYellowCallThreshold = Math.min(
+				contextualYellowCallThreshold,
+				0.64 + eliminationPenalty * 0.55,
+			);
+		}
+	}
 	const passesPreflopCallLimit = !preflop || stackRatio <= 0.5;
 	const preflopPassiveCallScore = preflop && needsToCall && !useHarringtonStrategy
 		? getPreflopPassiveCallScore({
@@ -3761,15 +4041,16 @@ export function chooseBotAction(player, gameState) {
 			mZone,
 			facingRaise,
 			needsToCall,
-			strengthRatio,
-			deadPushThreshold,
-			redPushThreshold,
-			orangePushThreshold,
-			yellowRaiseThreshold,
-			yellowShoveThreshold,
-			redCallThreshold: riskAdjustedRedCallThreshold,
-			orangeCallThreshold: riskAdjustedOrangeCallThreshold,
-			yellowCallThreshold: riskAdjustedYellowCallThreshold,
+			strengthRatio: harringtonStrengthRatio,
+			deadPushThreshold: contextualDeadPushThreshold,
+			redPushThreshold: contextualRedPushThreshold,
+			orangePushThreshold: contextualOrangePushThreshold,
+			orangeRaiseThreshold: contextualOrangeRaiseThreshold,
+			yellowRaiseThreshold: contextualYellowRaiseThreshold,
+			yellowShoveThreshold: contextualYellowShoveThreshold,
+			redCallThreshold: contextualRedCallThreshold,
+			orangeCallThreshold: contextualOrangeCallThreshold,
+			yellowCallThreshold: contextualYellowCallThreshold,
 			canShove,
 			canRaise,
 			needToCall,

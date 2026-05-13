@@ -1023,7 +1023,11 @@ async function runSingleEngineBatch(config, runIndex, outputDir) {
 		result = runEngineTournament(gameState, actionProvider, {
 			eventSink: (event) => {
 				engineEvents.push(event);
-				if (event.type === "hand_start" || event.type === "hand_result") {
+				if (
+					event.type === "hand_start" ||
+					event.type === "hand_result" ||
+					event.type === "player_bust"
+				) {
 					speedmodeEvents.push(event);
 				}
 			},
@@ -1035,13 +1039,13 @@ async function runSingleEngineBatch(config, runIndex, outputDir) {
 	const elapsedMs = Date.now() - startedAt;
 	const speedmodeLogs = speedmodeEvents.map(formatSpeedmodeEventLine);
 	const runOutcome = analyzeOutcomeLogs(speedmodeLogs);
-	const metrics = analyzeRunDecisions(runOutcome.decisions, runOutcome.hands);
 	const engineMetrics = analyzeEngineEvents(engineEvents, result);
 	const equityDiagnostics = enrichDecisionsWithEquity(
 		runOutcome.decisions,
 		decisionContexts,
 		config.equity,
 	);
+	const metrics = analyzeRunDecisions(runOutcome.decisions, runOutcome.hands, runOutcome.playerBusts);
 	const champion = result.champion?.name ?? null;
 	const logPath = `${outputDir}/run-${runLabel}.log`;
 	const summaryPath = `${outputDir}/run-${runLabel}.json`;
@@ -1088,6 +1092,7 @@ async function runSingleEngineBatch(config, runIndex, outputDir) {
 				speedmodeEvents,
 				hands: runOutcome.hands,
 				decisions: runOutcome.decisions,
+				playerBusts: runOutcome.playerBusts,
 				equityDiagnostics,
 				outcomeMetrics: runOutcome.metrics,
 				players,
