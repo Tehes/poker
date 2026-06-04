@@ -277,6 +277,18 @@ main .seat {
     transition: all 0.5s;
 }
 
+main .seat[data-rotation="90"] {
+    transform: rotate(90deg);
+}
+
+main .seat[data-rotation="180"] {
+    transform: rotate(180deg);
+}
+
+main .seat[data-rotation="270"] {
+    transform: rotate(270deg);
+}
+
 main .seat .hole-cards img {
     transition: all 0.3s;
 }

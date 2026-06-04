@@ -400,6 +400,77 @@ export function renderSeatWinnerState(target, isWinner = false) {
 	seatEl.classList.toggle("winner", isWinner === true);
 }
 
+export function renderSeatActiveState(target, isActive = false) {
+	const seatEl = getSeatEl(target);
+	if (!seatEl) {
+		return;
+	}
+
+	seatEl.classList.toggle("active", isActive === true);
+}
+
+export function renderSeatActiveStates(seatRefs = [], activeSeatIndex = null) {
+	seatRefs.forEach((seatRef) => {
+		renderSeatActiveState(
+			seatRef,
+			activeSeatIndex !== null && seatRef.playerSeatIndex === activeSeatIndex,
+		);
+	});
+}
+
+export function clearSeatActionVisualState(target, { preserveAllIn = false } = {}) {
+	const seatEl = getSeatEl(target);
+	if (!seatEl) {
+		return;
+	}
+
+	seatEl.classList.remove("checked", "called", "raised");
+	if (!preserveAllIn) {
+		seatEl.classList.remove("allin");
+	}
+}
+
+export function renderSeatRotation(target, rotationDegrees = 0) {
+	const seatEl = getSeatEl(target);
+	if (!seatEl) {
+		return;
+	}
+
+	const rotation = Number.isFinite(rotationDegrees)
+		? ((rotationDegrees % 360) + 360) % 360
+		: 0;
+	seatEl.dataset.rotation = `${rotation}`;
+}
+
+export function renderSeatSetupState(
+	target,
+	{ visible = null, isBot = null, nameEditable = null, controlsVisible = null } = {},
+) {
+	const seatEl = getSeatEl(target);
+	if (!seatEl) {
+		return;
+	}
+
+	if (visible !== null) {
+		seatEl.classList.toggle("hidden", visible !== true);
+	}
+	if (isBot !== null) {
+		seatEl.classList.toggle("bot", isBot === true);
+	}
+	if (nameEditable !== null) {
+		const nameEl = getNameEl(target);
+		if (nameEl) {
+			nameEl.contentEditable = nameEditable === true ? "true" : "false";
+		}
+	}
+	if (controlsVisible !== null) {
+		const rotateEl = target?.rotateEl ?? seatEl.querySelector(".rotate");
+		const closeEl = target?.closeEl ?? seatEl.querySelector(".close");
+		rotateEl?.classList.toggle("hidden", controlsVisible !== true);
+		closeEl?.classList.toggle("hidden", controlsVisible !== true);
+	}
+}
+
 export function clearChipTransferAnimation(target) {
 	cancelChipTransferTimer(target);
 	if (target) {
@@ -536,6 +607,7 @@ export function renderHostSeat(seatRef, seatState = {}) {
 	seatRef.dealerEl.classList.toggle("hidden", seatState.dealer !== true);
 	seatRef.smallBlindEl.classList.toggle("hidden", seatState.smallBlind !== true);
 	seatRef.bigBlindEl.classList.toggle("hidden", seatState.bigBlind !== true);
+	renderSeatActiveState(seatRef, seatState.active === true);
 	renderSeatCards(seatRef.cardEls, seatState.visibleCardCodes);
 	renderSeatPill(seatRef.handStrengthEl, seatState.handStrengthLabel || "");
 	renderSeatPill(seatRef.winProbabilityEl, seatState.winProbabilityLabel || "");
