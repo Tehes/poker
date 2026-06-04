@@ -10,8 +10,8 @@ MODULE BOUNDARY: Main Table Runtime
 // TARGET STATE: app.js should stay as the browser-facing orchestrator only. Pure poker rules and
 // state transforms should live in gameEngine.js, while reusable UI, sync, and control primitives
 // should live in shared/*.
-// PUT HERE: Engine orchestration, notifications, timers, sync, analytics, bot playback, and DOM
-// side effects.
+// PUT HERE: Engine orchestration, notifications, timers, sync, analytics, bot playback, and
+// flow-specific DOM wiring.
 // DO NOT PUT HERE: Pure poker rules, reusable action math, sync schema helpers, or generic
 // render-only helpers.
 // PREFERENCE: Extend the existing modules before introducing new ones.
