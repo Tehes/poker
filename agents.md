@@ -61,6 +61,9 @@ It is binding. When in doubt, choose the most conservative option and change les
   - Do not refactor between `function` and arrows without a clear reason.
   - Arrow functions are the preferred form for event listener callbacks, unless the handler is
     reused or grows significantly.
+  - Avoid tiny one-off helper functions. Extract functions only for reuse, real complexity,
+    meaningful domain concepts, side-effect isolation, or clear readability gains.
+    Keep simple one-off conditions inline.
 - **Comments**
   - English only
   - Use sparingly and intentionally
@@ -266,8 +269,7 @@ Accessibility should be **pragmatic, not performative**.
   - Cache prefixes
   - Scope detection (GitHub Pages vs custom domain vs localhost)
 - If a project has an active Service Worker, bump the Service Worker version in every commit.
-- Use exactly one unique Service Worker version per commit; never reuse the previous commit's
-  version.
+- Use exactly one unique Service Worker version per commit; never reuse the previous commit's version.
 - Apply the version bump in the same commit as the code change (no delayed bump in a later commit).
 - Never experiment with SW behavior.
 - Do not enable SWs in environments explicitly excluded by the project.
@@ -304,17 +306,6 @@ When making changes, always provide:
 - If a reproducible scenario exists: describe it.
 - If no test setup exists: provide a short manual checklist (max 5 items).
 - Never claim tests were run if they were not.
-- After game-flow or rules changes that can affect a live hand, run `deno task speedmode` once if
-  the local browser automation setup is available.
-- After bot logic or bot tuning changes, use staged `speedmode` validation instead of jumping
-  straight to large batches.
-- `deno task speedmode:10` is the mandatory structure test for each tuning iteration. Summarize the
-  key findings from the generated `summary.json`.
-- `deno task speedmode -- --runs=30` is an optional stability test, but only after the 10-run looks
-  directionally good.
-- `deno task speedmode -- --runs=100` is an acceptance run for candidate builds only, after the
-  10-run structure and 30-run stability both look good.
-- If any required `speedmode` run is blocked, say so explicitly.
 
 ---
 
