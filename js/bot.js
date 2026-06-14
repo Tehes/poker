@@ -321,6 +321,33 @@ function getPreflopSeatClass(players, player) {
 	return relativeIndex === 0 ? "early" : relativeIndex === betweenBlindAndButton - 1 ? "cutoff" : "middle";
 }
 
+function getPreflopActionOrderSeatClass(players, player) {
+	if (player.smallBlind) {
+		return "smallBlind";
+	}
+	if (player.bigBlind) {
+		return "bigBlind";
+	}
+	if (player.dealer) {
+		return "button";
+	}
+
+	const actionOrder = getPreflopActionOrder(players);
+	const playerIndex = actionOrder.indexOf(player);
+	if (playerIndex === -1) {
+		return "unknown";
+	}
+
+	const nonBlindSlots = Math.max(0, actionOrder.length - 3);
+	if (nonBlindSlots <= 1) {
+		return "cutoff";
+	}
+	if (nonBlindSlots === 2) {
+		return playerIndex === 0 ? "early" : "cutoff";
+	}
+	return playerIndex === 0 ? "early" : playerIndex === nonBlindSlots - 1 ? "cutoff" : "middle";
+}
+
 function getPreflopLogSeatTag(seatClass, activePlayers) {
 	if (!seatClass) {
 		return "-";
@@ -2756,6 +2783,7 @@ export function chooseBotAction(player, gameState) {
 		players.filter((currentPlayer) => currentPlayer !== player),
 	);
 	const preflopSeatClass = preflop ? getPreflopSeatClass(players, player) : null;
+	const preflopActionOrderSeatClass = preflop ? getPreflopActionOrderSeatClass(players, player) : null;
 	const preflopAggressor = preflop ? getLastPreflopAggressor(players, handContext) : null;
 	const preflopAggressorSeatClass = preflopAggressor
 		? getPreflopSeatClass(players, preflopAggressor)
@@ -3216,6 +3244,25 @@ export function chooseBotAction(player, gameState) {
 	const mdfRequiredFoldRate = !preflop && needToCall > 0 ? getRequiredFoldRate(needToCall, pot) : 0;
 	let marginalDefenseBlocked = false;
 	let riverLowEdgeBlocked = false;
+	const preflopProtectedActionSpot = preflop
+		? isProtectedUnopenedActionSpot({
+			player,
+			spotContext,
+			preflopSeatClass,
+			activePlayerCount: active.length,
+		})
+		: false;
+	const preflopEarlyMultiway = preflop && !spotContext.headsUp && positionFactor < 0.45;
+	let decisionBranch = null;
+	let decisionReason = null;
+	let finalAdjustment = null;
+	let preflopOpenRaiseThreshold = null;
+	let preflopOpenRaiseMargin = null;
+	let preflopOpenLimpThreshold = null;
+	let preflopOpenLimpMargin = null;
+	let preflopOpenLimpCandidate = false;
+	let preflopCanOpenLimp = false;
+	let preflopOpenLimpBlockReason = null;
 
 	// Base thresholds for raising depend on stage and pot size
 	// When only a few opponents remain, play slightly more aggressively
@@ -4057,6 +4104,8 @@ export function chooseBotAction(player, gameState) {
 			playerChips: player.chips,
 			yellowRaiseSize,
 		});
+		decisionBranch = "harrington";
+		decisionReason = mZone;
 	}
 
 	// Automatic shove logic when stacks are shallow
@@ -4076,12 +4125,16 @@ export function chooseBotAction(player, gameState) {
 			gateStrengthRatio >= shallowShoveThreshold
 		) {
 			decision = { action: "raise", amount: player.chips };
+			decisionBranch = "shallow-shove";
+			decisionReason = "spr";
 		} else if (
 			canShove &&
 			preflop && player.chips <= blindLevel.big * 10 &&
 			strengthRatio >= shortstackShoveThreshold
 		) {
 			decision = { action: "raise", amount: player.chips };
+			decisionBranch = "shortstack-shove";
+			decisionReason = "preflop-shortstack";
 		}
 	}
 
@@ -4101,7 +4154,7 @@ export function chooseBotAction(player, gameState) {
 			preflopSeatClass,
 			activePlayerCount: active.length,
 		});
-		const canOpenLimp = needsToCall &&
+		const openLimpCandidate = needsToCall &&
 			canOpenLimpPreflop({
 				preflopScores,
 				player,
@@ -4109,9 +4162,25 @@ export function chooseBotAction(player, gameState) {
 				positionFactor,
 				preflopSeatClass,
 				activePlayerCount: active.length,
-			}) &&
+			});
+		const canOpenLimp = openLimpCandidate &&
 			preflopScores.openLimpScore / 10 >= openLimpThreshold &&
 			passesPreflopCallLimit;
+		preflopOpenRaiseThreshold = openRaiseThreshold;
+		preflopOpenRaiseMargin = preflopScores.openRaiseScore - openRaiseThreshold;
+		preflopOpenLimpThreshold = openLimpThreshold;
+		preflopOpenLimpMargin = preflopScores.openLimpScore / 10 - openLimpThreshold;
+		preflopOpenLimpCandidate = openLimpCandidate;
+		preflopCanOpenLimp = canOpenLimp;
+		if (!needsToCall) {
+			preflopOpenLimpBlockReason = "no_call_needed";
+		} else if (!openLimpCandidate) {
+			preflopOpenLimpBlockReason = "not_limp_candidate";
+		} else if (preflopScores.openLimpScore / 10 < openLimpThreshold) {
+			preflopOpenLimpBlockReason = "below_limp_threshold";
+		} else if (!passesPreflopCallLimit) {
+			preflopOpenLimpBlockReason = "stack_call_limit";
+		}
 
 		if (
 			canRaise &&
@@ -4130,13 +4199,25 @@ export function chooseBotAction(player, gameState) {
 					? { action: "fold" }
 					: { action: "check" };
 				decision = Math.random() < 0.5 ? { action: "raise", amount: raiseAmt } : alt;
+				decisionBranch = "unopened-open-tie";
+				decisionReason = canOpenLimp ? "raise-vs-limp" : "raise-vs-release";
 			} else {
 				decision = { action: "raise", amount: raiseAmt };
+				decisionBranch = "unopened-open";
+				decisionReason = "open_raise_score";
 			}
 		} else if (canOpenLimp) {
 			decision = { action: "call", amount: Math.min(player.chips, needToCall) };
+			decisionBranch = "unopened-limp";
+			decisionReason = "open_limp_score";
 		} else {
 			decision = needsToCall ? { action: "fold" } : { action: "check" };
+			decisionBranch = "unopened-release";
+			decisionReason = !canRaise && preflopScores.openRaiseScore >= openRaiseThreshold
+				? "cannot_raise"
+				: !hasPrivateRaiseEdge && preflopScores.openRaiseScore >= openRaiseThreshold
+				? "no_private_raise_edge"
+				: "below_open_threshold";
 		}
 	}
 
@@ -4153,11 +4234,17 @@ export function chooseBotAction(player, gameState) {
 						STRENGTH_TIE_DELTA
 				) {
 					decision = Math.random() < 0.5 ? { action: "check" } : { action: "raise", amount: raiseAmt };
+					decisionBranch = "no-bet-raise-tie";
+					decisionReason = "decision_strength";
 				} else {
 					decision = { action: "raise", amount: raiseAmt };
+					decisionBranch = "no-bet-raise";
+					decisionReason = "decision_strength";
 				}
 			} else {
 				decision = { action: "check" };
+				decisionBranch = "no-bet-check";
+				decisionReason = "below_raise_threshold";
 			}
 		} else if (
 			canRaise && decisionStrength >= raiseThreshold &&
@@ -4172,6 +4259,8 @@ export function chooseBotAction(player, gameState) {
 				player.chips > minRaiseAmount
 			) {
 				decision = { action: "call", amount: callAmt };
+				decisionBranch = "raise-downgrade-call";
+				decisionReason = "below_min_reraise";
 			} else {
 				raiseAmt = Math.max(minRaiseAmount, raiseAmt);
 				if (
@@ -4183,8 +4272,12 @@ export function chooseBotAction(player, gameState) {
 						? { action: "call", amount: callAmt }
 						: { action: "fold" };
 					decision = Math.random() < 0.5 ? { action: "raise", amount: raiseAmt } : alt;
+					decisionBranch = "facing-bet-raise-tie";
+					decisionReason = "decision_strength";
 				} else {
 					decision = { action: "raise", amount: raiseAmt };
+					decisionBranch = "facing-bet-raise";
+					decisionReason = "decision_strength";
 				}
 			}
 		} else if (
@@ -4196,15 +4289,22 @@ export function chooseBotAction(player, gameState) {
 					ODDS_TIE_DELTA
 			) {
 				decision = Math.random() < 0.5 ? { action: "call", amount: callAmt } : { action: "fold" };
+				decisionBranch = "call-gate-tie";
+				decisionReason = "call_strength";
 			} else {
 				decision = { action: "call", amount: callAmt };
+				decisionBranch = "call-gate";
+				decisionReason = "call_strength";
 			}
 		} else {
 			decision = { action: "fold" };
+			decisionBranch = "call-gate-release";
+			decisionReason = passesPreflopCallLimit ? "below_call_barrier" : "stack_call_limit";
 		}
 	}
 	if (preflop && premiumHand && decision.action === "fold") {
 		decision = needsToCall ? { action: "call", amount: Math.min(player.chips, needToCall) } : { action: "check" };
+		finalAdjustment = "premium_preflop_fold_guard";
 	}
 	if (
 		!preflop && decision.action === "fold" && needsToCall &&
@@ -4214,6 +4314,7 @@ export function chooseBotAction(player, gameState) {
 			action: "call",
 			amount: Math.min(player.chips, needToCall),
 		};
+		finalAdjustment = "top_tier_postflop_fold_guard";
 	}
 
 	let isBluff = false;
@@ -4232,6 +4333,7 @@ export function chooseBotAction(player, gameState) {
 					action: "call",
 					amount: Math.min(player.chips, needToCall),
 				};
+				finalAdjustment = "facing_allin_call_guard";
 			}
 		}
 
@@ -4258,6 +4360,7 @@ export function chooseBotAction(player, gameState) {
 			if (Math.random() < bluffDecisionChance) {
 				decision = { action: "raise", amount: bluffAmt };
 				isBluff = true;
+				finalAdjustment = "bluff_raise";
 			}
 		}
 
@@ -4456,6 +4559,7 @@ export function chooseBotAction(player, gameState) {
 			: { action: "check" };
 		isBluff = false;
 		isStab = false;
+		finalAdjustment = "reraise_value_gate";
 	}
 
 	const noBetInitialAction = isCheckedToSpot ? decision.action : null;
@@ -4488,6 +4592,7 @@ export function chooseBotAction(player, gameState) {
 			isBluff = false;
 			isStab = false;
 			noBetFilterApplied = true;
+			finalAdjustment = "no_bet_raise_filter";
 		}
 	}
 
@@ -4573,6 +4678,7 @@ export function chooseBotAction(player, gameState) {
 	) {
 		riverLowEdgeBlocked = true;
 		decision = { action: "fold" };
+		finalAdjustment = "river_low_edge_call_block";
 	}
 
 	const boardCtx = overPair
@@ -4741,11 +4847,25 @@ export function chooseBotAction(player, gameState) {
 		premium: premiumHand,
 		preflopSeat,
 		preflopSeatContext,
+		preflopActionOrderSeat: preflopActionOrderSeatClass ?? "-",
+		preflopSeatMismatch: preflop && preflopSeatClass !== preflopActionOrderSeatClass,
+		preflopProtectedActionSpot,
+		preflopEarlyMultiway,
+		decisionBranch,
+		decisionReason,
+		finalAdjustment,
 		strengthScore: toRoundedNumber(preflopScores.strengthScore),
 		playabilityScore: toRoundedNumber(preflopScores.playabilityScore),
 		dominationPenalty: toRoundedNumber(preflopScores.dominationPenalty),
 		openRaiseScore: toRoundedNumber(preflopScores.openRaiseScore),
+		openRaiseThreshold: preflopOpenRaiseThreshold === null ? null : toRoundedNumber(preflopOpenRaiseThreshold),
+		openRaiseMargin: preflopOpenRaiseMargin === null ? null : toRoundedNumber(preflopOpenRaiseMargin),
 		openLimpScore: toRoundedNumber(preflopScores.openLimpScore),
+		openLimpThreshold: preflopOpenLimpThreshold === null ? null : toRoundedNumber(preflopOpenLimpThreshold),
+		openLimpMargin: preflopOpenLimpMargin === null ? null : toRoundedNumber(preflopOpenLimpMargin),
+		openLimpCandidate: preflopOpenLimpCandidate,
+		canOpenLimp: preflopCanOpenLimp,
+		openLimpBlockReason: preflopOpenLimpBlockReason,
 		flatScore: toRoundedNumber(preflopScores.flatScore),
 		defendScore: toRoundedNumber(preflopScores.defendScore),
 		threeBetValueScore: toRoundedNumber(preflopScores.threeBetValueScore),
