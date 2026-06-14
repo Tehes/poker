@@ -108,6 +108,10 @@ function logSpeedmodeEvent(type, payload) {
 function toRoundedNumber(value, digits = 2) {
 	return Number(value.toFixed(digits));
 }
+
+function clampUnit(value) {
+	return Math.max(0, Math.min(1, value));
+}
 // Maximum number of raises allowed per betting round
 const MAX_RAISES_PER_ROUND = 3;
 // Extra required strengthRatio per prior raise in the same betting round
@@ -1690,7 +1694,18 @@ function getUnopenedPreflopRaiseThreshold({
 		threshold += 0.15;
 	}
 
-	return Math.max(4.20, Math.min(8.50, threshold));
+	let maxThreshold = 8.50;
+	if (!spotContext.headsUp && activePlayerCount === 4 && preflopSeatClass === "cutoff") {
+		maxThreshold = 8.00;
+	} else if (
+		!spotContext.headsUp &&
+		activePlayerCount === 5 &&
+		(preflopSeatClass === "early" || preflopSeatClass === "middle")
+	) {
+		maxThreshold = 8.25;
+	}
+
+	return Math.max(4.20, Math.min(maxThreshold, threshold));
 }
 
 function getUnopenedPreflopLimpThreshold({
@@ -1718,13 +1733,13 @@ function getUnopenedPreflopLimpThreshold({
 	return Math.max(0.38, Math.min(0.54, threshold));
 }
 
-function canOpenLimpPreflop({
-	preflopScores,
+function getUnopenedPreflopRangePolicy({
 	player,
 	spotContext,
 	positionFactor,
 	preflopSeatClass,
 	activePlayerCount,
+	mRatio,
 }) {
 	const protectedActionSpot = isProtectedUnopenedActionSpot({
 		player,
@@ -1732,40 +1747,311 @@ function canOpenLimpPreflop({
 		preflopSeatClass,
 		activePlayerCount,
 	});
+	const earlyFullTable = !spotContext.headsUp && activePlayerCount >= 6 &&
+		positionFactor < 0.45;
+	const earlyFiveHanded = !spotContext.headsUp && activePlayerCount === 5 &&
+		positionFactor < 0.60;
+	const lateFourHandedCutoff = !spotContext.headsUp &&
+		activePlayerCount === 4 &&
+		preflopSeatClass === "cutoff";
+	const shortHandedActionSpot = spotContext.headsUp || activePlayerCount <= 3 ||
+		protectedActionSpot;
+	let openness = 0.45 + (positionFactor - 0.45) * 0.75;
+	let limpPermission;
+	let realizationDemand;
+	let dominationDemand;
+	let impliedOddsCredit = 0.02;
+
+	if (shortHandedActionSpot) {
+		openness += 0.22;
+	}
+	if (lateFourHandedCutoff) {
+		openness += 0.20;
+	}
+	if (earlyFullTable) {
+		openness -= 0.13;
+	} else if (earlyFiveHanded) {
+		openness -= 0.08;
+	}
+	if (mRatio <= M_RATIO_ORANGE_MAX) {
+		openness -= 0.03;
+	}
+	openness = clampUnit(openness);
+
+	limpPermission = 0.40 + openness * 0.55;
+	if (earlyFullTable) {
+		limpPermission -= 0.18;
+	} else if (earlyFiveHanded) {
+		limpPermission -= 0.10;
+	}
+	if (lateFourHandedCutoff) {
+		limpPermission += 0.08;
+	}
+	if (protectedActionSpot) {
+		limpPermission += 0.14;
+	}
+	if (mRatio <= M_RATIO_ORANGE_MAX) {
+		limpPermission -= 0.05;
+	}
+	limpPermission = clampUnit(limpPermission);
+
+	realizationDemand = 0.02 + (1 - openness) * 0.08;
+	if (earlyFullTable) {
+		realizationDemand += 0.07;
+	} else if (earlyFiveHanded) {
+		realizationDemand += 0.04;
+	}
+	if (lateFourHandedCutoff) {
+		realizationDemand -= 0.03;
+	}
+	if (protectedActionSpot) {
+		realizationDemand -= 0.05;
+	}
+	if (mRatio <= M_RATIO_ORANGE_MAX) {
+		realizationDemand += 0.04;
+	}
+	realizationDemand = Math.max(0, Math.min(0.22, realizationDemand));
+
+	dominationDemand = 0.03 + (1 - openness) * 0.07;
+	if (earlyFullTable) {
+		dominationDemand += 0.03;
+	} else if (earlyFiveHanded) {
+		dominationDemand += 0.02;
+	}
+	if (lateFourHandedCutoff) {
+		dominationDemand -= 0.04;
+	}
+	if (protectedActionSpot || spotContext.headsUp) {
+		dominationDemand -= 0.05;
+	}
+	dominationDemand = Math.max(0, Math.min(0.18, dominationDemand));
+
+	if (activePlayerCount >= 5) {
+		impliedOddsCredit += 0.04;
+	} else if (activePlayerCount === 4) {
+		impliedOddsCredit += 0.02;
+	}
+	if (mRatio >= M_RATIO_YELLOW_MAX) {
+		impliedOddsCredit += 0.05;
+	} else if (mRatio <= M_RATIO_ORANGE_MAX) {
+		impliedOddsCredit -= 0.05;
+	}
+	if (!spotContext.headsUp && positionFactor < 0.45) {
+		impliedOddsCredit -= 0.04;
+	}
+	if (lateFourHandedCutoff) {
+		impliedOddsCredit += 0.02;
+	}
+	impliedOddsCredit = Math.max(-0.06, Math.min(0.16, impliedOddsCredit));
+
+	return {
+		openness,
+		limpPermission,
+		realizationDemand,
+		dominationDemand,
+		impliedOddsCredit,
+		earlyFullTable,
+		earlyFiveHanded,
+		lateFourHandedCutoff,
+		protectedActionSpot,
+	};
+}
+
+function getOpenLimpRequiredMargin({
+	preflopScores,
+	preflopSeatClass,
+	rangePolicy,
+}) {
 	const handFamily = preflopScores.handFamily;
 
-	if (isOpenLimpBlockedByRealization({ preflopScores, player, spotContext })) {
-		return false;
-	}
-	if (isPlayableOpenLimpFamily(handFamily)) {
-		return true;
+	if (preflopScores.smallPair) {
+		let margin = rangePolicy.realizationDemand + 0.14 - rangePolicy.impliedOddsCredit;
+		if (rangePolicy.earlyFullTable && preflopSeatClass === "early") {
+			margin += 0.08;
+		} else if (rangePolicy.earlyFiveHanded && preflopSeatClass === "early") {
+			margin += 0.04;
+		}
+		if (rangePolicy.lateFourHandedCutoff) {
+			margin -= 0.07;
+		}
+		return Math.max(0, Math.min(0.36, margin));
 	}
 	if (handFamily === "premiumOffsuitBroadway") {
-		return protectedActionSpot || positionFactor >= 0.75;
+		if (preflopScores.strengthScore >= PREMIUM_PREFLOP_SCORE) {
+			return 0;
+		}
+		return Math.max(
+			0,
+			Math.min(0.28, rangePolicy.dominationDemand + rangePolicy.realizationDemand * 0.75),
+		);
 	}
 	if (
 		handFamily === "dominatedOffsuitBroadway" ||
 		handFamily === "weakAxo" ||
 		handFamily === "weakKxo"
 	) {
-		return protectedActionSpot || positionFactor >= 0.80;
+		return Math.max(0.08, Math.min(0.16, rangePolicy.dominationDemand * 0.55));
 	}
-	if (handFamily === "offsuitJunk") {
-		if (protectedActionSpot && isDecentShortHandedOffsuitJunk(preflopScores)) {
-			return preflopScores.openLimpScore >= 3.00;
+	if (isPlayableOpenLimpFamily(handFamily)) {
+		if (handFamily === "suitedBroadway" || handFamily === "weakAxs") {
+			return Math.max(0, rangePolicy.realizationDemand - 0.04);
 		}
-		return protectedActionSpot && preflopScores.openLimpScore >= 4.40;
+		if (handFamily === "suitedJunk") {
+			return Math.max(0.04, rangePolicy.realizationDemand + 0.04);
+		}
+		return Math.max(0, rangePolicy.realizationDemand);
 	}
 
-	return false;
+	return 0;
+}
+
+function getPremiumBroadwayOpenLimpMixFrequency({
+	preflopScores,
+	openLimpMargin,
+	requiredMargin,
+	rangePolicy,
+}) {
+	if (preflopScores.strengthScore >= PREMIUM_PREFLOP_SCORE) {
+		return 1;
+	}
+
+	const marginBonus = Math.min(
+		0.18,
+		Math.max(0, openLimpMargin - requiredMargin) * 1.20,
+	);
+	let frequency = 0.15 + rangePolicy.limpPermission * 0.65 + marginBonus;
+	if (rangePolicy.earlyFullTable) {
+		frequency -= 0.10;
+	}
+	if (rangePolicy.lateFourHandedCutoff) {
+		frequency += 0.08;
+	}
+
+	return Math.max(0.25, Math.min(0.92, frequency));
+}
+
+function getDominatedBroadwayOpenLimpMixFrequency({
+	spotContext,
+	preflopSeatClass,
+	activePlayerCount,
+	openLimpMargin,
+	requiredMargin,
+	rangePolicy,
+}) {
+	let frequency = 0.20 + rangePolicy.limpPermission * 0.45 +
+		Math.min(0.20, Math.max(0, openLimpMargin - requiredMargin) * 2);
+
+	if (spotContext.headsUp) {
+		frequency += 0.35;
+	} else if (activePlayerCount <= 3) {
+		frequency += 0.25;
+	} else if (activePlayerCount === 5) {
+		frequency += 0.15;
+	} else if (activePlayerCount >= 6) {
+		frequency -= 0.05;
+	}
+
+	return Math.max(0.25, Math.min(0.85, frequency));
+}
+
+function getOpenLimpEligibility({
+	preflopScores,
+	player,
+	spotContext,
+	preflopSeatClass,
+	activePlayerCount,
+	openLimpThreshold,
+	rangePolicy,
+}) {
+	const handFamily = preflopScores.handFamily;
+	const openLimpMargin = preflopScores.openLimpScore / 10 - openLimpThreshold;
+	const requiredMargin = getOpenLimpRequiredMargin({
+		preflopScores,
+		preflopSeatClass,
+		rangePolicy,
+	});
+	const rangeFit = openLimpMargin - requiredMargin;
+
+	if (
+		isOpenLimpBlockedByRealization({
+			preflopScores,
+			player,
+			spotContext,
+			activePlayerCount,
+		})
+	) {
+		return { eligible: false, reason: "blocked_realization", requiredMargin, rangeFit };
+	}
+	if (preflopScores.smallPair) {
+		if (activePlayerCount >= 4 && rangeFit >= 0) {
+			return { eligible: true, reason: "small_pair_range_fit", requiredMargin, rangeFit };
+		}
+		return { eligible: false, reason: "small_pair_context", requiredMargin, rangeFit };
+	}
+	if (isPlayableOpenLimpFamily(handFamily)) {
+		return rangeFit >= 0
+			? { eligible: true, reason: "playable_family_range_fit", requiredMargin, rangeFit }
+			: { eligible: false, reason: "playable_family_range_pressure", requiredMargin, rangeFit };
+	}
+	if (handFamily === "premiumOffsuitBroadway" && rangeFit >= 0) {
+		const mixFrequency = getPremiumBroadwayOpenLimpMixFrequency({
+			preflopScores,
+			openLimpMargin,
+			requiredMargin,
+			rangePolicy,
+		});
+		return Math.random() < mixFrequency
+			? { eligible: true, reason: "premium_broadway_range_fit", requiredMargin, rangeFit }
+			: { eligible: false, reason: "premium_broadway_range_mix_release", requiredMargin, rangeFit };
+	}
+	if (
+		(handFamily === "dominatedOffsuitBroadway" ||
+			handFamily === "weakAxo" ||
+			handFamily === "weakKxo") &&
+		rangeFit >= 0
+	) {
+		const mixFrequency = getDominatedBroadwayOpenLimpMixFrequency({
+			spotContext,
+			preflopSeatClass,
+			activePlayerCount,
+			openLimpMargin,
+			requiredMargin,
+			rangePolicy,
+		});
+		return Math.random() < mixFrequency
+			? { eligible: true, reason: "dominated_broadway_range_fit", requiredMargin, rangeFit }
+			: { eligible: false, reason: "dominated_broadway_range_mix_release", requiredMargin, rangeFit };
+	}
+	if (handFamily === "offsuitJunk") {
+		if (rangePolicy.protectedActionSpot && isDecentShortHandedOffsuitJunk(preflopScores)) {
+			return {
+				eligible: preflopScores.openLimpScore >= 3.00,
+				reason: preflopScores.openLimpScore >= 3.00 ? "short_handed_junk_score" : "offsuit_junk_score",
+				requiredMargin,
+				rangeFit,
+			};
+		}
+		return {
+			eligible: rangePolicy.protectedActionSpot && preflopScores.openLimpScore >= 4.40,
+			reason: rangePolicy.protectedActionSpot && preflopScores.openLimpScore >= 4.40
+				? "protected_junk_score"
+				: "offsuit_junk_context",
+			requiredMargin,
+			rangeFit,
+		};
+	}
+
+	return { eligible: false, reason: "not_limp_candidate", requiredMargin, rangeFit };
 }
 
 function isOpenLimpBlockedByRealization({
 	preflopScores,
 	player,
 	spotContext,
+	activePlayerCount,
 }) {
-	return preflopScores.smallPair === true && !(player.smallBlind && spotContext.headsUp);
+	return preflopScores.smallPair === true && activePlayerCount <= 3 &&
+		!(player.smallBlind && spotContext.headsUp);
 }
 
 function isPremiumPreflopHand(cardA, cardB) {
@@ -3263,6 +3549,14 @@ export function chooseBotAction(player, gameState) {
 	let preflopOpenLimpCandidate = false;
 	let preflopCanOpenLimp = false;
 	let preflopOpenLimpBlockReason = null;
+	let preflopOpenLimpEligibilityReason = null;
+	let preflopOpenLimpRequiredMargin = null;
+	let preflopOpenLimpRangeFit = null;
+	let preflopRangeOpenness = null;
+	let preflopRangeLimpPermission = null;
+	let preflopRangeRealizationDemand = null;
+	let preflopRangeDominationDemand = null;
+	let preflopRangeImpliedOddsCredit = null;
 
 	// Base thresholds for raising depend on stage and pot size
 	// When only a few opponents remain, play slightly more aggressively
@@ -4139,6 +4433,14 @@ export function chooseBotAction(player, gameState) {
 	}
 
 	if (!decision && isUnopenedPreflopActionSpot) {
+		const openRangePolicy = getUnopenedPreflopRangePolicy({
+			player,
+			spotContext,
+			positionFactor,
+			preflopSeatClass,
+			activePlayerCount: active.length,
+			mRatio,
+		});
 		const openRaiseThreshold = getUnopenedPreflopRaiseThreshold({
 			baseRaiseThreshold: raiseThreshold,
 			player,
@@ -4154,15 +4456,18 @@ export function chooseBotAction(player, gameState) {
 			preflopSeatClass,
 			activePlayerCount: active.length,
 		});
-		const openLimpCandidate = needsToCall &&
-			canOpenLimpPreflop({
+		const openLimpEligibility = needsToCall
+			? getOpenLimpEligibility({
 				preflopScores,
 				player,
 				spotContext,
-				positionFactor,
 				preflopSeatClass,
 				activePlayerCount: active.length,
-			});
+				openLimpThreshold,
+				rangePolicy: openRangePolicy,
+			})
+			: { eligible: false, reason: "no_call_needed", requiredMargin: 0, rangeFit: null };
+		const openLimpCandidate = needsToCall && openLimpEligibility.eligible;
 		const canOpenLimp = openLimpCandidate &&
 			preflopScores.openLimpScore / 10 >= openLimpThreshold &&
 			passesPreflopCallLimit;
@@ -4172,10 +4477,20 @@ export function chooseBotAction(player, gameState) {
 		preflopOpenLimpMargin = preflopScores.openLimpScore / 10 - openLimpThreshold;
 		preflopOpenLimpCandidate = openLimpCandidate;
 		preflopCanOpenLimp = canOpenLimp;
+		preflopOpenLimpEligibilityReason = openLimpEligibility.reason;
+		preflopOpenLimpRequiredMargin = openLimpEligibility.requiredMargin;
+		preflopOpenLimpRangeFit = openLimpEligibility.rangeFit;
+		preflopRangeOpenness = openRangePolicy.openness;
+		preflopRangeLimpPermission = openRangePolicy.limpPermission;
+		preflopRangeRealizationDemand = openRangePolicy.realizationDemand;
+		preflopRangeDominationDemand = openRangePolicy.dominationDemand;
+		preflopRangeImpliedOddsCredit = openRangePolicy.impliedOddsCredit;
 		if (!needsToCall) {
 			preflopOpenLimpBlockReason = "no_call_needed";
 		} else if (!openLimpCandidate) {
-			preflopOpenLimpBlockReason = "not_limp_candidate";
+			preflopOpenLimpBlockReason = openLimpEligibility.reason === "blocked_realization"
+				? "blocked_realization"
+				: "not_limp_candidate";
 		} else if (preflopScores.openLimpScore / 10 < openLimpThreshold) {
 			preflopOpenLimpBlockReason = "below_limp_threshold";
 		} else if (!passesPreflopCallLimit) {
@@ -4866,6 +5181,28 @@ export function chooseBotAction(player, gameState) {
 		openLimpCandidate: preflopOpenLimpCandidate,
 		canOpenLimp: preflopCanOpenLimp,
 		openLimpBlockReason: preflopOpenLimpBlockReason,
+		openLimpEligibilityReason: preflopOpenLimpEligibilityReason,
+		openLimpRequiredMargin: preflopOpenLimpRequiredMargin === null ? null : toRoundedNumber(
+			preflopOpenLimpRequiredMargin,
+		),
+		openLimpRangeFit: preflopOpenLimpRangeFit === null ? null : toRoundedNumber(
+			preflopOpenLimpRangeFit,
+		),
+		openRangeOpenness: preflopRangeOpenness === null ? null : toRoundedNumber(
+			preflopRangeOpenness,
+		),
+		openRangeLimpPermission: preflopRangeLimpPermission === null ? null : toRoundedNumber(
+			preflopRangeLimpPermission,
+		),
+		openRangeRealizationDemand: preflopRangeRealizationDemand === null ? null : toRoundedNumber(
+			preflopRangeRealizationDemand,
+		),
+		openRangeDominationDemand: preflopRangeDominationDemand === null ? null : toRoundedNumber(
+			preflopRangeDominationDemand,
+		),
+		openRangeImpliedOddsCredit: preflopRangeImpliedOddsCredit === null ? null : toRoundedNumber(
+			preflopRangeImpliedOddsCredit,
+		),
 		flatScore: toRoundedNumber(preflopScores.flatScore),
 		defendScore: toRoundedNumber(preflopScores.defendScore),
 		threeBetValueScore: toRoundedNumber(preflopScores.threeBetValueScore),

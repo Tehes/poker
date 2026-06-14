@@ -9,9 +9,20 @@ Version log writing guide:
 - Group related tuning work into one coherent entry instead of listing every small internal step.
 */
 
-export const APP_VERSION = "1.2.6";
+export const APP_VERSION = "1.2.7";
 
 export const VERSION_LOG = [
+	{
+		version: "1.2.7",
+		date: "2026-06-14",
+		title: "Sharper first-in preflop ranges",
+		notes: [
+			"Bots now keep more playable broadway hands and small pairs in suitable first-in spots instead of folding them too often.",
+			"Early seats and fuller tables stay more selective, so the added playability should not turn into broad loose opening.",
+			"Late and short-handed first-in pots should feel more credible while the overall tournament pace stays close to the previous version.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.2.6",
 		date: "2026-05-13",
