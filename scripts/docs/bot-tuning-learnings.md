@@ -2,6 +2,20 @@
 
 Purpose: This document records accepted and rejected bot-tuning routes so future iterations do not repeat already falsified hypotheses without new evidence.
 
+## 2026-06-15: Structural Made-Hand Call Relief
+
+### Rejected: Narrow Relief Was Too Small To Ship
+
+- **Pattern:** Bots folded some real private two-pair and trips improvements just below the postflop risk line when facing raises.
+- **Route tested:** A narrow call-barrier relief for structural private made-hand lifts, with river relief limited to very cheap calls.
+- **Result:** Rejected after validation. The candidate stayed safe, but the behavior gain was too small for another local risk-line exception.
+- **Evidence:** The final 1000-engine batch kept hard guardrails clean and moved the target fold rate from the comparison baseline `9.43%` to `8.68%`; the direct 500-run candidate moved it to `8.36%`.
+- **Scale:** The candidate rescued roughly `60-90` narrow spots per 1000 games, about `0.07%` of all hands in the acceptance run.
+- **MDF impact:** Global facing-bet overfold stayed effectively unchanged (`13.32%` comparison gap, `12.97%` direct 500-run candidate gap, `13.21%` final 1000-run candidate gap). Treat this as a made-hand coherence symptom, not an MDF fix.
+- **Architecture reason:** The relief was defensible in isolation, but it added another special call-barrier adjustment for a very small slice of all hands. The risk line already has several local adjustments, so more narrow reliefs increase model drift and make future behavior harder to explain.
+- **Do not repeat blindly:** Do not add more narrow `...CallRelief()` helpers for adjacent symptoms. The effect is small, and repeated reliefs will make the risk-line model harder to reason about.
+- **Next better route:** If similar postflop symptoms appear again, integrate them into a central postflop range-quality / risk-line model instead of adding another local exception.
+
 ## 2026-06-15: General Preflop Realization Model
 
 ### Accepted: Hand Shape Instead of a Mini-Range Rule
