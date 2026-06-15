@@ -1,4 +1,4 @@
-/* ==================================================================================================
+﻿/* ==================================================================================================
 MODULE BOUNDARY: Bot Decision Engine
 ================================================================================================== */
 
@@ -500,10 +500,14 @@ function getLegacyPreflopLogScores(cardA, cardB, context = {}) {
 		strengthScore: profile.chenScore,
 		playabilityScore: profile.playability,
 		dominationPenalty: profile.dominationRisk,
+		dominationRisk: profile.dominationRisk,
 		highRank: profile.highRank,
 		smallPair: profile.smallPair,
 		lowRank: profile.lowRank,
 		gap: profile.gap,
+		suited: profile.suited,
+		pair: profile.pair,
+		connector: profile.connector,
 		openRaiseScore,
 		openLimpScore,
 		flatScore,
@@ -1087,22 +1091,100 @@ function isWeakOffsuitAceKingLowKicker(handFamily, lowRank) {
 		RANK_ORDER.indexOf(lowRank) <= RANK_ORDER.indexOf("5");
 }
 
-function isProtectedUnopenedActionSpot({ player, spotContext, preflopSeatClass, activePlayerCount }) {
+function isProtectedShortHandedActionSpot({ player, spotContext, preflopSeatClass, activePlayerCount }) {
 	return Boolean(player?.smallBlind && spotContext?.headsUp) ||
 		(preflopSeatClass === "button" && activePlayerCount === 3);
 }
 
-function isDecentShortHandedOffsuitJunk(profile) {
-	if (profile.handFamily !== "offsuitJunk") {
-		return false;
-	}
-
+function getPreflopRealizationPressure(profile) {
 	const highIndex = RANK_ORDER.indexOf(profile.highRank);
 	const lowIndex = RANK_ORDER.indexOf(profile.lowRank);
+	let pressure = profile.dominationRisk * 0.55;
 
-	return highIndex >= RANK_ORDER.indexOf("T") &&
-		lowIndex >= RANK_ORDER.indexOf("7") &&
-		profile.gap <= 2;
+	if (!profile.pair && !profile.suited) {
+		pressure += 0.18;
+	}
+	if (profile.suited) {
+		pressure -= 0.08;
+	}
+	if (profile.connector) {
+		pressure -= 0.16;
+	} else if (profile.gap === 1) {
+		pressure -= 0.12;
+	} else if (profile.gap === 2) {
+		pressure -= 0.06;
+	} else if (profile.gap === 3) {
+		pressure += 0.08;
+	} else if (profile.gap >= 4) {
+		pressure += 0.16;
+	}
+	if (!profile.pair) {
+		if (highIndex < RANK_ORDER.indexOf("T")) {
+			pressure += 0.16;
+		} else if (highIndex < RANK_ORDER.indexOf("Q")) {
+			pressure += 0.06;
+		}
+		if (lowIndex <= RANK_ORDER.indexOf("5")) {
+			pressure += 0.18;
+		}
+	}
+	if (profile.handFamily === "offsuitJunk") {
+		pressure += 0.10;
+	} else if (profile.handFamily === "suitedJunk") {
+		pressure += 0.08;
+	} else if (profile.handFamily === "weakAxo" || profile.handFamily === "weakKxo") {
+		pressure += 0.04;
+	} else if (profile.handFamily === "dominatedOffsuitBroadway") {
+		pressure += 0.03;
+	}
+	if (profile.pair) {
+		pressure -= 0.15;
+	}
+
+	return Math.max(0, Math.min(0.90, pressure));
+}
+
+function getPreflopRealizationPenalty(
+	profile,
+	{ route, player, spotContext, preflopSeatClass, activePlayerCount, potOdds } = {},
+) {
+	const context = spotContext || {};
+	const protectedActionSpot = isProtectedShortHandedActionSpot({
+		player,
+		spotContext: context,
+		preflopSeatClass,
+		activePlayerCount,
+	});
+	const pressure = getPreflopRealizationPressure(profile);
+
+	if (route === "open-limp") {
+		if (protectedActionSpot && profile.handFamily === "offsuitJunk") {
+			return Math.max(0.50, Math.min(0.85, pressure + 0.30));
+		}
+		if (
+			player?.smallBlind &&
+			context.headsUp &&
+			isWeakOffsuitAceLowKicker(profile.handFamily, profile.lowRank)
+		) {
+			return 0.35;
+		}
+		return 0;
+	}
+	if (route === "short-handed-open" && profile.handFamily === "offsuitJunk") {
+		return Math.min(0.75, pressure + 0.15);
+	}
+	if (route === "short-handed-defend" && profile.handFamily === "offsuitJunk") {
+		let penalty = Math.min(0.75, pressure + 0.10);
+		if (potOdds <= 0.25) {
+			penalty -= 0.08;
+		}
+		return Math.max(0, penalty);
+	}
+	if (route === "defend" && player?.bigBlind && context.facingAggression && profile.handFamily === "suitedJunk") {
+		return 0.15;
+	}
+
+	return 0;
 }
 
 function isButtonThreeHandedBlindDefense({ player, spotContext, preflopRaiseCount, preflopAggressorSeatClass }) {
@@ -1164,10 +1246,15 @@ function getShortHandedOpenScoreBoost(profile, {
 		boost += 0.22;
 	} else if (profile.handFamily === "weakKxo") {
 		boost += 0.15;
-	} else if (isDecentShortHandedOffsuitJunk(profile)) {
-		boost += 0.18;
 	} else if (profile.handFamily === "offsuitJunk") {
-		boost -= 0.15;
+		const realizationPenalty = getPreflopRealizationPenalty(profile, {
+			route: "short-handed-open",
+			player,
+			spotContext,
+			preflopSeatClass,
+			activePlayerCount,
+		});
+		boost += realizationPenalty <= 0.45 ? 0.18 : -0.15;
 	}
 
 	return boost;
@@ -1178,8 +1265,14 @@ function getShortHandedOpenLimpScoreBoost(profile, context) {
 	if (openBoost === 0) {
 		return 0;
 	}
-	if (profile.handFamily === "offsuitJunk" && !isDecentShortHandedOffsuitJunk(profile)) {
-		return 0;
+	if (profile.handFamily === "offsuitJunk") {
+		const realizationPenalty = getPreflopRealizationPenalty(profile, {
+			route: "short-handed-open",
+			...context,
+		});
+		if (realizationPenalty > 0.45) {
+			return 0;
+		}
 	}
 
 	return Math.max(0, openBoost * 0.75);
@@ -1232,10 +1325,14 @@ function getShortHandedDefendScoreBoost(
 		boost += 0.28;
 	} else if (profile.handFamily === "weakKxo") {
 		boost += 0.22;
-	} else if (isDecentShortHandedOffsuitJunk(profile)) {
-		boost += 0.24;
 	} else if (profile.handFamily === "offsuitJunk") {
-		boost -= 0.12;
+		const realizationPenalty = getPreflopRealizationPenalty(profile, {
+			route: "short-handed-defend",
+			player,
+			spotContext,
+			potOdds,
+		});
+		boost += realizationPenalty <= 0.48 ? 0.24 : -0.12;
 	}
 
 	if (buttonThreeHandedBlindDefense) {
@@ -1265,7 +1362,7 @@ function getContextualPreflopOpenRaiseScore(
 	{ player, spotContext, positionFactor, preflopSeatClass, activePlayerCount },
 ) {
 	const context = spotContext || {};
-	const protectedActionSpot = isProtectedUnopenedActionSpot({
+	const protectedActionSpot = isProtectedShortHandedActionSpot({
 		player,
 		spotContext: context,
 		preflopSeatClass,
@@ -1337,7 +1434,7 @@ function getContextualPreflopOpenLimpScore(
 	{ player, spotContext, positionFactor, preflopSeatClass, activePlayerCount },
 ) {
 	const context = spotContext || {};
-	const protectedActionSpot = isProtectedUnopenedActionSpot({
+	const protectedActionSpot = isProtectedShortHandedActionSpot({
 		player,
 		spotContext: context,
 		preflopSeatClass,
@@ -1386,6 +1483,8 @@ function getContextualPreflopOpenLimpScore(
 	openLimpScore += getOpenLimpRealizationAdjustment(profile, {
 		player,
 		spotContext: context,
+		preflopSeatClass,
+		activePlayerCount,
 	});
 	if (earlyMultiway && isPassivePreflopTargetFamily(profile.handFamily)) {
 		openLimpScore -= 0.45;
@@ -1596,24 +1695,22 @@ function getContextualPreflopDefendScore(
 	return clampPreflopScore(defendScore);
 }
 
-function getOpenLimpRealizationAdjustment(profile, { player, spotContext }) {
-	if (
-		player?.smallBlind &&
-		spotContext.headsUp &&
-		isWeakOffsuitAceLowKicker(profile.handFamily, profile.lowRank)
-	) {
-		return -0.35;
-	}
-
-	return 0;
+function getOpenLimpRealizationAdjustment(profile, { player, spotContext, preflopSeatClass, activePlayerCount }) {
+	return -getPreflopRealizationPenalty(profile, {
+		route: "open-limp",
+		player,
+		spotContext,
+		preflopSeatClass,
+		activePlayerCount,
+	});
 }
 
 function getDefendScoreRealizationAdjustment(profile, { player, spotContext }) {
-	if (player?.bigBlind && spotContext.facingAggression && profile.handFamily === "suitedJunk") {
-		return -0.15;
-	}
-
-	return 0;
+	return -getPreflopRealizationPenalty(profile, {
+		route: "defend",
+		player,
+		spotContext,
+	});
 }
 
 function getPassiveCallRealizationCap({
@@ -1668,7 +1765,7 @@ function getUnopenedPreflopRaiseThreshold({
 	preflopSeatClass,
 	activePlayerCount,
 }) {
-	const protectedActionSpot = isProtectedUnopenedActionSpot({
+	const protectedActionSpot = isProtectedShortHandedActionSpot({
 		player,
 		spotContext,
 		preflopSeatClass,
@@ -1741,7 +1838,7 @@ function getUnopenedPreflopRangePolicy({
 	activePlayerCount,
 	mRatio,
 }) {
-	const protectedActionSpot = isProtectedUnopenedActionSpot({
+	const protectedActionSpot = isProtectedShortHandedActionSpot({
 		player,
 		spotContext,
 		preflopSeatClass,
@@ -1932,7 +2029,6 @@ function getPremiumBroadwayOpenLimpMixFrequency({
 
 function getDominatedBroadwayOpenLimpMixFrequency({
 	spotContext,
-	preflopSeatClass,
 	activePlayerCount,
 	openLimpMargin,
 	requiredMargin,
@@ -2012,7 +2108,6 @@ function getOpenLimpEligibility({
 	) {
 		const mixFrequency = getDominatedBroadwayOpenLimpMixFrequency({
 			spotContext,
-			preflopSeatClass,
 			activePlayerCount,
 			openLimpMargin,
 			requiredMargin,
@@ -2023,18 +2118,22 @@ function getOpenLimpEligibility({
 			: { eligible: false, reason: "dominated_broadway_range_mix_release", requiredMargin, rangeFit };
 	}
 	if (handFamily === "offsuitJunk") {
-		if (rangePolicy.protectedActionSpot && isDecentShortHandedOffsuitJunk(preflopScores)) {
-			return {
-				eligible: preflopScores.openLimpScore >= 3.00,
-				reason: preflopScores.openLimpScore >= 3.00 ? "short_handed_junk_score" : "offsuit_junk_score",
-				requiredMargin,
-				rangeFit,
-			};
-		}
+		const realizationPenalty = getPreflopRealizationPenalty(preflopScores, {
+			route: "open-limp",
+			player,
+			spotContext,
+			preflopSeatClass,
+			activePlayerCount,
+		});
+		const requiredScore = Math.min(
+			4.60,
+			3.25 + Math.max(0, realizationPenalty - 0.45) * 4.80,
+		);
+		const eligible = rangePolicy.protectedActionSpot && preflopScores.openLimpScore >= requiredScore;
 		return {
-			eligible: rangePolicy.protectedActionSpot && preflopScores.openLimpScore >= 4.40,
-			reason: rangePolicy.protectedActionSpot && preflopScores.openLimpScore >= 4.40
-				? "protected_junk_score"
+			eligible,
+			reason: eligible
+				? "protected_junk_realization_score"
 				: "offsuit_junk_context",
 			requiredMargin,
 			rangeFit,
@@ -3531,7 +3630,7 @@ export function chooseBotAction(player, gameState) {
 	let marginalDefenseBlocked = false;
 	let riverLowEdgeBlocked = false;
 	const preflopProtectedActionSpot = preflop
-		? isProtectedUnopenedActionSpot({
+		? isProtectedShortHandedActionSpot({
 			player,
 			spotContext,
 			preflopSeatClass,
@@ -5301,3 +5400,4 @@ export function chooseBotAction(player, gameState) {
 
 	return decision;
 }
+

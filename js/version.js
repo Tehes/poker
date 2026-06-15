@@ -9,9 +9,31 @@ Version log writing guide:
 - Group related tuning work into one coherent entry instead of listing every small internal step.
 */
 
-export const APP_VERSION = "1.2.7";
+export const APP_VERSION = "1.2.9";
 
 export const VERSION_LOG = [
+	{
+		version: "1.2.9",
+		date: "2026-06-15",
+		title: "Smarter preflop realization",
+		notes: [
+			"Bots now judge fragile short-handed starts more by connectivity, suitedness, domination risk, and position instead of one narrow offsuit rule.",
+			"Low connected offsuit hands can still stay active when they play well enough, while disconnected trash stays out.",
+			"Small-blind heads-up and three-handed button pots should keep their action, with fewer passive weak limps.",
+		],
+		estimated: false,
+	},
+	{
+		version: "1.2.8",
+		date: "2026-06-15",
+		title: "Cleaner short-handed starts",
+		notes: [
+			"Bots now avoid more weak offsuit junk limps when first in from the small blind heads-up or the button three-handed.",
+			"Playable suited hands, connectors, pairs, and stronger broadways keep their normal short-handed role.",
+			"Short-handed pots should still stay active, but fewer fragile offsuit starts should reach weak flops.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.2.7",
 		date: "2026-06-14",
