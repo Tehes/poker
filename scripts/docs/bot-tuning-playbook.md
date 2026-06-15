@@ -271,6 +271,21 @@ Ein Kandidat ist nicht qualifiziert, wenn:
 - er eine Zielmetrik durch Problemverschiebung verbessert,
 - er gute Calls oder Value-Aggression überproportional entfernt.
 
+## Stop-Kriterien
+
+Starte keinen neuen Tuning-Pass, wenn:
+
+- nur eine einzelne Metrik auffällt und keine Beispielanalyse denselben Leak bestätigt,
+- der Leak nicht in mindestens zwei unabhängigen Dimensionen clusterbar ist, z. B. Handklasse + Street, Seat + Route oder Preis + Boardstruktur,
+- der Fix mehr neue Bedingungen erzeugt als strategische Klarheit bringt,
+- ein lokaler Sonderhebel nur einen sehr kleinen Anteil aller Hände betrifft, außer er behebt einen harten Guardrail-Fehler,
+- derselbe Leak bereits zwei verworfene Kandidaten erzeugt hat. Verbessere dann zuerst Diagnose, Backtrace, Equity- oder MDF-Auswertung statt weiter an Schwellen zu drehen,
+- Core Health stabil ist und die auffälligen Beispiele pokerlogisch erklärbar sind. Dann akzeptiere den Zustand und perfektioniere nicht weiter.
+
+Wenn ein Leak nur durch mehrere lokale Ausnahmen lösbar scheint, baue keinen weiteren Patch. Markiere ihn als Modell-Lücke und plane einen zentraleren Hebel.
+
+Diese Stop-Kriterien sollen kleinteilige Symptom-Patches verhindern, nicht saubere größere Modellhebel. Wenn die Diagnose eine strukturelle Modell-Lücke zeigt, formuliere den größeren Hebel explizit und validiere ihn breiter statt ihn aus Vorsicht zu vermeiden.
+
 ## Hypothese vor Code
 
 Vor jeder Code-Änderung kurz festhalten:
