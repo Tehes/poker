@@ -1187,6 +1187,33 @@ function getPreflopRealizationPenalty(
 	return 0;
 }
 
+function getPreflopRealizationReason(profile, { route, player, spotContext }) {
+	if (route === "open-limp") {
+		if (profile.handFamily === "offsuitJunk") {
+			return "offsuit_junk_open_limp_pressure";
+		}
+		if (
+			player?.smallBlind &&
+			spotContext?.headsUp &&
+			isWeakOffsuitAceLowKicker(profile.handFamily, profile.lowRank)
+		) {
+			return "weak_axo_low_kicker_open_limp_pressure";
+		}
+		return null;
+	}
+	if (route === "short-handed-open" && profile.handFamily === "offsuitJunk") {
+		return "offsuit_junk_short_handed_open_pressure";
+	}
+	if (route === "short-handed-defend" && profile.handFamily === "offsuitJunk") {
+		return "offsuit_junk_short_handed_defend_pressure";
+	}
+	if (route === "defend" && profile.handFamily === "suitedJunk") {
+		return "suited_junk_big_blind_defend_pressure";
+	}
+
+	return null;
+}
+
 function isButtonThreeHandedBlindDefense({ player, spotContext, preflopRaiseCount, preflopAggressorSeatClass }) {
 	return Boolean(
 		(player?.bigBlind || player?.smallBlind) &&
@@ -3656,6 +3683,11 @@ export function chooseBotAction(player, gameState) {
 	let preflopRangeRealizationDemand = null;
 	let preflopRangeDominationDemand = null;
 	let preflopRangeImpliedOddsCredit = null;
+	let preflopRealizationRoute = null;
+	let preflopRealizationPressure = null;
+	let preflopRealizationPenalty = null;
+	let preflopRealizationApplied = false;
+	let preflopRealizationReason = null;
 
 	// Base thresholds for raising depend on stage and pot size
 	// When only a few opponents remain, play slightly more aggressively
@@ -4731,6 +4763,53 @@ export function chooseBotAction(player, gameState) {
 		finalAdjustment = "top_tier_postflop_fold_guard";
 	}
 
+	if (preflop) {
+		if (
+			isUnopenedPreflopActionSpot &&
+			(decisionBranch === "unopened-limp" || decisionBranch === "unopened-release")
+		) {
+			preflopRealizationRoute = "open-limp";
+		} else if (
+			isUnopenedPreflopActionSpot &&
+			decisionBranch?.startsWith("unopened-open") &&
+			preflopScores.handFamily === "offsuitJunk"
+		) {
+			preflopRealizationRoute = "short-handed-open";
+		} else if (
+			spotContext.facingAggression &&
+			(player.bigBlind || player.smallBlind) &&
+			preflopScores.handFamily === "offsuitJunk"
+		) {
+			preflopRealizationRoute = "short-handed-defend";
+		} else if (
+			spotContext.facingAggression &&
+			player.bigBlind &&
+			preflopScores.handFamily === "suitedJunk"
+		) {
+			preflopRealizationRoute = "defend";
+		}
+
+		if (preflopRealizationRoute !== null) {
+			preflopRealizationPressure = getPreflopRealizationPressure(preflopScores);
+			preflopRealizationPenalty = getPreflopRealizationPenalty(preflopScores, {
+				route: preflopRealizationRoute,
+				player,
+				spotContext,
+				preflopSeatClass,
+				activePlayerCount: active.length,
+				potOdds,
+			});
+			preflopRealizationApplied = preflopRealizationPenalty > 0;
+			if (preflopRealizationApplied) {
+				preflopRealizationReason = getPreflopRealizationReason(preflopScores, {
+					route: preflopRealizationRoute,
+					player,
+					spotContext,
+				});
+			}
+		}
+	}
+
 	let isBluff = false;
 	let isStab = false;
 	if (!useHarringtonStrategy) {
@@ -5302,6 +5381,15 @@ export function chooseBotAction(player, gameState) {
 		openRangeImpliedOddsCredit: preflopRangeImpliedOddsCredit === null ? null : toRoundedNumber(
 			preflopRangeImpliedOddsCredit,
 		),
+		preflopRealizationRoute,
+		preflopRealizationPressure: preflopRealizationPressure === null ? null : toRoundedNumber(
+			preflopRealizationPressure,
+		),
+		preflopRealizationPenalty: preflopRealizationPenalty === null ? null : toRoundedNumber(
+			preflopRealizationPenalty,
+		),
+		preflopRealizationApplied,
+		preflopRealizationReason,
 		flatScore: toRoundedNumber(preflopScores.flatScore),
 		defendScore: toRoundedNumber(preflopScores.defendScore),
 		threeBetValueScore: toRoundedNumber(preflopScores.threeBetValueScore),
