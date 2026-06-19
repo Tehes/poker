@@ -594,6 +594,38 @@ OVERLAY
     max-height: min(84vh, 920px);
 }
 
+.resume-panel {
+    width: min(420px, 92vw);
+}
+
+.resume-content {
+    text-align: center;
+}
+
+.resume-content h2 {
+    margin-bottom: 0.5rem;
+    color: var(--font-color);
+    font-size: 1.4rem;
+}
+
+.resume-content p {
+    margin: 0;
+    color: var(--blue-lightest);
+}
+
+.resume-actions {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.resume-actions button {
+    width: auto;
+    margin: 0;
+    padding: 0.65rem 1rem;
+}
+
 .overlay-close {
     width: auto;
     margin: 0;

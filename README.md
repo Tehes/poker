@@ -27,6 +27,8 @@ Commercial use, paid hosting, resale, and misleading rebranding are not allowed 
 
 - **No Setup Required**: No app install, no sign-ups, no lobby and no configuration. Just enter
   names and start playing.
+- **Local Solo Saves**: Unfinished Solo vs Bots games are saved locally in the browser and can be
+  continued later on the same device.
 - **Private Player Views**: Human players can join on their own devices without exposing private
   information on the shared screen.
 - **QR + Link Joining**: Each human seat provides both a QR code and a direct link for easy access.
@@ -130,6 +132,8 @@ The table works fully offline after the first complete load.
 Backend sync is used only in multiplayer games that start with at least 2 human players.
 
 - **Solo and spectator games stay local** and keep a clean URL without `tableId`.
+- **Solo saves are local-only**: unfinished Solo vs Bots games are stored in the browser on
+  the shared device; multiplayer sync does not create persistent cloud sessions.
 - **Human seats expose two entry points**: a QR code for the companion view (`hole-cards.html`) and
   a direct link for the full remote table (`remoteTable.html`).
 - **Both views stay connected to the same seat** and can be switched at any time.
@@ -304,7 +308,7 @@ deno task speedmode -- --out=tmp/poker-speedmode-latest
 
 - Live syncing is best-effort; if the backend is unreachable, joined devices fall back to read-only
   companion access, and actions stay on the shared table.
-- No persistent chip stacks or session saving (yet).
+- Saved games are local to the same browser/device and apply only to Solo vs Bots games.
 - Remote table links are lightweight and trust-based; there are no seat tokens or connection checks
   yet.
 - The blind progression (formula-based increase every 6 hands) is not customizable.

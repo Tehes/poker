@@ -9,9 +9,19 @@ Version log writing guide:
 - Group related tuning work into one coherent entry instead of listing every small internal step.
 */
 
-export const APP_VERSION = "1.2.9";
+export const APP_VERSION = "1.4.0";
 
 export const VERSION_LOG = [
+	{
+		version: "1.4.0",
+		date: "2026-06-19",
+		title: "Continue saved games",
+		notes: [
+			"Unfinished Solo vs Bots games can now be continued after reopening the table on the same device.",
+			"A startup prompt lets you continue the saved game or start fresh.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.2.9",
 		date: "2026-06-15",

@@ -2,16 +2,16 @@
 MODULE BOUNDARY: Main Table Runtime
 ================================================================================================== */
 
-// CURRENT STATE: Coordinates browser-facing game flow, bots, sync, timers, analytics, and DOM
-// effects. Showdown resolution/commit state, hand-end/next-hand transition state, browserless
-// hand/tournament runners, hand-start setup, turn-action resolution, betting-round start state,
-// betting-round progress decisions, and street progression decisions are extracted; browser
-// orchestration remains here.
+// CURRENT STATE: Coordinates browser-facing game flow, bots, sync, local persistence, timers,
+// analytics, and DOM effects. Showdown resolution/commit state, hand-end/next-hand transition
+// state, browserless hand/tournament runners, hand-start setup, turn-action resolution,
+// betting-round start state, betting-round progress decisions, and street progression decisions
+// are extracted; browser orchestration remains here.
 // TARGET STATE: app.js should stay as the browser-facing orchestrator only. Pure poker rules and
 // state transforms should live in gameEngine.js, while reusable UI, sync, and control primitives
 // should live in shared/*.
-// PUT HERE: Engine orchestration, notifications, timers, sync, analytics, bot playback, and
-// flow-specific DOM wiring.
+// PUT HERE: Engine orchestration, notifications, timers, sync, local save/restore, analytics, bot
+// playback, and flow-specific DOM wiring.
 // DO NOT PUT HERE: Pure poker rules, reusable action math, sync schema helpers, or generic
 // render-only helpers.
 // PREFERENCE: Extend the existing modules before introducing new ones.
@@ -69,6 +69,7 @@ import {
 import {
 	clearSeatActionVisualState,
 	clearChipTransferAnimation,
+	clearRenderedSeat,
 	renderChipStacks,
 	renderChipTransferAnimation,
 	renderCommunityCards as renderTableCommunityCards,
@@ -119,6 +120,9 @@ const tableRenderTarget = {
 	activeChipTransferState: null,
 };
 const overlayBackdrop = document.querySelector("#overlay-backdrop");
+const resumeGameOverlay = document.querySelector("#resume-game-overlay");
+const resumeContinueButton = document.querySelector("#resume-continue-button");
+const resumeNewButton = document.querySelector("#resume-new-button");
 const statsOverlay = document.querySelector("#stats-overlay");
 const statsCloseButton = document.querySelector("#stats-close-button");
 const statsTableBody = document.querySelector("#stats-table-body");
@@ -171,6 +175,10 @@ const overlays = {
 		el: statsOverlay,
 		beforeOpen: () => renderStatsOverlay(),
 	},
+	resume: {
+		el: resumeGameOverlay,
+		blocking: true,
+	},
 	log: {
 		el: logOverlay,
 		canOpen: () => !!logList && logList.childElementCount > 0,
@@ -208,6 +216,8 @@ const DEFAULT_CHIP_TRANSFER_STEPS = 30;
 const WINNER_REACTION_DURATION = 2000;
 const NEW_ROUND_COUNTDOWN_SECONDS = 20;
 const NEW_ROUND_COUNTDOWN_INTERVAL = 1000;
+const SAVED_GAME_SCHEMA_VERSION = 1;
+const SAVED_GAME_STORAGE_KEY = "poker:saved-game:v1";
 
 const HISTORY_LOG = false; // Set to true to enable history logging in the console
 let DEBUG_FLOW = false; // Set to true for verbose game-flow logging
@@ -240,6 +250,9 @@ let summaryButtonsVisible = false;
 let handFastForwardActive = false;
 let autoplayToGameEnd = false;
 let nextChipTransferId = 1;
+let pendingSavedGameSnapshot = null;
+let currentFlowState = { type: "setup" };
+let currentGameSaveEligible = false;
 
 // --- Analytics --------------------------------------------------------------
 let totalHands = 0;
@@ -319,6 +332,599 @@ gameState.toJSON = function () {
 		timestamp: Date.now(),
 	};
 };
+
+/* --------------------------------------------------------------------------------------------------
+Saved Game Persistence
+---------------------------------------------------------------------------------------------------*/
+
+function getLocalStorage() {
+	try {
+		return globalThis.localStorage ?? null;
+	} catch (error) {
+		console.warn("saved game storage unavailable", error);
+		return null;
+	}
+}
+
+function clonePlainValue(value, fallback = null) {
+	if (value === undefined) {
+		return fallback;
+	}
+	try {
+		return JSON.parse(JSON.stringify(value));
+	} catch (error) {
+		console.warn("saved game clone failed", error);
+		return fallback;
+	}
+}
+
+function normalizeNumber(value, fallback) {
+	return Number.isFinite(value) ? value : fallback;
+}
+
+function createStatsSnapshot(stats = {}) {
+	return {
+		hands: normalizeNumber(stats.hands, 0),
+		handsWon: normalizeNumber(stats.handsWon, 0),
+		vpip: normalizeNumber(stats.vpip, 0),
+		pfr: normalizeNumber(stats.pfr, 0),
+		calls: normalizeNumber(stats.calls, 0),
+		aggressiveActs: normalizeNumber(stats.aggressiveActs, 0),
+		reveals: normalizeNumber(stats.reveals, 0),
+		showdowns: normalizeNumber(stats.showdowns, 0),
+		showdownsWon: normalizeNumber(stats.showdownsWon, 0),
+		folds: normalizeNumber(stats.folds, 0),
+		foldsPreflop: normalizeNumber(stats.foldsPreflop, 0),
+		foldsPostflop: normalizeNumber(stats.foldsPostflop, 0),
+		allins: normalizeNumber(stats.allins, 0),
+	};
+}
+
+function createBotLineSnapshot(botLine = {}) {
+	return {
+		preflopAggressor: botLine.preflopAggressor === true,
+		cbetIntent: botLine.cbetIntent ?? null,
+		barrelIntent: botLine.barrelIntent ?? null,
+		cbetMade: botLine.cbetMade === true,
+		barrelMade: botLine.barrelMade === true,
+		nonValueAggressionMade: botLine.nonValueAggressionMade === true,
+		checkRaiseIntent: clonePlainValue(botLine.checkRaiseIntent, null),
+		passiveValueCheckIntent: clonePlainValue(
+			botLine.passiveValueCheckIntent,
+			null,
+		),
+	};
+}
+
+function createPlayerSnapshot(player) {
+	return {
+		name: player.name,
+		isBot: player.isBot === true,
+		seatSlot: player.seatSlot,
+		winnerReactionEmoji: player.winnerReactionEmoji || "",
+		winnerReactionUntil: normalizeNumber(player.winnerReactionUntil, 0),
+		isWinner: player.isWinner === true,
+		actionState: player.actionState ? { ...player.actionState } : null,
+		winProbability: typeof player.winProbability === "number"
+			? player.winProbability
+			: null,
+		lastNonFinalWinProbability:
+			typeof player.lastNonFinalWinProbability === "number"
+				? player.lastNonFinalWinProbability
+				: null,
+		seatIndex: player.seatIndex,
+		holeCards: Array.isArray(player.holeCards)
+			? player.holeCards.slice(0, 2)
+			: [null, null],
+		visibleHoleCards: Array.isArray(player.visibleHoleCards)
+			? player.visibleHoleCards.slice(0, 2)
+			: [false, false],
+		dealer: player.dealer === true,
+		smallBlind: player.smallBlind === true,
+		bigBlind: player.bigBlind === true,
+		folded: player.folded === true,
+		chips: normalizeNumber(player.chips, 0),
+		allIn: player.allIn === true,
+		totalBet: normalizeNumber(player.totalBet, 0),
+		roundBet: normalizeNumber(player.roundBet, 0),
+		stats: createStatsSnapshot(player.stats),
+		botLine: createBotLineSnapshot(player.botLine),
+		spotState: {
+			...createPlayerSpotState(),
+			...clonePlainValue(player.spotState, {}),
+		},
+	};
+}
+
+function createGameStateSnapshot() {
+	return {
+		currentPhaseIndex: gameState.currentPhaseIndex,
+		currentBet: gameState.currentBet,
+		pot: gameState.pot,
+		activeSeatIndex: gameState.activeSeatIndex,
+		handId: gameState.handId,
+		nextDecisionId: gameState.nextDecisionId,
+		blindLevel: gameState.blindLevel,
+		gameStarted: gameState.gameStarted,
+		gameFinished: gameState.gameFinished,
+		openCardsMode: gameState.openCardsMode,
+		spectatorMode: gameState.spectatorMode,
+		raisesThisRound: gameState.raisesThisRound,
+		handInProgress: gameState.handInProgress,
+		deck: gameState.deck.slice(),
+		cardGraveyard: gameState.cardGraveyard.slice(),
+		communityCards: gameState.communityCards.slice(),
+		activeSeatIndexes: gameState.players.map((player) => player.seatIndex),
+		players: gameState.players.map(createPlayerSnapshot),
+		allPlayers: gameState.allPlayers.map(createPlayerSnapshot),
+		chipTransfer: clonePlainValue(gameState.chipTransfer, null),
+		pendingAction: gameState.pendingAction ? { ...gameState.pendingAction } : null,
+		smallBlind: gameState.smallBlind,
+		bigBlind: gameState.bigBlind,
+		lastRaise: gameState.lastRaise,
+		handContext: clonePlainValue(gameState.handContext, createHandContextState()),
+	};
+}
+
+function getLogEntriesSnapshot() {
+	if (!logList) {
+		return [];
+	}
+	return Array.from(logList.children).map((entry) => entry.textContent || "");
+}
+
+function hasExactlyOneHumanPlayer(players = []) {
+	return Array.isArray(players) &&
+		players.filter((player) => player?.isBot !== true).length === 1;
+}
+
+function createSavedGameSnapshot() {
+	return {
+		schemaVersion: SAVED_GAME_SCHEMA_VERSION,
+		savedAt: Date.now(),
+		appVersion: APP_VERSION,
+		tableId,
+		runtimeState: {
+			totalHands,
+			hadHumansAtStart,
+			currentGameSaveEligible,
+			exitEventSent,
+			summaryButtonsVisible,
+			handFastForwardActive,
+			autoplayToGameEnd,
+			nextChipTransferId,
+			notifications: notifArr.slice(),
+			pendingNotifications: pendingNotif.slice(),
+			logEntries: getLogEntriesSnapshot(),
+		},
+		flowState: clonePlainValue(currentFlowState, { type: "unknown" }),
+		gameState: createGameStateSnapshot(),
+	};
+}
+
+function shouldSaveCurrentGame() {
+	return !SPEED_MODE &&
+		currentGameSaveEligible === true &&
+		gameState.gameStarted === true &&
+		gameState.gameFinished !== true &&
+		hasExactlyOneHumanPlayer(gameState.players);
+}
+
+function shouldRemoveCurrentGameSave() {
+	return currentGameSaveEligible === true &&
+		gameState.gameStarted === true &&
+		(
+			gameState.gameFinished === true ||
+			!hasExactlyOneHumanPlayer(gameState.players)
+		);
+}
+
+function removeSavedGameSnapshot() {
+	const storage = getLocalStorage();
+	if (!storage) {
+		return;
+	}
+	try {
+		storage.removeItem(SAVED_GAME_STORAGE_KEY);
+	} catch (error) {
+		console.warn("saved game remove failed", error);
+	}
+}
+
+function saveCurrentGameSnapshot() {
+	if (!shouldSaveCurrentGame()) {
+		if (shouldRemoveCurrentGameSave()) {
+			removeSavedGameSnapshot();
+		}
+		return;
+	}
+
+	const storage = getLocalStorage();
+	if (!storage) {
+		return;
+	}
+
+	try {
+		storage.setItem(
+			SAVED_GAME_STORAGE_KEY,
+			JSON.stringify(createSavedGameSnapshot()),
+		);
+	} catch (error) {
+		console.warn("saved game write failed", error);
+	}
+}
+
+function isValidSavedGameSnapshot(snapshot) {
+	return snapshot?.schemaVersion === SAVED_GAME_SCHEMA_VERSION &&
+		snapshot?.gameState?.gameStarted === true &&
+		snapshot?.gameState?.gameFinished !== true &&
+		Array.isArray(snapshot.gameState.allPlayers) &&
+		Array.isArray(snapshot.gameState.players) &&
+		hasExactlyOneHumanPlayer(snapshot.gameState.players) &&
+		snapshot.flowState &&
+		typeof snapshot.flowState.type === "string";
+}
+
+function readSavedGameSnapshot() {
+	if (SPEED_MODE) {
+		return null;
+	}
+
+	const storage = getLocalStorage();
+	if (!storage) {
+		return null;
+	}
+
+	try {
+		const rawSnapshot = storage.getItem(SAVED_GAME_STORAGE_KEY);
+		if (!rawSnapshot) {
+			return null;
+		}
+		const snapshot = JSON.parse(rawSnapshot);
+		if (isValidSavedGameSnapshot(snapshot)) {
+			return snapshot;
+		}
+		storage.removeItem(SAVED_GAME_STORAGE_KEY);
+	} catch (error) {
+		console.warn("saved game read failed", error);
+		removeSavedGameSnapshot();
+	}
+	return null;
+}
+
+function setCurrentFlowState(flowState) {
+	currentFlowState = clonePlainValue(flowState, { type: "unknown" });
+}
+
+function createActiveTurnFlowState(player, cycles, progressState) {
+	return {
+		type: "active-turn",
+		phaseIndex: gameState.currentPhaseIndex,
+		seatIndex: player.seatIndex,
+		cycles,
+		progressState: {
+			nextIndex: progressState.nextIndex,
+			cycles: progressState.cycles,
+		},
+	};
+}
+
+function normalizeSavedProgressState(progressState) {
+	if (
+		!progressState ||
+		!Number.isFinite(progressState.nextIndex) ||
+		!Number.isFinite(progressState.cycles)
+	) {
+		return null;
+	}
+	return {
+		nextIndex: progressState.nextIndex,
+		cycles: progressState.cycles,
+	};
+}
+
+function normalizeSavedPlayer(player) {
+	return {
+		name: typeof player?.name === "string" ? player.name : "Player",
+		isBot: player?.isBot === true,
+		seatSlot: normalizeNumber(player?.seatSlot, normalizeNumber(player?.seatIndex, 0)),
+		winnerReactionEmoji: typeof player?.winnerReactionEmoji === "string"
+			? player.winnerReactionEmoji
+			: "",
+		winnerReactionUntil: normalizeNumber(player?.winnerReactionUntil, 0),
+		isWinner: player?.isWinner === true,
+		actionState: player?.actionState ? { ...player.actionState } : null,
+		winProbability: typeof player?.winProbability === "number"
+			? player.winProbability
+			: null,
+		lastNonFinalWinProbability:
+			typeof player?.lastNonFinalWinProbability === "number"
+				? player.lastNonFinalWinProbability
+				: null,
+		seatIndex: normalizeNumber(player?.seatIndex, 0),
+		holeCards: Array.isArray(player?.holeCards)
+			? player.holeCards.slice(0, 2)
+			: [null, null],
+		visibleHoleCards: Array.isArray(player?.visibleHoleCards)
+			? player.visibleHoleCards.slice(0, 2)
+			: [false, false],
+		dealer: player?.dealer === true,
+		smallBlind: player?.smallBlind === true,
+		bigBlind: player?.bigBlind === true,
+		folded: player?.folded === true,
+		chips: normalizeNumber(player?.chips, 0),
+		allIn: player?.allIn === true,
+		totalBet: normalizeNumber(player?.totalBet, 0),
+		roundBet: normalizeNumber(player?.roundBet, 0),
+		stats: createStatsSnapshot(player?.stats),
+		botLine: createBotLineSnapshot(player?.botLine),
+		spotState: {
+			...createPlayerSpotState(),
+			...clonePlainValue(player?.spotState, {}),
+		},
+	};
+}
+
+function restoreRuntimeState(runtimeState = {}) {
+	totalHands = normalizeNumber(runtimeState.totalHands, 0);
+	hadHumansAtStart = runtimeState.hadHumansAtStart === true;
+	currentGameSaveEligible = runtimeState.currentGameSaveEligible === true;
+	exitEventSent = false;
+	handFastForwardActive = runtimeState.handFastForwardActive === true;
+	autoplayToGameEnd = runtimeState.autoplayToGameEnd === true;
+	nextChipTransferId = normalizeNumber(runtimeState.nextChipTransferId, 1);
+
+	notifArr.splice(
+		0,
+		notifArr.length,
+		...(Array.isArray(runtimeState.notifications)
+			? runtimeState.notifications.slice(0, MAX_ITEMS)
+			: []),
+	);
+	pendingNotif.splice(
+		0,
+		pendingNotif.length,
+		...(Array.isArray(runtimeState.pendingNotifications)
+			? runtimeState.pendingNotifications
+			: []),
+	);
+
+	if (logList) {
+		logList.replaceChildren();
+		const logEntries = Array.isArray(runtimeState.logEntries)
+			? runtimeState.logEntries
+			: notifArr;
+		logEntries.forEach((message) => {
+			const logEntry = document.createElement("div");
+			logEntry.textContent = message;
+			logList.appendChild(logEntry);
+		});
+	}
+
+	renderNotificationBar(notification, notifArr);
+	setSummaryButtonsVisible(runtimeState.summaryButtonsVisible === true);
+}
+
+function restoreGameState(savedGameState) {
+	const allPlayers = savedGameState.allPlayers.map(normalizeSavedPlayer);
+	const playerBySeatIndex = new Map(
+		allPlayers.map((player) => [player.seatIndex, player]),
+	);
+	const activeSeatIndexes = Array.isArray(savedGameState.activeSeatIndexes)
+		? savedGameState.activeSeatIndexes
+		: savedGameState.players.map((player) => player.seatIndex);
+	const activePlayers = activeSeatIndexes
+		.map((seatIndex) => playerBySeatIndex.get(seatIndex))
+		.filter((player) => player !== undefined);
+
+	Object.assign(gameState, {
+		currentPhaseIndex: normalizeNumber(savedGameState.currentPhaseIndex, 0),
+		currentBet: normalizeNumber(savedGameState.currentBet, 0),
+		pot: normalizeNumber(savedGameState.pot, 0),
+		activeSeatIndex: savedGameState.activeSeatIndex ?? null,
+		handId: normalizeNumber(savedGameState.handId, 0),
+		nextDecisionId: normalizeNumber(savedGameState.nextDecisionId, 1),
+		blindLevel: normalizeNumber(savedGameState.blindLevel, 0),
+		gameStarted: savedGameState.gameStarted === true,
+		gameFinished: savedGameState.gameFinished === true,
+		openCardsMode: savedGameState.openCardsMode === true,
+		spectatorMode: savedGameState.spectatorMode === true,
+		raisesThisRound: normalizeNumber(savedGameState.raisesThisRound, 0),
+		handInProgress: savedGameState.handInProgress === true,
+		deck: Array.isArray(savedGameState.deck)
+			? savedGameState.deck.slice()
+			: INITIAL_DECK.slice(),
+		cardGraveyard: Array.isArray(savedGameState.cardGraveyard)
+			? savedGameState.cardGraveyard.slice()
+			: [],
+		communityCards: Array.isArray(savedGameState.communityCards)
+			? savedGameState.communityCards.slice()
+			: [],
+		players: activePlayers,
+		allPlayers,
+		chipTransfer: clonePlainValue(savedGameState.chipTransfer, null),
+		pendingAction: null,
+		smallBlind: normalizeNumber(savedGameState.smallBlind, INITIAL_SMALL_BLIND),
+		bigBlind: normalizeNumber(savedGameState.bigBlind, INITIAL_BIG_BLIND),
+		lastRaise: normalizeNumber(savedGameState.lastRaise, INITIAL_BIG_BLIND),
+		handContext: {
+			...createHandContextState(),
+			...clonePlainValue(savedGameState.handContext, {}),
+		},
+	});
+}
+
+function resetRuntimeBeforeRestore() {
+	if (notifTimer) {
+		clearTimeout(notifTimer);
+		notifTimer = null;
+	}
+	if (stateSyncTimer !== null) {
+		clearTimeout(stateSyncTimer);
+		stateSyncTimer = null;
+		stateSyncTimerDelay = null;
+	}
+	if (runoutPhaseTimer) {
+		clearTimeout(runoutPhaseTimer);
+		runoutPhaseTimer = null;
+	}
+	clearNewRoundCountdown({ notify: false });
+	clearChipTransferFinishTimer();
+	clearChipTransferAnimation(tableRenderTarget);
+	humanTurnController.hide();
+	isNotifProcessing = false;
+}
+
+function renderRestoredGameState() {
+	seatRefs.forEach((seatRef) => {
+		clearRenderedSeat(seatRef);
+		seatRef.playerSeatIndex = null;
+		seatRef.clearActionLabelState = null;
+		seatRef.clearWinnerReactionState = null;
+		renderSeatSetupState(seatRef, {
+			visible: false,
+			isBot: false,
+			nameEditable: false,
+			controlsVisible: false,
+		});
+	});
+
+	gameState.players.forEach((player) => {
+		bindSeatRefPlayer(player);
+		renderSeatSetupState(getSeatRef(player), {
+			visible: true,
+			isBot: player.isBot,
+			nameEditable: false,
+			controlsVisible: false,
+		});
+		renderPlayerSeat(player);
+		if (
+			!player.isBot &&
+			gameState.handInProgress &&
+			!gameState.openCardsMode &&
+			!player.folded &&
+			player.holeCards.every(Boolean)
+		) {
+			showPlayerQr(player, player.holeCards[0], player.holeCards[1]);
+		} else {
+			hidePlayerQr(player);
+		}
+	});
+
+	renderPot();
+	renderTableCommunityCards(communityCardSlots, gameState.communityCards);
+	renderPlayerChipStacks();
+	updateFastForwardButton();
+	renderStatsOverlay();
+	syncLogUi();
+	instructionsButton.classList.add("hidden");
+	startButton.classList.toggle("hidden", gameState.handInProgress === true);
+	if (!gameState.handInProgress) {
+		setStartButtonLabel("New Round");
+	}
+}
+
+function restoreTableUrl(savedTableId) {
+	tableId = typeof savedTableId === "string" && savedTableId ? savedTableId : null;
+	syncTableUrlWithState();
+}
+
+function resumeRestoredFlow(flowState = {}) {
+	setCurrentFlowState(flowState);
+	if (flowState.type === "chip-transfer") {
+		gameState.chipTransfer = null;
+		clearChipTransferAnimation(tableRenderTarget);
+		finishHandAfterShowdown();
+		return;
+	}
+	if (flowState.type === "runout") {
+		setPhase();
+		return;
+	}
+	if (flowState.type === "active-turn" && gameState.handInProgress) {
+		startButton.classList.add("hidden");
+		startBettingRound({
+			resetRound: false,
+			progressState: normalizeSavedProgressState(flowState.progressState),
+			resumeTurn: {
+				seatIndex: flowState.seatIndex,
+				cycles: normalizeNumber(flowState.cycles, 0),
+			},
+		});
+		return;
+	}
+	if (gameState.handInProgress) {
+		startButton.classList.add("hidden");
+		startBettingRound({ resetRound: false });
+		return;
+	}
+
+	setCurrentFlowState({ type: "between-hands" });
+	setSummaryButtonsVisible(true);
+	setStartButtonLabel("New Round");
+	startButton.classList.remove("hidden");
+	startNewRoundCountdown();
+	saveCurrentGameSnapshot();
+}
+
+function restoreSavedGame(snapshot) {
+	resetRuntimeBeforeRestore();
+	restoreRuntimeState(snapshot.runtimeState);
+	restoreGameState(snapshot.gameState);
+	currentGameSaveEligible = hasExactlyOneHumanPlayer(gameState.players);
+	restoreTableUrl(snapshot.tableId);
+	renderRestoredGameState();
+	syncRuntimePlayback();
+	resumeRestoredFlow(snapshot.flowState);
+	queueStateSync(0);
+}
+
+function trackSavedGameResume() {
+	if (SPEED_MODE) {
+		return;
+	}
+	globalThis.umami?.track("Poker", {
+		resumedGame: true,
+	});
+}
+
+function openResumeGameOverlay(snapshot) {
+	if (!resumeGameOverlay) {
+		return;
+	}
+	pendingSavedGameSnapshot = snapshot;
+	openOverlay("resume");
+}
+
+function closeResumeGameOverlay() {
+	pendingSavedGameSnapshot = null;
+	if (!resumeGameOverlay) {
+		return;
+	}
+	resumeGameOverlay.classList.add("hidden");
+	syncOverlayBackdrop();
+}
+
+function continueSavedGame() {
+	const snapshot = pendingSavedGameSnapshot;
+	if (!snapshot) {
+		return;
+	}
+	removeSavedGameSnapshot();
+	closeResumeGameOverlay();
+	restoreSavedGame(snapshot);
+	trackSavedGameResume();
+}
+
+function discardSavedGame() {
+	removeSavedGameSnapshot();
+	closeResumeGameOverlay();
+}
+
+function handlePageLifecycleSave() {
+	saveCurrentGameSnapshot();
+	trackUnfinishedExit();
+}
 
 /* --------------------------------------------------------------------------------------------------
 Low-Level Utilities And Formatting Helpers
@@ -813,9 +1419,17 @@ function renderVersionOverlay() {
 
 function syncOverlayBackdrop() {
 	const isOverlayOpen = Object.values(overlays).some(({ el }) =>
-		!el.classList.contains("hidden")
+		el && !el.classList.contains("hidden")
 	);
 	overlayBackdrop.classList.toggle("hidden", !isOverlayOpen);
+}
+
+function isBlockingOverlayOpen() {
+	return Object.values(overlays).some((overlay) =>
+		overlay.blocking === true &&
+		overlay.el &&
+		!overlay.el.classList.contains("hidden")
+	);
 }
 
 function openOverlay(name) {
@@ -827,7 +1441,7 @@ function openOverlay(name) {
 		return;
 	}
 	Object.entries(overlays).forEach(([key, entry]) => {
-		entry.el.classList.toggle("hidden", key !== name);
+		entry.el?.classList.toggle("hidden", key !== name);
 	});
 	overlay.beforeOpen?.();
 	syncOverlayBackdrop();
@@ -835,7 +1449,7 @@ function openOverlay(name) {
 
 function closeOverlay(name) {
 	const overlay = overlays[name];
-	if (!overlay) {
+	if (!overlay || overlay.blocking === true) {
 		return;
 	}
 	overlay.el.classList.add("hidden");
@@ -843,8 +1457,10 @@ function closeOverlay(name) {
 }
 
 function closeAllOverlays() {
-	Object.values(overlays).forEach(({ el }) => {
-		el.classList.add("hidden");
+	Object.values(overlays).forEach(({ el, blocking }) => {
+		if (blocking !== true) {
+			el?.classList.add("hidden");
+		}
 	});
 	syncOverlayBackdrop();
 }
@@ -1685,6 +2301,7 @@ function startGame() {
 		gameState.handInProgress = false;
 		createPlayers();
 		hadHumansAtStart = gameState.players.some((p) => !p.isBot);
+		currentGameSaveEligible = hasExactlyOneHumanPlayer(gameState.players);
 		exitEventSent = false;
 
 		if (gameState.players.length > 1) {
@@ -1703,6 +2320,7 @@ function startGame() {
 			preFlop();
 		} else {
 			hadHumansAtStart = false;
+			currentGameSaveEligible = false;
 			seatRefs.forEach((seatRef) => {
 				if (seatRef.nameEl.textContent === "") {
 					renderSeatSetupState(seatRef, { visible: true });
@@ -1872,6 +2490,7 @@ function dealCards() {
 // Execute the standard pre-flop steps: rotate dealer, post blinds, deal cards, start betting.
 function preFlop() {
 	// --- Hand Start And Reset ---------------------------------------------------
+	setCurrentFlowState({ type: "hand-start" });
 	clearNewRoundCountdown({ notify: false });
 	// Analytics: count hands and mark start time
 	totalHands++;
@@ -1936,6 +2555,9 @@ function preFlop() {
 			});
 			renderStatsOverlay();
 			setSummaryButtonsVisible(true);
+		}
+		if (currentGameSaveEligible) {
+			removeSavedGameSnapshot();
 		}
 		queueStateSync(0);
 		return; // skip the rest of preFlop()
@@ -2041,11 +2663,17 @@ function setPhase() {
 
 function queueRunoutPhaseAdvance(reason = "") {
 	humanTurnController.hide();
+	setCurrentFlowState({
+		type: "runout",
+		reason,
+		phaseIndex: gameState.currentPhaseIndex,
+	});
 	const runoutPhaseDelay = getRunoutPhaseDelay();
 	if (
 		!isAllInRunout(gameState.players, gameState.currentBet) ||
 		runoutPhaseDelay === 0
 	) {
+		saveCurrentGameSnapshot();
 		return setPhase();
 	}
 	if (runoutPhaseTimer) {
@@ -2060,6 +2688,7 @@ function queueRunoutPhaseAdvance(reason = "") {
 		runoutPhaseTimer = null;
 		setPhase();
 	}, runoutPhaseDelay);
+	saveCurrentGameSnapshot();
 }
 
 /* --------------------------------------------------------------------------------------------------
@@ -2239,32 +2868,38 @@ function runBotTurn({ player, cycles, nextPlayer }) {
 	});
 }
 
-function startBettingRound() {
+function startBettingRound(options = {}) {
 	// --- Round Reset -------------------------------------------------------------
-	const roundStartPlan = createBettingRoundStartPlan(gameState);
-	if (roundStartPlan.botIntentResetReason) {
-		clearBotCheckRaiseIntents(roundStartPlan.botIntentResetReason);
-		clearBotPassiveValueCheckIntents(roundStartPlan.botIntentResetReason);
-	}
-	applyPlayerPatches(roundStartPlan.playerPatches);
-	applyGameStatePatch(roundStartPlan.gameStatePatch);
-	applyHandContextPatch(roundStartPlan.handContextPatch);
-	roundStartPlan.playerPatches.forEach(({ player, patch }) => {
-		if ("roundBet" in patch) {
-			renderPlayerSeat(player);
+	const shouldResetRound = options.resetRound !== false;
+	if (shouldResetRound) {
+		const roundStartPlan = createBettingRoundStartPlan(gameState);
+		if (roundStartPlan.botIntentResetReason) {
+			clearBotCheckRaiseIntents(roundStartPlan.botIntentResetReason);
+			clearBotPassiveValueCheckIntents(roundStartPlan.botIntentResetReason);
 		}
-	});
+		applyPlayerPatches(roundStartPlan.playerPatches);
+		applyGameStatePatch(roundStartPlan.gameStatePatch);
+		applyHandContextPatch(roundStartPlan.handContextPatch);
+		roundStartPlan.playerPatches.forEach(({ player, patch }) => {
+			if ("roundBet" in patch) {
+				renderPlayerSeat(player);
+			}
+		});
+	}
 	logFlow("startBettingRound", {
 		phase: getCurrentPhase(gameState.currentPhaseIndex),
 		currentBet: gameState.currentBet,
 		lastRaise: gameState.lastRaise,
 		order: gameState.players.map((p) => p.name),
+		resume: !shouldResetRound,
 	});
 	// Clear action indicators from the previous betting round
 	clearActiveTurnPlayer(false);
-	gameState.players.forEach((player) => {
-		clearSeatActionVisualState(getSeatRef(player), { preserveAllIn: true });
-	});
+	if (shouldResetRound) {
+		gameState.players.forEach((player) => {
+			clearSeatActionVisualState(getSeatRef(player), { preserveAllIn: true });
+		});
+	}
 	clearPendingAction();
 
 	const startExit = getBettingRoundStartExit(gameState);
@@ -2278,11 +2913,15 @@ function startBettingRound() {
 		return queueRunoutPhaseAdvance(startExit.reason);
 	}
 
-	let progressState = createBettingRoundProgressState(gameState);
+	let progressState = normalizeSavedProgressState(options.progressState) ||
+		createBettingRoundProgressState(gameState);
+	const loggedStartPlayer = gameState.players.length > 0
+		? gameState.players[progressState.nextIndex % gameState.players.length]
+		: null;
 
 	logFlow("betting start index", {
 		index: progressState.nextIndex,
-		player: gameState.players[progressState.nextIndex].name,
+		player: loggedStartPlayer?.name ?? null,
 	});
 
 	// --- Turn Loop ----------------------------------------------------------------
@@ -2349,22 +2988,48 @@ function startBettingRound() {
 			});
 		}
 
+		return runTurn(step.player, step.cycles, nextPlayer);
+	}
+
+	function runTurn(player, cycles, nextPlayer) {
+		setCurrentFlowState(
+			createActiveTurnFlowState(player, cycles, progressState),
+		);
+
 		// --- Bot Branch --------------------------------------------------------------
 		// If this is a bot, choose an action based on hand strength
-		if (step.player.isBot) {
-			return runBotTurn({
-				player: step.player,
-				cycles: step.cycles,
+		if (player.isBot) {
+			runBotTurn({
+				player,
+				cycles,
 				nextPlayer,
 			});
+			saveCurrentGameSnapshot();
+			return;
 		}
 
 		// --- Human Branch ------------------------------------------------------------
-		return humanTurnController.runHumanTurn({
-			player: step.player,
-			cycles: step.cycles,
+		humanTurnController.runHumanTurn({
+			player,
+			cycles,
 			nextPlayer,
 		});
+		saveCurrentGameSnapshot();
+	}
+
+	const resumeTurn = options.resumeTurn;
+	if (
+		resumeTurn &&
+		Number.isFinite(resumeTurn.seatIndex) &&
+		Number.isFinite(resumeTurn.cycles)
+	) {
+		const resumePlayer = gameState.players.find((player) =>
+			player.seatIndex === resumeTurn.seatIndex
+		);
+		if (resumePlayer && !resumePlayer.folded && !resumePlayer.allIn) {
+			runTurn(resumePlayer, resumeTurn.cycles, nextPlayer);
+			return;
+		}
 	}
 
 	nextPlayer();
@@ -2461,7 +3126,9 @@ function startChipTransferAnimation(commitPlan, onDone) {
 		players: getPlayerSeatRenderData(gameState.players),
 		chipTransfer,
 	});
+	setCurrentFlowState({ type: "chip-transfer" });
 	queueStateSync(0);
+	saveCurrentGameSnapshot();
 
 	chipTransferFinishTimer = setTimeout(() => {
 		chipTransferFinishTimer = null;
@@ -2509,8 +3176,10 @@ function finishHandAfterShowdown() {
 	setSummaryButtonsVisible(true);
 	setStartButtonLabel("New Round");
 	startButton.classList.remove("hidden");
+	setCurrentFlowState({ type: "between-hands" });
 	startNewRoundCountdown();
 	queueStateSync();
+	saveCurrentGameSnapshot();
 }
 
 function doShowdown() {
@@ -2703,7 +3372,7 @@ function init() {
 
 	document.addEventListener("touchstart", function () {}, false);
 	document.addEventListener("keydown", (ev) => {
-		if (ev.key === "Escape") {
+		if (ev.key === "Escape" && !isBlockingOverlayOpen()) {
 			closeAllOverlays();
 		}
 	}, false);
@@ -2743,11 +3412,26 @@ function init() {
 		() => closeOverlay("instructions"),
 		false,
 	);
-	overlayBackdrop.addEventListener("click", closeAllOverlays, false);
-	globalThis.addEventListener("pagehide", () => trackUnfinishedExit(), false);
+	resumeContinueButton?.addEventListener("click", continueSavedGame, false);
+	resumeNewButton?.addEventListener("click", discardSavedGame, false);
+	overlayBackdrop.addEventListener("click", () => {
+		if (!isBlockingOverlayOpen()) {
+			closeAllOverlays();
+		}
+	}, false);
+	globalThis.addEventListener("pagehide", handlePageLifecycleSave, false);
 	globalThis.addEventListener(
 		"beforeunload",
-		() => trackUnfinishedExit(),
+		handlePageLifecycleSave,
+		false,
+	);
+	document.addEventListener(
+		"visibilitychange",
+		() => {
+			if (document.visibilityState === "hidden") {
+				handlePageLifecycleSave();
+			}
+		},
 		false,
 	);
 	humanTurnController.init();
@@ -2759,6 +3443,11 @@ function init() {
 	}
 	for (const closeButton of closeButtons) {
 		closeButton.addEventListener("click", deletePlayer, false);
+	}
+
+	const savedGameSnapshot = readSavedGameSnapshot();
+	if (savedGameSnapshot) {
+		openResumeGameOverlay(savedGameSnapshot);
 	}
 }
 
@@ -2790,7 +3479,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-06-15-v3";
+const SERVICE_WORKER_VERSION = "2026-06-19-v1";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
