@@ -7,11 +7,27 @@ Version log writing guide:
 - Do not mention log, speedmode, or internal diagnostics changes in public version entries.
 - Keep internal batch or output-location changes out of the public version log.
 - Group related tuning work into one coherent entry instead of listing every small internal step.
+- Add optional contributor credits as dedicated metadata instead of release notes.
 */
 
-export const APP_VERSION = "1.4.0";
+export const APP_VERSION = "1.5.0";
 
 export const VERSION_LOG = [
+	{
+		version: "1.5.0",
+		date: "2026-07-31",
+		title: "Your-turn sound alerts",
+		credit: {
+			name: "dedodgingese",
+			url: "https://github.com/dedodgingese",
+		},
+		notes: [
+			"A short sound now signals when it is time for a human player to act.",
+			"Solo games play the alert on the shared table, while multiplayer alerts stay on the active player's companion or remote view.",
+			"A saved Sound on/off control lets each device silence alerts.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.4.0",
 		date: "2026-06-19",

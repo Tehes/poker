@@ -62,6 +62,7 @@ import {
 	getPlayerActionState,
 } from "./shared/actionModel.js";
 import { createHumanTurnController } from "./shared/humanTurnController.js";
+import { initSound, initSoundButton, playTurnChime } from "./shared/sound.js";
 import {
 	buildPublicPlayerView,
 	buildSyncView,
@@ -129,6 +130,7 @@ const statsTableBody = document.querySelector("#stats-table-body");
 const logOverlay = document.querySelector("#log-overlay");
 const logCloseButton = document.querySelector("#log-close-button");
 const versionButton = document.querySelector("#version-button");
+const soundButton = document.querySelector("#sound-button");
 const versionOverlay = document.querySelector("#version-overlay");
 const versionCloseButton = document.querySelector("#version-close-button");
 const versionList = document.querySelector("#version-list");
@@ -1401,6 +1403,17 @@ function renderVersionOverlay() {
 		const meta = document.createElement("span");
 		meta.className = "version-entry-meta";
 		meta.textContent = entry.date;
+		heading.appendChild(meta);
+
+		if (entry.credit) {
+			const credit = document.createElement("a");
+			credit.className = "version-entry-credit";
+			credit.href = entry.credit.url;
+			credit.target = "_blank";
+			credit.rel = "noopener noreferrer";
+			credit.textContent = `Contributed by @${entry.credit.name}`;
+			heading.appendChild(credit);
+		}
 
 		const notes = document.createElement("ul");
 		notes.className = "version-entry-notes";
@@ -1410,7 +1423,6 @@ function renderVersionOverlay() {
 			notes.appendChild(noteItem);
 		});
 
-		heading.appendChild(meta);
 		versionEntry.appendChild(heading);
 		versionEntry.appendChild(notes);
 		versionList.appendChild(versionEntry);
@@ -2009,6 +2021,11 @@ const humanTurnController = createHumanTurnController({
 	actionPollInterval: ACTION_POLL_INTERVAL,
 	actionStep: CHIP_UNIT,
 	onControlsHidden: updateFastForwardButton,
+	onNewTurn: () => {
+		if (!hasStateSyncEnabled()) {
+			playTurnChime();
+		}
+	},
 	setActiveTurnPlayer,
 	setPendingAction,
 	clearPendingAction,
@@ -3352,6 +3369,9 @@ App Bootstrap And Public API
 ---------------------------------------------------------------------------------------------------*/
 
 function init() {
+	initSound();
+	initSoundButton(soundButton);
+
 	// Prevent framing
 	if (globalThis.top !== globalThis.self) {
 		try {
@@ -3479,7 +3499,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-06-19-v1";
+const SERVICE_WORKER_VERSION = "2026-07-31-v1";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

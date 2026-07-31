@@ -297,6 +297,7 @@ export function createHumanTurnController({
 	actionPollInterval = 1000,
 	actionStep = 10,
 	onControlsHidden = null,
+	onNewTurn = null,
 	setActiveTurnPlayer,
 	setPendingAction,
 	clearPendingAction,
@@ -493,6 +494,7 @@ export function createHumanTurnController({
 	function runHumanTurn({ player, cycles, nextPlayer }) {
 		releaseActiveTurn({ clearPending: true });
 		setActiveTurnPlayer(player);
+		onNewTurn?.(player);
 
 		const turnState = {
 			player,
@@ -540,6 +542,7 @@ export function createSeatActionControls({
 	decrementButton = null,
 	incrementButton = null,
 	onActionError = null,
+	onNewTurn = null,
 }) {
 	// Synced seat views only submit actions to the host/backend.
 	// They reuse the same control shell, but do not own a local turn lifecycle.
@@ -609,6 +612,7 @@ export function createSeatActionControls({
 		currentPendingAction = pendingAction;
 		if (isNewTurn) {
 			isSubmittingAction = false;
+			onNewTurn?.();
 		}
 		turnActionUi.show(pendingAction, {
 			resetAmount: isNewTurn,

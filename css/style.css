@@ -547,6 +547,10 @@ TABLE-MIDDLE
     gap: 1rem 0;
 }
 
+.actions .sound-toggle {
+    margin: 0 2vmin;
+}
+
 /*
 -------------------------------------------------------------------
 OVERLAY
@@ -777,7 +781,8 @@ OVERLAY
     color: var(--font-color);
 }
 
-.version-entry-meta {
+.version-entry-meta,
+.version-entry-credit {
     display: inline-flex;
     width: fit-content;
     align-items: center;
@@ -787,6 +792,11 @@ OVERLAY
     border: 1px solid var(--blue-lightest);
     border-radius: 999px;
     padding: 0 0.5rem;
+}
+
+.version-entry-credit:where(:hover, :focus) {
+    color: var(--font-color);
+    border-color: var(--font-color);
 }
 
 .version-entry-notes {
@@ -821,7 +831,8 @@ footer {
     gap: 0.75rem;
 }
 
-.version-button {
+.version-button,
+.sound-toggle {
     width: auto;
     margin: 0;
     padding: 0.35rem 0.7rem;
@@ -830,17 +841,19 @@ footer {
     background-color: transparent;
     color: var(--blue-lightest);
     font-size: 0.8rem;
-    line-height: 1;
+    line-height: 0.9;
     box-shadow: none;
 }
 
-.version-button:hover {
+.version-button:hover,
+.sound-toggle:hover {
     color: var(--font-color);
     border-color: var(--font-color);
     background-color: hsla(0, 0%, 100%, 0.06);
 }
 
-.version-button:active {
+.version-button:active,
+.sound-toggle:active {
     background-color: hsla(0, 0%, 100%, 0.08);
     box-shadow: none;
 }

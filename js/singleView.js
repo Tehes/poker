@@ -23,6 +23,7 @@ import {
 	shouldShowSeatActionControls,
 } from "./shared/humanTurnController.js";
 import { getSeatView, getTableView } from "./shared/syncViewModel.js";
+import { initSound, initSoundButton, playTurnChime } from "./shared/sound.js";
 
 /* --------------------------------------------------------------------------------------------------
 Variables
@@ -46,6 +47,7 @@ const singleAmountSlider = document.getElementById("single-amount-slider");
 const singleAmountIncrementButton = document.getElementById("single-amount-increment-button");
 const singleSliderOutput = document.getElementById("single-slider-output");
 const singleSwitchLink = document.getElementById("single-switch-link");
+const soundButton = document.getElementById("sound-button");
 const onlineOnlyElements = [betEl, potEl, singleActionPanelEl];
 const urlParams = new URLSearchParams(globalThis.location.search);
 const tableId = urlParams.get("tableId") || "";
@@ -94,6 +96,7 @@ const actionControls = createSeatActionControls({
 	sliderOutput: singleSliderOutput,
 	decrementButton: singleAmountDecrementButton,
 	incrementButton: singleAmountIncrementButton,
+	onNewTurn: () => playTurnChime(),
 });
 
 /* --------------------------------------------------------------------------------------------------
@@ -101,6 +104,8 @@ Functions
 ---------------------------------------------------------------------------------------------------*/
 
 function init() {
+	initSound();
+	initSoundButton(soundButton);
 	document.addEventListener("touchstart", function () {}, false);
 	document.addEventListener("visibilitychange", handleVisibilityChange);
 	actionControls.init();

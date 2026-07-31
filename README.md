@@ -36,6 +36,8 @@ Commercial use, paid hosting, resale, and misleading rebranding are not allowed 
   and the full remote table.
 - **Remote Player Actions**: In synced multiplayer games, the active player can act directly from
   their own device.
+- **Turn Sound Alerts**: An optional cue signals human turns on the shared table in solo games and
+  on the active player's device in multiplayer. The sound setting is saved per device.
 - **Automatic Game Logic**: Handles blinds, bets, pots, side pots, and showdown evaluations.
 - **Progressive Blinds**: Blinds increase every 6 hands using a hand-based formula with safe
   nice-step rounding, so the pace stays stable even short-handed or heads-up.
