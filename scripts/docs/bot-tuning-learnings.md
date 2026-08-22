@@ -2,6 +2,18 @@
 
 Purpose: This document records accepted and rejected bot-tuning routes so future iterations do not repeat already falsified hypotheses without new evidence.
 
+## 2026-08-22: Multi-Raised Call Realization
+
+### Accepted: Narrower Entry Without Sacrificing Playability
+
+- **Pattern:** Bots carried too many fragile hands through additional preflop raises, then reached postflop with ranges that were wider but difficult to realize.
+- **Route:** Reuse the central preflop realization model for multi-raised calls so suitedness, connectivity, pair type, domination risk, position, and pressure decide which speculative hands continue.
+- **Result:** Accepted. The candidate trims weak multi-raised entries instead of forcing broader defense for MDF.
+- **Evidence:** In the 1000-run acceptance batch, flop facing-bet spots after a final `callVsMultiRaise` route fell from `1278` to `1134`, while their fold rate improved from `55.1%` to `53.4%`. The surviving range is smaller but slightly more capable of continuing.
+- **Keep:** Treat range width and playability as separate concerns. Preserve suited, connected, paired, and otherwise realizable hands; do not preserve weak entries only to increase raw defense frequency.
+- **Do not repeat blindly:** Do not repair multi-raised ranges with combo lists or MDF call overrides. Tune the shared realization inputs and validate the resulting range composition.
+- **Watchpoint:** The targeted equity pass exposed a separate postflop classification issue around apparent two-pair value on paired boards. It is not part of this accepted preflop candidate and should not be folded into it without a separate decision.
+
 ## 2026-06-15: Structural Made-Hand Call Relief
 
 ### Rejected: Narrow Relief Was Too Small To Ship

@@ -516,6 +516,12 @@ function selectPreflopEquityCandidate(decision) {
 	const flatScore = decision.flatScore ?? 0;
 	const strengthScore = decision.strengthScore ?? 0;
 	const raiseScore = getPreflopRaiseScore(decision);
+	if (
+		(decision.action === "call" || decision.action === "fold") &&
+		decision.preflopRealizationApplied === true
+	) {
+		return { reason: "preflopRealizationDecision", handClass, priority: 100 };
+	}
 
 	if (decision.action === "call" && WEAK_PREFLOP_FAMILIES.has(handClass)) {
 		return {

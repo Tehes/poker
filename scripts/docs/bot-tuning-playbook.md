@@ -53,6 +53,23 @@ Der Bot bleibt heuristisch. Equity, MDF und Batch-Metriken sind Diagnose- und Ka
 8. Staged Validation laufen lassen.
 9. Akzeptieren, verwerfen oder Diagnose aktualisieren.
 
+## Goal-Loop-Vertrag
+
+Ein Goal bearbeitet genau ein Leak und eine Root-Cause. Es darf nicht verlangen, um jeden Preis
+eine Verbesserung zu produzieren, und beginnt keine angrenzende Tuning-Frage.
+
+- Diagnose und Counterfactual zählen noch nicht als Kandidaten-Pass.
+- Es gibt höchstens zwei Kandidaten-Pässe mit jeweils einer Hypothese und einem fokussierten Hebel.
+- Ein dritter Pass ist nur erlaubt, wenn neue Evidenz die Hypothese materiell verändert und der
+  Kandidat vor der nächsten Code-Änderung neu qualifiziert wird.
+- Ohne neue Evidenz endet das Goal nach zwei verworfenen Kandidaten.
+- Ein fehlgeschlagener 1000er Acceptance-Batch beendet das Goal; danach folgt kein weiterer Pass.
+- Derselbe Batch wird ohne materielle Code- oder Hypothesenänderung nicht wiederholt.
+- Nach jedem Pass wird nur kurz Hypothese, Änderung, Evidenz und nächstes Gate festgehalten.
+
+Terminalzustände sind `accepted` oder `no-qualified-candidate`. Ein echter externer Blocker darf das
+Goal blockieren; schwierige oder uneindeutige Tuning-Ergebnisse sind kein Blocker.
+
 ## Baseline Policy
 
 Nutze die letzte akzeptierte 1000er Baseline, solange sie noch zur Bot-Version und zur Fragestellung passt.
@@ -193,6 +210,10 @@ Auswerten nach:
 Wichtig:
 
 - Einzelbeispiele sind Hinweise, keine Wahrheit.
+- `equity_enriched/candidates` misst nur die Abdeckung der vorselektierten Kandidaten. Bei einer
+  gezielten Diagnose zusätzlich prüfen, ob alle Entscheidungen des untersuchten Pfads ein
+  `equityDiagnostic` haben. Fehlende Abdeckung am Mechanismus oder an der Route ergänzen, nicht über
+  einzelne bekannte Handfamilien.
 - Negative Equity-Margin ist kein automatischer Fold.
 - Positive Equity-Margin ist kein automatischer Call.
 - Position, Realisierung, Stackdruck, Handklasse und Exploitability bleiben entscheidend.
@@ -262,6 +283,24 @@ Ein Kandidat ist qualifiziert, wenn:
 - Core-Action-Engines nicht austrocknen,
 - keine harte Guardrail gefährdet wird.
 
+### Range-Preservation-Gate
+
+Bei jedem Tightening muss vor der Bewertung gezeigt werden, welche plausiblen Hände als
+Nebenwirkung seltener gespielt werden. Der Vergleich muss mindestens enthalten:
+
+- Zielcluster und bewusst entfernte schwache Hände
+- geschützte benachbarte Handfamilien
+- starke Kontrollgruppe
+- guter und schlechter Preis
+- HU/MW sowie IP/OOP, soweit für die Route relevant
+
+Core Health und eine verbesserte Zielmetrik reichen nicht als Freigabe. Der Kandidat ist nicht
+qualifiziert, wenn geschützte priced/playable Hände deutlich austrocknen, ohne dass Equity,
+Backtrace und Range Composition den Verlust stützen.
+
+Bei jedem Loosening gilt die Gegenprobe: Zuerst zeigen, welcher zusätzliche Trash in die Range
+gelangt, bevor die gewünschte Mehraktivität bewertet wird.
+
 Ein Kandidat ist nicht qualifiziert, wenn:
 
 - er nur eine auffällige Zahl optimiert,
@@ -299,6 +338,13 @@ Vor jeder Code-Änderung kurz festhalten:
 - wichtigste Nebenwirkungen
 - Falsifikationskriterien
 
+Bei Range-, Call- oder Defense-Tuning zusätzlich als Kandidatenvertrag festhalten:
+
+- welche Hände oder Cluster bewusst häufiger oder seltener gespielt werden sollen
+- welche benachbarten Handfamilien geschützt bleiben müssen
+- welche Preis-, Positions- und Struktur-Spots geschützt bleiben müssen
+- welche Verschiebung den Kandidaten unabhängig von der Zielmetrik falsifiziert
+
 Ein Pass = eine Ursache, ein fokussierter Hebel.
 
 ## Gute Hebel
@@ -328,7 +374,19 @@ Nach Bot-Code-Änderung:
 deno check js/bot.js
 ```
 
+Bei Range-, Call- oder Defense-Tuning vor den großen Batches zusätzlich einen Counterfactual-Audit
+auf der Vergleichsbasis durchführen: Welche geloggten Entscheidungen würden durch den neuen Hebel
+kippen, und aus welchen Handfamilien, Preis-, Positions- und Struktur-Spots kommen diese Flips?
+
+Vor dem Batch außerdem die minimale, typische und maximale Wirkung des Hebels auf den betroffenen
+Score oder die Barriere ausrechnen. Ein großer möglicher Ausschlag ist als Range-Schnitt zu
+validieren, nicht als kleines Feintuning.
+
 Dann staged validieren:
+
+Die Ladder wird pro Kandidat nur so weit durchlaufen, wie das vorherige Gate bestanden ist. Ein
+Kandidat erhält jede Stufe höchstens einmal. Nur der final qualifizierte Kandidat erhält den 1000er
+Acceptance-Batch.
 
 ### 1. Strukturcheck
 
@@ -352,15 +410,25 @@ Wenn der 500er stabil ist:
 deno task engine:batch:1000
 ```
 
-### 4. Equity-Acceptance
+### 4. Equity bei Bedarf
 
-Wenn der Kandidat equity-relevant ist oder die Summary ambivalent bleibt:
+Equity ist kein automatischer Schritt. Ein Equity-Trigger liegt vor, wenn mindestens eines gilt:
+
+- Call- oder Range-Qualität bleibt nach Core-, MDF- und Backtrace-Auswertung ambivalent.
+- priced/playable Hände oder andere geschützte Kontrollgruppen verschwinden deutlich.
+- High-Equity-Folds oder Low-Equity-Calls sind ein plausibler Teil der Diagnose.
+- Die vorhandenen Metriken erzählen widersprüchliche Geschichten über denselben Zielcluster.
+
+Dann zuerst einen kleinen passenden Diagnosebatch aus dem Diagnose-Menü nutzen. Nur wenn der
+Kandidat danach weiter qualifiziert, die Frage aber für den Live-Kandidaten materiell offen bleibt,
+einen finalen 1000er Equity-Batch ausführen:
 
 ```bash
 deno task engine:batch -- --runs=1000 --equity-preflop --equity-limit=3000
 ```
 
-Bei kleinen, klar abgegrenzten Feintunings darf ein kleiner Zwischenbatch genutzt werden, aber ein Live-Kandidat braucht eine belastbare Acceptance.
+Pro Goal gibt es höchstens einen finalen 1000er Equity-Batch. Ohne dokumentierten Equity-Trigger
+entfällt dieser Schritt.
 
 ## Hard Guardrails
 
@@ -394,6 +462,10 @@ Akzeptiere einen Kandidaten nur, wenn:
 - keine Verbesserung durch Trash-Calls, Spew oder Problemverschiebung entsteht,
 - der Bot als Ganzes plausibler spielt.
 
+Ein Core-Batch validiert Core Health, aber noch keine Range Acceptance. Wenn ein dokumentierter
+Equity-Trigger vorliegt, darf der Status `accepted` erst nach der erforderlichen Equity-Prüfung
+vergeben werden. Ohne Equity-Trigger reichen Core Acceptance und die übrigen passenden Nachweise.
+
 Verwerfe oder überarbeite, wenn:
 
 - die Verbesserung nur lokal und nicht strategisch plausibel ist,
@@ -411,9 +483,12 @@ Kurz berichten:
 - Hypothese
 - geänderter Hebel
 - wichtige Metriken vorher/nachher
+- Zielcluster sowie geschützte Kontrollgruppen vorher/nachher
+- Counterfactual-Flips nach Handfamilie, Preis, Position und Struktur, soweit relevant
 - Equity-Ergebnis, falls genutzt
 - Guardrail-Status
-- Entscheidung: `accepted`, `rejected` oder `no-qualified-candidate`
+- Kandidatenentscheidung: `accepted` oder `rejected`, falls ein Kandidat getestet wurde
+- Goal-Abschluss: `accepted` oder `no-qualified-candidate`
 
 Wenn `accepted`:
 

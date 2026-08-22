@@ -10,9 +10,19 @@ Version log writing guide:
 - Add optional contributor credits as dedicated metadata instead of release notes.
 */
 
-export const APP_VERSION = "1.5.0";
+export const APP_VERSION = "1.5.1";
 
 export const VERSION_LOG = [
+	{
+		version: "1.5.1",
+		date: "2026-08-22",
+		title: "Cleaner multi-raised pots",
+		notes: [
+			"Bots are now more selective when calling additional preflop raises with fragile hands that play poorly after the flop.",
+			"Suited, connected, paired, and otherwise playable hands keep their role while weaker speculative hands reach fewer difficult pots.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.5.0",
 		date: "2026-07-31",

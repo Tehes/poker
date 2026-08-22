@@ -498,6 +498,7 @@ function getLegacyPreflopLogScores(cardA, cardB, context = {}) {
 	return {
 		handFamily: profile.handFamily,
 		strengthScore: profile.chenScore,
+		playability: profile.playability,
 		playabilityScore: profile.playability,
 		dominationPenalty: profile.dominationRisk,
 		dominationRisk: profile.dominationRisk,
@@ -1146,7 +1147,7 @@ function getPreflopRealizationPressure(profile) {
 
 function getPreflopRealizationPenalty(
 	profile,
-	{ route, player, spotContext, preflopSeatClass, activePlayerCount, potOdds } = {},
+	{ route, player, spotContext, preflopSeatClass, activePlayerCount, potOdds, stackRatio } = {},
 ) {
 	const context = spotContext || {};
 	const protectedActionSpot = isProtectedShortHandedActionSpot({
@@ -1180,6 +1181,25 @@ function getPreflopRealizationPenalty(
 		}
 		return Math.max(0, penalty);
 	}
+	if (route === "multi-raised-call") {
+		const playabilityDemand = Math.max(0, Math.min(1, (8.50 - profile.playability) / 2));
+		const realizationDemand = profile.smallPair ? 1 : playabilityDemand;
+		if ((!profile.pair && !profile.suited) || realizationDemand === 0) {
+			return 0;
+		}
+
+		let penalty = 0.18;
+		penalty += Math.max(0, Math.min(0.18, (stackRatio - 0.08) * 1.20));
+		if (activePlayerCount >= 4) {
+			penalty += 0.06;
+		}
+		if (potOdds >= 0.36) {
+			penalty += 0.04;
+		} else if (potOdds <= 0.20) {
+			penalty -= 0.04;
+		}
+		return Math.max(0, Math.min(0.42, penalty * realizationDemand));
+	}
 	if (route === "defend" && player?.bigBlind && context.facingAggression && profile.handFamily === "suitedJunk") {
 		return 0.15;
 	}
@@ -1206,6 +1226,9 @@ function getPreflopRealizationReason(profile, { route, player, spotContext }) {
 	}
 	if (route === "short-handed-defend" && profile.handFamily === "offsuitJunk") {
 		return "offsuit_junk_short_handed_defend_pressure";
+	}
+	if (route === "multi-raised-call") {
+		return "speculative_multi_raised_call_pressure";
 	}
 	if (route === "defend" && profile.handFamily === "suitedJunk") {
 		return "suited_junk_big_blind_defend_pressure";
@@ -1771,6 +1794,9 @@ function getPreflopPassiveCallScore({
 	spotContext,
 	potOdds,
 	positionFactor,
+	preflopRaiseCount,
+	activePlayerCount,
+	stackRatio,
 }) {
 	const shortHandedUnopened = spotContext.unopened && spotContext.actingSlotCount <= 3;
 	const pricedLateDefense = potOdds <= 0.22 && positionFactor >= 0.5;
@@ -1778,10 +1804,22 @@ function getPreflopPassiveCallScore({
 		spotContext.headsUp || shortHandedUnopened || pricedLateDefense;
 	const passiveCallScore = shouldUseDefendScore ? preflopScores.defendScore : preflopScores.flatScore;
 
-	return applyPassiveCallRealization(passiveCallScore, {
+	const cappedCallScore = applyPassiveCallRealization(passiveCallScore, {
 		preflopScores,
 		spotContext,
 	});
+	const realizationPenalty = getPreflopRealizationPenalty(preflopScores, {
+		route: "multi-raised-call",
+		player,
+		spotContext,
+		activePlayerCount,
+		potOdds,
+		stackRatio,
+	});
+
+	return spotContext.multiRaised || preflopRaiseCount > 1
+		? clampPreflopScore(cappedCallScore - realizationPenalty * 10)
+		: cappedCallScore;
 }
 
 function getUnopenedPreflopRaiseThreshold({
@@ -3444,6 +3482,9 @@ export function chooseBotAction(player, gameState) {
 			spotContext,
 			potOdds,
 			positionFactor,
+			preflopRaiseCount,
+			activePlayerCount: active.length,
+			stackRatio,
 		})
 		: preflopScores.strengthScore;
 	const callGateStrengthRatio = preflop && needsToCall && !useHarringtonStrategy
@@ -4776,6 +4817,12 @@ export function chooseBotAction(player, gameState) {
 		) {
 			preflopRealizationRoute = "short-handed-open";
 		} else if (
+			!useHarringtonStrategy &&
+			spotContext.facingAggression &&
+			(spotContext.multiRaised || preflopRaiseCount > 1)
+		) {
+			preflopRealizationRoute = "multi-raised-call";
+		} else if (
 			spotContext.facingAggression &&
 			(player.bigBlind || player.smallBlind) &&
 			preflopScores.handFamily === "offsuitJunk"
@@ -4798,6 +4845,7 @@ export function chooseBotAction(player, gameState) {
 				preflopSeatClass,
 				activePlayerCount: active.length,
 				potOdds,
+				stackRatio,
 			});
 			preflopRealizationApplied = preflopRealizationPenalty > 0;
 			if (preflopRealizationApplied) {
@@ -5488,4 +5536,3 @@ export function chooseBotAction(player, gameState) {
 
 	return decision;
 }
-
