@@ -10,9 +10,20 @@ Version log writing guide:
 - Add optional contributor credits as dedicated metadata instead of release notes.
 */
 
-export const APP_VERSION = "1.5.1";
+export const APP_VERSION = "1.5.2";
 
 export const VERSION_LOG = [
+	{
+		version: "1.5.2",
+		date: "2026-08-22",
+		title: "Sharper paired-board calls",
+		notes: [
+			"Bots now judge private pair strength more carefully when a paired board makes a hand look like two pair.",
+			"Weak lower pairs and small pocket pairs are easier to release under pressure, while stronger board pairs and overpairs keep their defensive role.",
+			"Postflop defense stays active without relying on structurally weak bluffcatchers.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.5.1",
 		date: "2026-08-22",

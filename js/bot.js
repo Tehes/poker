@@ -707,6 +707,7 @@ function analyzeHandContext(hole, board) {
 	let isTopPair = false;
 	let isOverPair = false;
 	let pairClass = "none";
+	let pairedBoardPrivatePairTier = "none";
 
 	if (hand.name === "Pair") {
 		const pairRank = hand.cards[0].rank;
@@ -728,12 +729,31 @@ function analyzeHandContext(hole, board) {
 			pairClass = "weak-pair";
 		}
 	} else if (hand.name === "Two Pair" && pairedBoard) {
-		const hasPrivatePair = pocketPair ||
-			holeRanks.some((rank) => (boardRankCounts[rank] || 0) === 1);
+		const singletonBoardRanks = uniqueBoardRanks.filter((rank) =>
+			boardRankCounts[rank] === 1
+		);
+		const matchedSingletonRanks = holeRanks.filter((rank) =>
+			boardRankCounts[rank] === 1
+		);
+		const hasPrivatePair = pocketPair || matchedSingletonRanks.length > 0;
+		const pairedRankCount = Object.values(boardRankCounts).filter((count) => count >= 2).length;
+		if (hasPrivatePair) {
+			const highestSingletonRank = Math.max(...singletonBoardRanks);
+			const strongPocketPair = pocketPair && pairedRankCount === 1 &&
+				holeRanks[0] > highestSingletonRank;
+			const strongBoardPair = !pocketPair && pairedRankCount === 1 &&
+				(
+					matchedSingletonRanks.length >= 2 ||
+					matchedSingletonRanks[0] === highestSingletonRank
+				);
+			pairedBoardPrivatePairTier = strongPocketPair || strongBoardPair
+				? "strong"
+				: "weak";
+		}
 		pairClass = hasPrivatePair ? "paired-board-private-pair" : "board-pair-only";
 	}
 
-	return { isTopPair, isOverPair, pairClass };
+	return { isTopPair, isOverPair, pairClass, pairedBoardPrivatePairTier };
 }
 
 // Detect draw potential after the flop. Straight draws should not trigger when
@@ -2268,6 +2288,7 @@ function computePostflopContext(player, communityCards, preflop) {
 		topPair: false,
 		overPair: false,
 		pairClass: "none",
+		pairedBoardPrivatePairTier: "none",
 		drawChance: false,
 		drawOuts: 0,
 		drawEquity: 0,
@@ -2283,6 +2304,7 @@ function computePostflopContext(player, communityCards, preflop) {
 	context.topPair = ctxInfo.isTopPair;
 	context.overPair = ctxInfo.isOverPair;
 	context.pairClass = ctxInfo.pairClass;
+	context.pairedBoardPrivatePairTier = ctxInfo.pairedBoardPrivatePairTier;
 
 	if (communityCards.length < 5) {
 		const draws = analyzeDrawPotential(hole, communityCards);
@@ -3321,6 +3343,7 @@ export function chooseBotAction(player, gameState) {
 	const topPair = postflopContext.topPair;
 	const overPair = postflopContext.overPair;
 	const pairClass = postflopContext.pairClass;
+	const pairedBoardPrivatePairTier = postflopContext.pairedBoardPrivatePairTier;
 	const drawChance = postflopContext.drawChance;
 	const drawOuts = postflopContext.drawOuts;
 	const drawEquity = postflopContext.drawEquity;
@@ -3363,6 +3386,15 @@ export function chooseBotAction(player, gameState) {
 	}
 	const privateAwareStrength = Math.min(1, strengthRatio + edgeBoost);
 	const gateStrengthRatio = preflop ? strengthRatio : privateAwareStrength;
+	const pairedBoardCallStrengthRatio = !preflop && pairedBoardPrivatePairTier === "weak"
+		? Math.min(
+			privateAwareStrength,
+			publicScore / 10 + Math.min(
+				publicHandRank === rawHandRank ? 0.02 : 0.08,
+				positiveEdge * (publicHandRank === rawHandRank ? 0.02 : 0.04),
+			),
+		)
+		: gateStrengthRatio;
 	const mZone = getMZone(mRatio);
 	const isGreenZone = mZone === "green";
 	const strengthRatioBase = gateStrengthRatio;
@@ -3489,7 +3521,7 @@ export function chooseBotAction(player, gameState) {
 		: preflopScores.strengthScore;
 	const callGateStrengthRatio = preflop && needsToCall && !useHarringtonStrategy
 		? preflopPassiveCallScore / 10
-		: gateStrengthRatio;
+		: pairedBoardCallStrengthRatio;
 	const isUnopenedPreflopActionSpot = preflop && !useHarringtonStrategy &&
 		spotContext.unopened && !facingRaise;
 

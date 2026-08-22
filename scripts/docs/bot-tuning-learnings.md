@@ -2,6 +2,27 @@
 
 Purpose: This document records accepted and rejected bot-tuning routes so future iterations do not repeat already falsified hypotheses without new evidence.
 
+## 2026-08-22: Paired-Board Private-Pair Calls
+
+### Accepted: Formal Two Pair Is Not Always Strong Private Value
+
+- **Pattern:** On paired boards, the formal `Two Pair` label merged strategically different hands. A lower private board pair or a pocket pair below the board singletons was defended almost like a top private board pair or a pocket pair above the singletons.
+- **Route:** Keep the shared postflop risk line, but evaluate weak paired-board private-pair calls from their public-board strength plus limited private contribution. Leave raise/value logic and stronger neighboring hand families unchanged.
+- **Result:** Accepted. The candidate removes weak bluffcatching calls instead of reducing the whole defense range or adding an MDF exception.
+- **Evidence:** In the 1000-run acceptance batch, lower private-pair calls fell from `80.5%` to `69.7%` and pocket-under calls from `83.1%` to `70.2%`. Top private-pair calls stayed stable at `82.2%` to `81.7%`, while pocket-over calls stayed stable at `80.2%` to `81.5%`.
+- **Equity:** The targeted 300-run equity check reduced paired-board private-pair calls from `954` to `852`; low-equity calls fell from about `642` to `548`, and their share from `67.3%` to `64.3%`.
+- **Keep:** Separate nominal hand rank from the private contribution that actually makes the hand playable. Protect top private pairs, pocket pairs above the board singletons, genuine unpaired-board two pair, trips+, and real draws.
+- **Do not repeat blindly:** Do not tighten all paired-board calls, weaken all two-pair hands, or chase MDF by adding trash calls. Use board shape, private contribution, price, and pressure together.
+- **Watchpoint:** Weak paired-board calls still contain a high low-equity share. Treat that as a future diagnosis trigger only if a fresh report shows a stable remaining cluster; do not stack another broad penalty onto this accepted route.
+
+### Validation Snapshot
+
+- **Comparison baseline:** `tmp/v150-multiraise-realization-acceptance-20260815-1000`
+- **Accepted core batch:** `tmp/poker-engine-batch-20260822-135113`
+- **Accepted equity batch:** `tmp/poker-engine-batch-20260822-135453`
+- **Hard guardrails:** premium preflop folds `0`, bluff raises with made hand `0`, all-in low-edge reraises `0`.
+- **Global defense:** Facing-bet MDF overfold changed only marginally from `13.33%` to `13.54%`; the global postflop action mix stayed stable.
+
 ## 2026-08-22: Multi-Raised Call Realization
 
 ### Accepted: Narrower Entry Without Sacrificing Playability
