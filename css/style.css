@@ -367,6 +367,11 @@ SINGLE VIEW
     border-bottom: 1px dashed var(--font-color);
 }
 
+#single .sound-toggle {
+    align-self: center;
+    margin: 1rem 0;
+}
+
 #single-action-status {
     color: var(--yellow);
     text-align: center;
