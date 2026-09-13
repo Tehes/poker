@@ -436,10 +436,10 @@ export function renderSeatRotation(target, rotationDegrees = 0) {
 		return;
 	}
 
-	const rotation = Number.isFinite(rotationDegrees)
-		? ((rotationDegrees % 360) + 360) % 360
-		: 0;
+	// Keep full turns so the transition continues forward when passing 360 degrees.
+	const rotation = Number.isFinite(rotationDegrees) ? rotationDegrees : 0;
 	seatEl.dataset.rotation = `${rotation}`;
+	seatEl.style.transform = `rotate(${rotation}deg)`;
 }
 
 export function renderSeatSetupState(
