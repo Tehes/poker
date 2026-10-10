@@ -268,9 +268,14 @@ Accessibility should be **pragmatic, not performative**.
   - Versioning
   - Cache prefixes
   - Scope detection (GitHub Pages vs custom domain vs localhost)
-- If a project has an active Service Worker, bump the Service Worker version in every commit.
-- Use exactly one unique Service Worker version per commit; never reuse the previous commit's version.
-- Apply the version bump in the same commit as the code change (no delayed bump in a later commit).
+- If a project has an active Service Worker, bump its version only when changes affect the deployed
+  application's behavior, files used by the browser (HTML, CSS, JavaScript, assets, or runtime data),
+  or Service Worker behavior.
+- Documentation-only changes (e.g. `README.md`, `AGENTS.md`) do not require a Service Worker version bump.
+- When a version bump is required, use exactly one unique Service Worker version per commit;
+  never reuse the previous commit's version.
+- Apply a required version bump in the same commit as the relevant application change
+  (no delayed bump in a later commit).
 - Never experiment with SW behavior.
 - Do not enable SWs in environments explicitly excluded by the project.
 
@@ -289,11 +294,10 @@ Accessibility should be **pragmatic, not performative**.
 When making changes, always provide:
 
 1. What & why (short and technical)
-2. Directly applicable code blocks (copy & paste ready)
-3. Risk note
+2. Risk note
    - Mention possible side effects if relevant
 
-- Prefer code-first answers. Explanations should be concise and technical.
+- Keep explanations concise and technical.
 - Validate data only at clear module/API boundaries; avoid redundant guards inside controlled flows
   unless a concrete failure mode exists.
 - For data generated and consumed within the same module or lifecycle, trust the structure and do
