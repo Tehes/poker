@@ -311,20 +311,10 @@ When making changes, always provide:
 - If no test setup exists: provide a short manual checklist (max 5 items).
 - Never claim tests were run if they were not.
 
-### Browser Testing
-
-- For changes affecting UI or browser behavior, test the affected flow
-  in an available browser when possible.
-- Use the project's local static server. Reuse a running server when available.
-- Check the affected interactions and visible result.
-- For layout changes, check desktop and mobile viewport sizes.
-- Check browser console errors when the available tools support it.
-- Do not install dependencies or add test tooling for browser checks.
-- Report what was tested and any limitations. If browser testing is unavailable,
-  provide a manual checklist instead.
-
 ### Browser Tool Priority
 
+- Use the project's local static dev server
+  (typically `http://127.0.0.1:5500`). Reuse a running server when available.
 - Respect an explicitly requested browser or tool.
 - Prefer Chrome MCP for routine browser testing and debugging.
 - Use Safari MCP for relevant compatibility checks.
@@ -335,8 +325,6 @@ When making changes, always provide:
   required interface or interaction.
 - Do not repeat equivalent checks through every tool.
 - Report which browser and tool were used.
-- Mobile viewport checks and desktop Safari tests do not replace
-  testing on an actual iOS device.
 
 ---
 
