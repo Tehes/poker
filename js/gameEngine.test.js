@@ -21,6 +21,8 @@ import {
 	resolveTurnAction,
 	runEngineHand,
 	runEngineTournament,
+	secureRandomInt,
+	shuffleArray,
 } from "./gameEngine.js";
 
 function assertEquals(actual, expected, message = "") {
@@ -2449,4 +2451,40 @@ Deno.test("runEngineTournament plays a browserless mini tournament to champion",
 			totalPot: 40,
 		},
 	});
+});
+
+Deno.test("secureRandomInt stays within range", () => {
+	for (const n of [1, 2, 3, 7, 52]) {
+		for (let draw = 0; draw < 1000; draw++) {
+			const value = secureRandomInt(n);
+			assertEquals(Number.isInteger(value) && value >= 0 && value < n, true, `n=${n} value=${value}`);
+		}
+	}
+});
+
+Deno.test("secureRandomInt rejects values in the biased top range", () => {
+	// 2^32 % 52 === 48, so values from 4294967248 upward must be redrawn.
+	const values = [4294967295, 4294967248, 4294967247];
+	let calls = 0;
+	const fillRandom = (array) => {
+		array[0] = values[calls];
+		calls++;
+	};
+
+	assertEquals(secureRandomInt(52, fillRandom), 4294967247 % 52);
+	assertEquals(calls, 3);
+});
+
+Deno.test("shuffleArray keeps every card without using Math.random", () => {
+	const deck = ["2C", "3D", "4H", "5S", "6C", "7D", "8H", "9S", "TC", "JD", "QH", "KS", "AC"];
+	const originalRandom = Math.random;
+	Math.random = () => {
+		throw new Error("Math.random must not be used for shuffling");
+	};
+	try {
+		const shuffled = shuffleArray(deck.slice());
+		assertEquals(shuffled.slice().sort(), deck.slice().sort());
+	} finally {
+		Math.random = originalRandom;
+	}
 });

@@ -52,10 +52,21 @@ const CARD_RANK_ORDER = "23456789TJQKA";
 const MAX_WIN_PROBABILITY_BOARDS = 50000;
 const NICE_BIG_BLIND_FACTORS = [1, 1.2, 1.4, 1.5, 1.6, 1.8, 2, 2.4, 2.5, 3, 4, 5, 6, 8];
 
+// Uses a CSPRNG so dealt cards cannot be predicted from earlier Math.random outputs.
+// Rejection sampling drops the top partial range of 2^32 to avoid modulo bias.
+export function secureRandomInt(n, fillRandom = (array) => crypto.getRandomValues(array)) {
+	const limit = 2 ** 32 - (2 ** 32 % n);
+	const buffer = new Uint32Array(1);
+	do {
+		fillRandom(buffer);
+	} while (buffer[0] >= limit);
+	return buffer[0] % n;
+}
+
 export function shuffleArray(array) {
 	let i = array.length;
 	while (i) {
-		const j = Math.floor(Math.random() * i);
+		const j = secureRandomInt(i);
 		const t = array[--i];
 		array[i] = array[j];
 		array[j] = t;
