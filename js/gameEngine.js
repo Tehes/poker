@@ -362,6 +362,13 @@ export function resolveShowdown(players, communityCards, chipUnit = 10) {
 	};
 }
 
+export function getPlayerStatsRates(stats) {
+	return {
+		flopSeenPct: stats.hands > 0 ? stats.flopsSeen / stats.hands * 100 : null,
+		wtsdPct: stats.flopsSeen > 0 ? stats.showdowns / stats.flopsSeen * 100 : null,
+	};
+}
+
 function buildShowdownStatsPatch(player, showdownResult) {
 	if (!player.stats) {
 		return null;

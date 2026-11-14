@@ -15,6 +15,7 @@ import {
 	createBotLineState,
 	createHandContextState,
 	createPlayerSpotState,
+	getPlayerStatsRates,
 	INITIAL_BIG_BLIND,
 	INITIAL_DECK,
 	INITIAL_SMALL_BLIND,
@@ -27,11 +28,14 @@ import {
 	analyzeRunDecisions,
 	createEmptyMetrics,
 	createEmptyOutcomeMetricsAccumulator,
+	createEmptyPlayerStatsMetrics,
 	createMdfAnalysis,
 	createPostflopLineReadAnalysis,
 	finalizeOutcomeMetrics,
+	finalizePlayerStatsMetrics,
 	incrementCount,
 	mergeOutcomeMetrics,
+	mergePlayerStatsMetrics,
 	mergeRunMetrics,
 	SPEEDMODE_EVENT_PREFIX,
 } from "./speedmodeAnalysis.js";
@@ -374,6 +378,8 @@ function summarizePlayers(players) {
 		isWinner: player.isWinner,
 		hands: player.stats?.hands ?? 0,
 		handsWon: player.stats?.handsWon ?? 0,
+		stats: { ...player.stats },
+		rates: getPlayerStatsRates(player.stats),
 	}));
 }
 
@@ -1058,7 +1064,9 @@ async function runSingleEngineBatch(config, runIndex, outputDir) {
 	const logPath = `${outputDir}/run-${runLabel}.log`;
 	const summaryPath = `${outputDir}/run-${runLabel}.json`;
 	const detailsPath = `${outputDir}/run-${runLabel}.details.json`;
-	const players = summarizePlayers(gameState.players);
+	const players = summarizePlayers(gameState.allPlayers);
+	const playerStats = createEmptyPlayerStatsMetrics();
+	players.forEach((player) => mergePlayerStatsMetrics(playerStats, player.stats));
 
 	await Deno.writeTextFile(logPath, speedmodeLogs.join("\n"));
 	await Deno.writeTextFile(
@@ -1074,6 +1082,7 @@ async function runSingleEngineBatch(config, runIndex, outputDir) {
 				logCount: speedmodeLogs.length,
 				players,
 				metrics,
+				playerStats: finalizePlayerStatsMetrics(playerStats),
 				analysis: {
 					postflop: {
 						mdf: createMdfAnalysis(metrics.postflop.mdf),
@@ -1104,6 +1113,7 @@ async function runSingleEngineBatch(config, runIndex, outputDir) {
 				equityDiagnostics,
 				outcomeMetrics: runOutcome.metrics,
 				players,
+				playerStats: finalizePlayerStatsMetrics(playerStats),
 			},
 			null,
 			2,
@@ -1129,6 +1139,7 @@ async function runSingleEngineBatch(config, runIndex, outputDir) {
 		detailsPath,
 		metrics,
 		rawOutcomeMetrics: runOutcome.rawMetrics,
+		playerStats,
 		outcomeMetrics: runOutcome.metrics,
 		engineMetrics,
 		equityDiagnostics,
@@ -1142,6 +1153,7 @@ async function main() {
 	const outputDir = resolveOutputDir(args.outputDir);
 	const aggregateMetrics = createEmptyMetrics();
 	const aggregateOutcomeMetrics = createEmptyOutcomeMetricsAccumulator();
+	const aggregatePlayerStats = createEmptyPlayerStatsMetrics();
 	const aggregateEngineMetrics = createEmptyEngineBatchMetrics();
 	const aggregateEquityDiagnostics = createEmptyEquityDiagnostics(args.equity.enabled);
 	const champions = {};
@@ -1157,6 +1169,7 @@ async function main() {
 			incrementCount(champions, runSummary.champion);
 		}
 		mergeRunMetrics(aggregateMetrics, runSummary.metrics);
+		mergePlayerStatsMetrics(aggregatePlayerStats, runSummary.playerStats);
 		mergeOutcomeMetrics(aggregateOutcomeMetrics, runSummary.rawOutcomeMetrics);
 		mergeEngineBatchMetrics(aggregateEngineMetrics, runSummary.engineMetrics);
 		mergeEquityDiagnostics(aggregateEquityDiagnostics, runSummary.equityDiagnostics);
@@ -1205,6 +1218,7 @@ async function main() {
 			},
 		})),
 		metrics: aggregateMetrics,
+		playerStats: finalizePlayerStatsMetrics(aggregatePlayerStats),
 		analysis: {
 			postflop: {
 				mdf: createMdfAnalysis(aggregateMetrics.postflop.mdf),
@@ -1235,6 +1249,8 @@ async function main() {
 	console.log(`showdown_hands=${aggregateEngineMetrics.showdownHands}`);
 	console.log(`uncontested_hands=${aggregateEngineMetrics.uncontestedHands}`);
 	console.log(`player_busts=${aggregateEngineMetrics.playerBustCount}`);
+	console.log(`flop_seen=${aggregatePlayerStats.flopsSeen}/${aggregatePlayerStats.hands}`);
+	console.log(`wtsd=${aggregatePlayerStats.showdowns}/${aggregatePlayerStats.flopsSeen}`);
 	console.log(`output_dir=${outputDir}`);
 }
 

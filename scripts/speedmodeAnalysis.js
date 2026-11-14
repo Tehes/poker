@@ -10,6 +10,8 @@ MODULE BOUNDARY: Speedmode Batch Analysis
 // helpers.
 // DO NOT PUT HERE: Chrome automation, static file serving, Deno process orchestration, or game rules.
 
+import { getPlayerStatsRates } from "../js/gameEngine.js";
+
 export const SPEEDMODE_EVENT_PREFIX = "speedmode_event ";
 const PUBLIC_MADE_HANDS = new Set([
 	"Pair",
@@ -50,6 +52,20 @@ const CARD_RANK_ORDER = "23456789TJQKA";
 const HIGH_BOARD_MIN_RANK_INDEX = CARD_RANK_ORDER.indexOf("T");
 const BAD_PRICE_POT_ODDS = 0.18;
 const LARGE_RIVER_POT_ODDS = 0.2;
+
+export function createEmptyPlayerStatsMetrics() {
+	return { hands: 0, flopsSeen: 0, showdowns: 0 };
+}
+
+export function mergePlayerStatsMetrics(target, source) {
+	for (const key of Object.keys(target)) {
+		target[key] += source[key];
+	}
+}
+
+export function finalizePlayerStatsMetrics(stats) {
+	return { ...stats, rates: getPlayerStatsRates(stats) };
+}
 
 export function incrementCount(target, key, amount = 1) {
 	target[key] = (target[key] || 0) + amount;

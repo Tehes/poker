@@ -1,13 +1,17 @@
+import { getPlayerStatsRates } from "../js/gameEngine.js";
 import {
 	analyzeOutcomeLogs,
 	analyzeRunDecisions,
 	createEmptyMetrics,
 	createEmptyOutcomeMetricsAccumulator,
+	createEmptyPlayerStatsMetrics,
 	createMdfAnalysis,
 	createPostflopLineReadAnalysis,
 	finalizeOutcomeMetrics,
+	finalizePlayerStatsMetrics,
 	incrementCount,
 	mergeOutcomeMetrics,
+	mergePlayerStatsMetrics,
 	mergeRunMetrics,
 	RERAISE_LOW_EDGE_THRESHOLD,
 	summarizeFoldRateRow,
@@ -83,7 +87,12 @@ const RUN_PAYLOAD_EXPRESSION = `(() => {
 		poker?.handInProgress === false;
 	return {
 		finished,
-		players: players.map((player) => ({ name: player.name, chips: player.chips })),
+		players: players.map((player) => ({
+			name: player.name,
+			seatIndex: player.seatIndex,
+			chips: player.chips,
+			stats: { ...player.stats },
+		})),
 		logs: window.__capturedLogs ?? [],
 	};
 })()`;
@@ -433,6 +442,7 @@ async function runSingleTournament(
 	runIndex,
 	aggregateMetrics,
 	aggregateOutcomeMetrics,
+	aggregatePlayerStats,
 	champions,
 ) {
 	const runLabel = String(runIndex).padStart(2, "0");
@@ -458,8 +468,14 @@ async function runSingleTournament(
 
 	const { payload, outcome: runOutcome } = await waitForSettledRunPayload(page);
 	const runMetrics = analyzeRunDecisions(runOutcome.decisions, runOutcome.hands, runOutcome.playerBusts);
+	const playerStats = createEmptyPlayerStatsMetrics();
+	payload.players.forEach((player) => {
+		mergePlayerStatsMetrics(playerStats, player.stats);
+		player.rates = getPlayerStatsRates(player.stats);
+	});
 	mergeRunMetrics(aggregateMetrics, runMetrics);
 	mergeOutcomeMetrics(aggregateOutcomeMetrics, runOutcome.rawMetrics);
+	mergePlayerStatsMetrics(aggregatePlayerStats, playerStats);
 	incrementCount(champions, state.champion || "unknown");
 
 	const logPath = `${config.outputDir}/run-${runLabel}.log`;
@@ -475,6 +491,7 @@ async function runSingleTournament(
 				logCount: payload.logs.length,
 				players: payload.players,
 				metrics: runMetrics,
+				playerStats: finalizePlayerStatsMetrics(playerStats),
 				analysis: {
 					postflop: {
 						mdf: createMdfAnalysis(runMetrics.postflop.mdf),
@@ -498,6 +515,8 @@ async function runSingleTournament(
 				decisions: runOutcome.decisions,
 				playerBusts: runOutcome.playerBusts,
 				outcomeMetrics: runOutcome.metrics,
+				players: payload.players,
+				playerStats: finalizePlayerStatsMetrics(playerStats),
 			},
 			null,
 			2,
@@ -513,6 +532,7 @@ async function runSingleTournament(
 		summaryPath,
 		detailsPath,
 		metrics: runMetrics,
+		playerStats,
 		outcomeMetrics: runOutcome.metrics,
 	};
 }
@@ -525,6 +545,7 @@ async function main() {
 	const chromeCommand = await resolveChromeCommand(args.chromePath);
 	const aggregateMetrics = createEmptyMetrics();
 	const aggregateOutcomeMetrics = createEmptyOutcomeMetricsAccumulator();
+	const aggregatePlayerStats = createEmptyPlayerStatsMetrics();
 	const champions = {};
 	const runSummaries = [];
 	const profileDir = `${outputDir}/chrome-profile`;
@@ -574,6 +595,7 @@ async function main() {
 				runIndex,
 				aggregateMetrics,
 				aggregateOutcomeMetrics,
+				aggregatePlayerStats,
 				champions,
 			);
 			runSummaries.push(runSummary);
@@ -612,6 +634,7 @@ async function main() {
 				detailsPath: runSummary.detailsPath,
 			})),
 			metrics: aggregateMetrics,
+			playerStats: finalizePlayerStatsMetrics(aggregatePlayerStats),
 			analysis: {
 				postflop: {
 					mdf: mdfAnalysis,
@@ -624,6 +647,8 @@ async function main() {
 
 		console.log(`runs=${args.runCount}`);
 		console.log(`decisions=${aggregateMetrics.decisionCount}`);
+		console.log(`flop_seen=${aggregatePlayerStats.flopsSeen}/${aggregatePlayerStats.hands}`);
+		console.log(`wtsd=${aggregatePlayerStats.showdowns}/${aggregatePlayerStats.flopsSeen}`);
 		console.log(
 			`decision_join_coverage=${summary.outcomeMetrics.decisionJoinCoverage.joinedDecisions}/${summary.outcomeMetrics.decisionJoinCoverage.totalDecisions}`,
 		);
