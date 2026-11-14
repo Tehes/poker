@@ -651,6 +651,18 @@ async function main() {
 		console.log(`wtsd=${aggregatePlayerStats.showdowns}/${aggregatePlayerStats.flopsSeen}`);
 		console.log(`three_bet=${aggregatePlayerStats.threeBets}/${aggregatePlayerStats.threeBetOpportunities}`);
 		console.log(
+			`fold_to_three_bet=${aggregatePlayerStats.foldsToThreeBet}/${aggregatePlayerStats.foldToThreeBetOpportunities}`,
+		);
+		console.log(
+			`raise_first_in=${aggregatePlayerStats.raisesFirstIn}/${aggregatePlayerStats.raiseFirstInOpportunities}`,
+		);
+		console.log(
+			`attempt_to_steal=${aggregatePlayerStats.stealAttempts}/${aggregatePlayerStats.stealOpportunities}`,
+		);
+		console.log(
+			`fold_bb_to_steal=${aggregatePlayerStats.foldsBigBlindToSteal}/${aggregatePlayerStats.bigBlindStealOpportunities}`,
+		);
+		console.log(
 			`decision_join_coverage=${summary.outcomeMetrics.decisionJoinCoverage.joinedDecisions}/${summary.outcomeMetrics.decisionJoinCoverage.totalDecisions}`,
 		);
 		console.log(`preflop_spots=${aggregateMetrics.preflop.decisions}`);

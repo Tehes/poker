@@ -367,6 +367,16 @@ export function getPlayerStatsRates(stats) {
 		flopSeenPct: stats.hands > 0 ? stats.flopsSeen / stats.hands * 100 : null,
 		wtsdPct: stats.flopsSeen > 0 ? stats.showdowns / stats.flopsSeen * 100 : null,
 		threeBetPct: stats.threeBetOpportunities > 0 ? stats.threeBets / stats.threeBetOpportunities * 100 : null,
+		foldToThreeBetPct: stats.foldToThreeBetOpportunities > 0
+			? stats.foldsToThreeBet / stats.foldToThreeBetOpportunities * 100
+			: null,
+		raiseFirstInPct: stats.raiseFirstInOpportunities > 0
+			? stats.raisesFirstIn / stats.raiseFirstInOpportunities * 100
+			: null,
+		attemptToStealPct: stats.stealOpportunities > 0 ? stats.stealAttempts / stats.stealOpportunities * 100 : null,
+		foldBigBlindToStealPct: stats.bigBlindStealOpportunities > 0
+			? stats.foldsBigBlindToSteal / stats.bigBlindStealOpportunities * 100
+			: null,
 	};
 }
 
@@ -657,6 +667,8 @@ export function createHandContextState() {
 	return {
 		preflopRaiseCount: 0,
 		preflopAggressorSeatIndex: null,
+		preflopOpenerSeatIndex: null,
+		stealAttemptSeatIndex: null,
 		streetAggressorSeatIndex: null,
 		flopCheckedThrough: false,
 		turnCheckedThrough: false,
@@ -681,6 +693,11 @@ export function createPlayerSpotState() {
 		enteredPreflop: false,
 		sawFlop: false,
 		threeBetOpportunityCounted: false,
+		raiseFirstInOpportunityCounted: false,
+		foldToThreeBetOpportunityCounted: false,
+		bigBlindStealOpportunityCounted: false,
+		position: null,
+		tableSize: null,
 	};
 }
 
@@ -713,12 +730,28 @@ function ensurePlayerSpotState(player) {
 
 export function getPlayerActionStatsContext(gameState, player) {
 	const needToCall = Math.max(0, gameState.currentBet - player.roundBet);
+	const preflop = gameState.currentPhaseIndex === 0;
+	const handContext = gameState.handContext;
+	const spotState = player.spotState ?? createPlayerSpotState();
+	const canRaise = preflop && player.chips > needToCall &&
+		(!spotState.actedThisStreet || needToCall >= gameState.lastRaise) &&
+		getEffectiveRaiseCap(gameState, player) > needToCall;
+	const raiseFirstInOpportunity = preflop && handContext?.preflopRaiseCount === 0 && canRaise &&
+		!spotState.actedThisStreet &&
+		!gameState.players.some((currentPlayer) => currentPlayer.spotState?.enteredPreflop);
 	return {
-		threeBetOpportunity: gameState.currentPhaseIndex === 0 &&
-			gameState.handContext?.preflopRaiseCount === 1 &&
-			needToCall > 0 && player.chips > needToCall &&
-			(!player.spotState?.actedThisStreet || needToCall >= gameState.lastRaise) &&
-			getEffectiveRaiseCap(gameState, player) > needToCall,
+		threeBetOpportunity: preflop && handContext?.preflopRaiseCount === 1 && needToCall > 0 && canRaise,
+		foldToThreeBetOpportunity: preflop && handContext?.preflopRaiseCount === 2 && needToCall > 0 &&
+			handContext.preflopOpenerSeatIndex === player.seatIndex,
+		raiseFirstInOpportunity,
+		stealOpportunity: raiseFirstInOpportunity && ["cutoff", "button", "smallBlind"].includes(spotState.position),
+		bigBlindStealOpportunity: preflop && handContext?.preflopRaiseCount === 1 && needToCall > 0 &&
+			spotState.position === "bigBlind" && !spotState.actedThisStreet &&
+			handContext.stealAttemptSeatIndex !== null && handContext.stealAttemptSeatIndex !== undefined &&
+			!gameState.players.some((currentPlayer) =>
+				currentPlayer !== player && currentPlayer.seatIndex !== handContext.stealAttemptSeatIndex &&
+				currentPlayer.spotState?.enteredPreflop
+			),
 	};
 }
 
@@ -735,6 +768,52 @@ export function recordPlayerActionStats(gameState, player, actionName, actionMet
 		(actionName === "call" || actionName === "raise" || actionName === "allin");
 	const isAggressiveAction = actionMeta.aggressive ??
 		(actionName === "raise" || actionName === "allin");
+
+	if (
+		gameState.currentPhaseIndex === 0 && actionMeta.raiseFirstInOpportunity &&
+		!spotState.raiseFirstInOpportunityCounted
+	) {
+		spotState.raiseFirstInOpportunityCounted = true;
+		if (player.stats) {
+			player.stats.raiseFirstInOpportunities++;
+			if (isAggressiveAction) {
+				player.stats.raisesFirstIn++;
+			}
+			if (actionMeta.stealOpportunity) {
+				player.stats.stealOpportunities++;
+				if (isAggressiveAction) {
+					player.stats.stealAttempts++;
+				}
+			}
+		}
+		if (actionMeta.stealOpportunity && isAggressiveAction) {
+			handContext.stealAttemptSeatIndex = player.seatIndex;
+		}
+	}
+	if (
+		gameState.currentPhaseIndex === 0 && actionMeta.foldToThreeBetOpportunity &&
+		!spotState.foldToThreeBetOpportunityCounted
+	) {
+		spotState.foldToThreeBetOpportunityCounted = true;
+		if (player.stats) {
+			player.stats.foldToThreeBetOpportunities++;
+			if (actionName === "fold") {
+				player.stats.foldsToThreeBet++;
+			}
+		}
+	}
+	if (
+		gameState.currentPhaseIndex === 0 && actionMeta.bigBlindStealOpportunity &&
+		!spotState.bigBlindStealOpportunityCounted
+	) {
+		spotState.bigBlindStealOpportunityCounted = true;
+		if (player.stats) {
+			player.stats.bigBlindStealOpportunities++;
+			if (actionName === "fold") {
+				player.stats.foldsBigBlindToSteal++;
+			}
+		}
+	}
 
 	if (
 		gameState.currentPhaseIndex === 0 && actionMeta.threeBetOpportunity &&
@@ -786,6 +865,9 @@ export function recordPlayerActionStats(gameState, player, actionName, actionMet
 			player.stats.pfr++;
 		}
 		if (isAggressiveAction) {
+			if (handContext.preflopRaiseCount === 0) {
+				handContext.preflopOpenerSeatIndex = player.seatIndex;
+			}
 			handContext.preflopRaiseCount++;
 			handContext.preflopAggressorSeatIndex = player.seatIndex;
 		}
@@ -1001,6 +1083,23 @@ export function getBlindSeatIndexes(playerCount) {
 		smallBlindIndex: playerCount > 2 ? 1 : 0,
 		bigBlindIndex: playerCount > 2 ? 2 : 1,
 	};
+}
+
+function getHandPosition(index, playerCount) {
+	const { smallBlindIndex, bigBlindIndex } = getBlindSeatIndexes(playerCount);
+	if (index === smallBlindIndex) {
+		return "smallBlind";
+	}
+	if (index === bigBlindIndex) {
+		return "bigBlind";
+	}
+	if (index === 0) {
+		return "button";
+	}
+	if (index === playerCount - 1) {
+		return "cutoff";
+	}
+	return index === 3 ? "early" : "middle";
 }
 
 function buildNextHandStats(stats) {
@@ -1652,10 +1751,15 @@ export function postBlinds(gameState) {
 	const bigBlindPlayer = gameState.players[bigBlindIndex];
 	const playerPatches = [];
 
-	gameState.players.forEach((player) => {
+	gameState.players.forEach((player, index) => {
 		addPlayerPatch(playerPatches, player, {
 			smallBlind: false,
 			bigBlind: false,
+			spotState: {
+				...(player.spotState ?? createPlayerSpotState()),
+				position: getHandPosition(index, gameState.players.length),
+				tableSize: gameState.players.length,
+			},
 		});
 	});
 

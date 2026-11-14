@@ -54,7 +54,21 @@ const BAD_PRICE_POT_ODDS = 0.18;
 const LARGE_RIVER_POT_ODDS = 0.2;
 
 export function createEmptyPlayerStatsMetrics() {
-	return { hands: 0, flopsSeen: 0, showdowns: 0, threeBets: 0, threeBetOpportunities: 0 };
+	return {
+		hands: 0,
+		flopsSeen: 0,
+		showdowns: 0,
+		threeBets: 0,
+		threeBetOpportunities: 0,
+		foldsToThreeBet: 0,
+		foldToThreeBetOpportunities: 0,
+		raisesFirstIn: 0,
+		raiseFirstInOpportunities: 0,
+		stealAttempts: 0,
+		stealOpportunities: 0,
+		foldsBigBlindToSteal: 0,
+		bigBlindStealOpportunities: 0,
+	};
 }
 
 export function mergePlayerStatsMetrics(target, source) {

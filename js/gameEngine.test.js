@@ -4,6 +4,7 @@ import {
 	createBettingRoundStartPlan,
 	createHandEndPlan,
 	createNextHandTransitionPlan,
+	createPlayerSpotState,
 	createShowdownCommitPlan,
 	dealCommunityCardsForPhase,
 	dealHoleCardsForNewHand,
@@ -106,6 +107,14 @@ function createStats({ hands = 0 } = {}) {
 		pfr: 0,
 		threeBets: 0,
 		threeBetOpportunities: 0,
+		foldsToThreeBet: 0,
+		foldToThreeBetOpportunities: 0,
+		raisesFirstIn: 0,
+		raiseFirstInOpportunities: 0,
+		stealAttempts: 0,
+		stealOpportunities: 0,
+		foldsBigBlindToSteal: 0,
+		bigBlindStealOpportunities: 0,
 		calls: 0,
 		aggressiveActs: 0,
 		reveals: 0,
@@ -215,6 +224,16 @@ function createFlowGameState({ players, deck, smallBlind = 10, bigBlind = 20 }) 
 		handInProgress: false,
 		chipTransfer: null,
 	};
+}
+
+function createPreflopStatsTable(playerCount = 6) {
+	const players = Array.from(
+		{ length: playerCount },
+		(_, seatIndex) => createPlayer({ seatIndex, stats: createStats() }),
+	);
+	const gameState = createFlowGameState({ players, deck: INITIAL_DECK.slice() });
+	startEngineHand(gameState);
+	return { players, gameState };
 }
 
 function callOrCheckAction(gameState, player) {
@@ -853,6 +872,154 @@ Deno.test("postflop all-in bets and raises stay aggressive instead of counting a
 	}
 });
 
+Deno.test("hand positions stay fixed when players fold and cover every table size", () => {
+	for (
+		const positions of [
+			["smallBlind", "bigBlind"],
+			["button", "smallBlind", "bigBlind"],
+			["button", "smallBlind", "bigBlind", "cutoff"],
+			["button", "smallBlind", "bigBlind", "early", "cutoff"],
+			["button", "smallBlind", "bigBlind", "early", "middle", "cutoff"],
+		]
+	) {
+		const { players, gameState } = createPreflopStatsTable(positions.length);
+		assertEquals(players.map((player) => player.spotState.position), positions);
+		assertEquals(players.map((player) => player.spotState.tableSize), positions.map(() => positions.length));
+		if (positions.length === 6) {
+			applyActionForStatsTest(gameState, players[3], { action: "fold" });
+			applyActionForStatsTest(gameState, players[4], { action: "fold" });
+			assertEquals(players.map((player) => player.spotState.position), positions);
+			const context = getPlayerActionStatsContext(gameState, players[5]);
+			assertEquals([context.raiseFirstInOpportunity, context.stealOpportunity], [true, true]);
+		}
+	}
+});
+
+Deno.test("steal attempts and big blind responses cover cutoff, button, and small blind", () => {
+	for (const seat of [5, 0, 1]) {
+		for (const action of ["fold", "call", "raise", "allin"]) {
+			const { players, gameState } = createPreflopStatsTable();
+			const order = [3, 4, 5, 0, 1, 2];
+			for (const before of order.slice(0, order.indexOf(seat))) {
+				applyActionForStatsTest(gameState, players[before], { action: "fold" });
+			}
+			applyActionForStatsTest(gameState, players[seat], { action: "raise", amount: 80 });
+			for (const after of order.slice(order.indexOf(seat) + 1, -1)) {
+				applyActionForStatsTest(gameState, players[after], { action: "fold" });
+			}
+			applyActionForStatsTest(gameState, players[2], { action, amount: 160 });
+			const opener = players[seat].stats;
+			assertEquals([opener.raiseFirstInOpportunities, opener.raisesFirstIn], [1, 1]);
+			assertEquals([opener.stealOpportunities, opener.stealAttempts], [1, 1]);
+			assertEquals(gameState.handContext.stealAttemptSeatIndex, seat);
+			assertEquals(players[2].stats.bigBlindStealOpportunities, 1);
+			assertEquals(players[2].stats.foldsBigBlindToSteal, action === "fold" ? 1 : 0);
+		}
+	}
+});
+
+Deno.test("heads-up small blind raises count as steals and big blind folds count as defence opportunities", () => {
+	const { players, gameState } = createPreflopStatsTable(2);
+	applyActionForStatsTest(gameState, players[0], { action: "raise", amount: 80 });
+	applyActionForStatsTest(gameState, players[1], { action: "fold" });
+	assertEquals([players[0].stats.raiseFirstInOpportunities, players[0].stats.raisesFirstIn], [1, 1]);
+	assertEquals([players[0].stats.stealOpportunities, players[0].stats.stealAttempts], [1, 1]);
+	assertEquals([players[1].stats.bigBlindStealOpportunities, players[1].stats.foldsBigBlindToSteal], [1, 1]);
+});
+
+Deno.test("limps and isolation raises do not become raise-first-in or steal attempts", () => {
+	const { players, gameState } = createPreflopStatsTable();
+	applyActionForStatsTest(gameState, players[3], { action: "call" });
+	applyActionForStatsTest(gameState, players[4], { action: "fold" });
+	applyActionForStatsTest(gameState, players[5], { action: "fold" });
+	applyActionForStatsTest(gameState, players[0], { action: "raise", amount: 80 });
+	applyActionForStatsTest(gameState, players[1], { action: "fold" });
+	applyActionForStatsTest(gameState, players[2], { action: "fold" });
+	assertEquals([players[3].stats.raiseFirstInOpportunities, players[3].stats.raisesFirstIn], [1, 0]);
+	assertEquals([players[3].stats.stealOpportunities, players[3].stats.stealAttempts], [0, 0]);
+	assertEquals([players[0].stats.raiseFirstInOpportunities, players[0].stats.stealOpportunities], [0, 0]);
+	assertEquals(players[2].stats.bigBlindStealOpportunities, 0);
+});
+
+Deno.test("raise-first-in excludes short all-in calls and pots with no callable raise opponent", () => {
+	for (const mode of ["short-stack", "all-in-opponent"]) {
+		const { players, gameState } = createPreflopStatsTable(2);
+		if (mode === "short-stack") {
+			players[0].chips = 10;
+		} else {
+			players[1].chips = 0;
+			players[1].allIn = true;
+		}
+		applyActionForStatsTest(gameState, players[0], { action: "call" });
+		assertEquals([players[0].stats.raiseFirstInOpportunities, players[0].stats.stealOpportunities], [0, 0]);
+	}
+});
+
+Deno.test("big blind steal defence excludes an intervening caller or 3-bet", () => {
+	for (const action of ["call", "raise"]) {
+		const { players, gameState } = createPreflopStatsTable(3);
+		applyActionForStatsTest(gameState, players[0], { action: "raise", amount: 80 });
+		applyActionForStatsTest(gameState, players[1], { action, amount: 200 });
+		applyActionForStatsTest(gameState, players[2], { action: "fold" });
+		assertEquals(players[2].stats.bigBlindStealOpportunities, 0);
+		assertEquals(players[2].stats.foldsBigBlindToSteal, 0);
+	}
+});
+
+Deno.test("fold-to-3-bet counts opener responses and treats calls and 4-bets as continued play", () => {
+	for (const action of ["fold", "call", "raise", "allin"]) {
+		const { players, gameState } = createPreflopStatsTable(3);
+		applyActionForStatsTest(gameState, players[0], { action: "raise", amount: 80 });
+		applyActionForStatsTest(gameState, players[1], { action: "raise", amount: 200 });
+		applyActionForStatsTest(gameState, players[2], { action: "fold" });
+		applyActionForStatsTest(gameState, players[0], { action, amount: 500 });
+		assertEquals(players[0].stats.foldToThreeBetOpportunities, 1);
+		assertEquals(players[0].stats.foldsToThreeBet, action === "fold" ? 1 : 0);
+		assertEquals(players[2].stats.foldToThreeBetOpportunities, 0);
+	}
+});
+
+Deno.test("fold-to-3-bet includes short all-in calls but excludes an intervening 4-bet", () => {
+	const { players, gameState } = createPreflopStatsTable(3);
+	players[0].chips = 100;
+	applyActionForStatsTest(gameState, players[0], { action: "raise", amount: 40 });
+	applyActionForStatsTest(gameState, players[1], { action: "raise", amount: 200 });
+	applyActionForStatsTest(gameState, players[2], { action: "fold" });
+	applyActionForStatsTest(gameState, players[0], { action: "call" });
+	assertEquals([players[0].stats.foldToThreeBetOpportunities, players[0].stats.foldsToThreeBet], [1, 0]);
+	assertEquals(players[0].allIn, true);
+
+	const other = createPreflopStatsTable(4);
+	applyActionForStatsTest(other.gameState, other.players[3], { action: "raise", amount: 80 });
+	applyActionForStatsTest(other.gameState, other.players[0], { action: "raise", amount: 200 });
+	applyActionForStatsTest(other.gameState, other.players[1], { action: "raise", amount: 600 });
+	applyActionForStatsTest(other.gameState, other.players[2], { action: "fold" });
+	applyActionForStatsTest(other.gameState, other.players[3], { action: "fold" });
+	assertEquals(other.players[3].stats.foldToThreeBetOpportunities, 0);
+});
+
+Deno.test("preflop opportunities, positions, and opener survive restore and reset at a new hand", () => {
+	const { players, gameState } = createPreflopStatsTable(3);
+	applyActionForStatsTest(gameState, players[0], { action: "raise", amount: 80 });
+	applyActionForStatsTest(gameState, players[1], { action: "raise", amount: 200 });
+	applyActionForStatsTest(gameState, players[2], { action: "fold" });
+	const restored = JSON.parse(JSON.stringify(gameState));
+	applyActionForStatsTest(restored, restored.players[0], { action: "fold" });
+	assertEquals(restored.players[0].stats.raiseFirstInOpportunities, 1);
+	assertEquals(restored.players[0].stats.foldToThreeBetOpportunities, 1);
+	assertEquals(restored.players[0].stats.foldsToThreeBet, 1);
+	assertEquals(restored.players[0].spotState.position, "button");
+	const next = createNextHandTransitionPlan(restored, 2);
+	applyPlayerPatches(next.playerPatches);
+	applyGameStatePatch(restored, next.gameStatePatch);
+	assertEquals(restored.handContext.preflopOpenerSeatIndex, null);
+	assertEquals(restored.handContext.stealAttemptSeatIndex, null);
+	assertEquals(restored.players[0].spotState.raiseFirstInOpportunityCounted, false);
+	assertEquals(restored.players[0].spotState.foldToThreeBetOpportunityCounted, false);
+	assertEquals(restored.players[0].spotState.position, null);
+	assertEquals(restored.players[2].spotState.bigBlindStealOpportunityCounted, false);
+});
+
 Deno.test("3-bet opportunities distinguish folds, calls, raises, and all-in calls", () => {
 	for (
 		const { action, chips, opportunities, threeBets } of [
@@ -957,6 +1124,12 @@ Deno.test("engine flow counts cold 3-bets and calls but excludes open raises and
 	assertEquals(state.handContext.preflopRaiseCount, 3);
 	assertEquals(players.map((player) => player.stats.threeBetOpportunities), [0, 1, 1]);
 	assertEquals(players.map((player) => player.stats.threeBets), [0, 0, 1]);
+	assertEquals(players.map((player) => player.stats.raiseFirstInOpportunities), [1, 0, 0]);
+	assertEquals(players.map((player) => player.stats.raisesFirstIn), [1, 0, 0]);
+	assertEquals(players.map((player) => player.stats.stealAttempts), [1, 0, 0]);
+	assertEquals(players.map((player) => player.stats.foldToThreeBetOpportunities), [1, 0, 0]);
+	assertEquals(players.map((player) => player.stats.foldsToThreeBet), [0, 0, 0]);
+	assertEquals(players.map((player) => player.stats.bigBlindStealOpportunities), [0, 0, 0]);
 });
 
 Deno.test("engine flow counts a limp-reraise as a 3-bet", () => {
@@ -978,6 +1151,10 @@ Deno.test("engine flow counts a limp-reraise as a 3-bet", () => {
 	assertEquals(result.type, "showdown");
 	assertEquals(players.map((player) => player.stats.threeBetOpportunities), [1, 0, 1]);
 	assertEquals(players.map((player) => player.stats.threeBets), [1, 0, 0]);
+	assertEquals(players.map((player) => player.stats.raisesFirstIn), [0, 0, 0]);
+	assertEquals(players.map((player) => player.stats.stealAttempts), [0, 0, 0]);
+	assertEquals(players.map((player) => player.stats.foldToThreeBetOpportunities), [0, 1, 0]);
+	assertEquals(players.map((player) => player.stats.foldsToThreeBet), [0, 1, 0]);
 });
 
 Deno.test("resolveTurnAction allows check with no call required", () => {
@@ -1645,6 +1822,11 @@ Deno.test("createBettingRoundStartPlan creates missing hand and spot state", () 
 				enteredPreflop: false,
 				sawFlop: false,
 				threeBetOpportunityCounted: false,
+				raiseFirstInOpportunityCounted: false,
+				foldToThreeBetOpportunityCounted: false,
+				bigBlindStealOpportunityCounted: false,
+				position: null,
+				tableSize: null,
 			},
 			roundBet: 0,
 		},
@@ -1655,6 +1837,8 @@ Deno.test("createBettingRoundStartPlan creates missing hand and spot state", () 
 			handContext: {
 				preflopRaiseCount: 0,
 				preflopAggressorSeatIndex: null,
+				preflopOpenerSeatIndex: null,
+				stealAttemptSeatIndex: null,
 				streetAggressorSeatIndex: null,
 				flopCheckedThrough: false,
 				turnCheckedThrough: false,
@@ -2042,6 +2226,7 @@ Deno.test("postBlinds creates blind player patches and pot state", () => {
 		smallBlindPatch: {
 			smallBlind: true,
 			bigBlind: false,
+			spotState: { ...createPlayerSpotState(), position: "smallBlind", tableSize: 3 },
 			roundBet: 10,
 			totalBet: 10,
 			chips: 990,
@@ -2049,6 +2234,7 @@ Deno.test("postBlinds creates blind player patches and pot state", () => {
 		bigBlindPatch: {
 			smallBlind: false,
 			bigBlind: true,
+			spotState: { ...createPlayerSpotState(), position: "bigBlind", tableSize: 3 },
 			roundBet: 20,
 			totalBet: 20,
 			chips: 980,

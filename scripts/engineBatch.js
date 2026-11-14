@@ -172,6 +172,14 @@ function createStats() {
 		pfr: 0,
 		threeBets: 0,
 		threeBetOpportunities: 0,
+		foldsToThreeBet: 0,
+		foldToThreeBetOpportunities: 0,
+		raisesFirstIn: 0,
+		raiseFirstInOpportunities: 0,
+		stealAttempts: 0,
+		stealOpportunities: 0,
+		foldsBigBlindToSteal: 0,
+		bigBlindStealOpportunities: 0,
 		calls: 0,
 		aggressiveActs: 0,
 		reveals: 0,
@@ -1254,6 +1262,16 @@ async function main() {
 	console.log(`flop_seen=${aggregatePlayerStats.flopsSeen}/${aggregatePlayerStats.hands}`);
 	console.log(`wtsd=${aggregatePlayerStats.showdowns}/${aggregatePlayerStats.flopsSeen}`);
 	console.log(`three_bet=${aggregatePlayerStats.threeBets}/${aggregatePlayerStats.threeBetOpportunities}`);
+	console.log(
+		`fold_to_three_bet=${aggregatePlayerStats.foldsToThreeBet}/${aggregatePlayerStats.foldToThreeBetOpportunities}`,
+	);
+	console.log(
+		`raise_first_in=${aggregatePlayerStats.raisesFirstIn}/${aggregatePlayerStats.raiseFirstInOpportunities}`,
+	);
+	console.log(`attempt_to_steal=${aggregatePlayerStats.stealAttempts}/${aggregatePlayerStats.stealOpportunities}`);
+	console.log(
+		`fold_bb_to_steal=${aggregatePlayerStats.foldsBigBlindToSteal}/${aggregatePlayerStats.bigBlindStealOpportunities}`,
+	);
 	console.log(`output_dir=${outputDir}`);
 }
 
