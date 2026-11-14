@@ -46,6 +46,7 @@ const CORE_ASSETS = [
 	"./remoteTable.html",
 	"./js/app.js",
 	"./js/gameEngine.js",
+	"./js/playerProfile.js",
 	"./js/remoteTable.js",
 	"./js/singleView.js",
 	"./js/serviceWorkerRegistration.js",

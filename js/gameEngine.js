@@ -470,6 +470,21 @@ export function createHandEndPlan() {
 	};
 }
 
+export function getPlayerTournamentPlacement(players, player) {
+	if (!players.includes(player)) {
+		return null;
+	}
+	const remainingPlayers = players.filter((currentPlayer) => currentPlayer.chips > 0);
+	if (player.chips > 0) {
+		return remainingPlayers.length === 1 ? 1 : null;
+	}
+	// A busted player committed their entire starting stack, including blinds, to this hand.
+	const largerBustedStacks = players.filter((currentPlayer) =>
+		currentPlayer.chips === 0 && currentPlayer.totalBet > player.totalBet
+	).length;
+	return remainingPlayers.length + largerBustedStacks + 1;
+}
+
 export function combinationCount(n, k) {
 	if (k < 0 || k > n) {
 		return 0;

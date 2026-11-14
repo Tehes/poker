@@ -14,6 +14,7 @@ import {
 	getNextBettingRoundStep,
 	getNextPhasePlan,
 	getPlayerActionStatsContext,
+	getPlayerTournamentPlacement,
 	getResolvedTurnContinuation,
 	hasPendingBettingRoundAction,
 	INITIAL_DECK,
@@ -2147,6 +2148,34 @@ Deno.test("createHandEndPlan clears deterministic hand-end state without mutatin
 	assertEquals(gameState, gameStateBefore);
 });
 
+Deno.test("tournament placement waits for a player's finish and uses the remaining field", () => {
+	const players = [createPlayer(), createPlayer({ seatIndex: 1 }), createPlayer({ seatIndex: 2 })];
+	const before = structuredClone(players);
+	assertEquals(getPlayerTournamentPlacement(players, players[0]), null);
+	assertEquals(players, before);
+	players[0].chips = 0;
+	players[0].totalBet = 1000;
+	assertEquals(getPlayerTournamentPlacement(players, players[0]), 3);
+	players[1].chips = 0;
+	players[1].totalBet = 500;
+	assertEquals(getPlayerTournamentPlacement(players, players[2]), 1);
+	assertEquals(getPlayerTournamentPlacement(players, players[0]), 2);
+	assertEquals(getPlayerTournamentPlacement(players.slice(1), players[0]), null);
+});
+
+Deno.test("simultaneous eliminations rank larger starting stacks higher and keep ties", () => {
+	const players = [
+		createPlayer({ chips: 5000 }),
+		createPlayer({ seatIndex: 1, chips: 0, totalBet: 1000 }),
+		createPlayer({ seatIndex: 2, chips: 0, totalBet: 500 }),
+		createPlayer({ seatIndex: 3, chips: 0, totalBet: 500 }),
+		createPlayer({ seatIndex: 4, chips: 0, totalBet: 200 }),
+	];
+	const before = structuredClone(players);
+	assertEquals(players.map((player) => getPlayerTournamentPlacement(players, player)), [1, 2, 3, 3, 5]);
+	assertEquals(players, before);
+});
+
 Deno.test("createNextHandTransitionPlan counts the first hand from zero", () => {
 	const players = [
 		createPlayer({ stats: createStats() }),
@@ -2968,6 +2997,7 @@ Deno.test("full engine flow removes a busted player after a three-player hand", 
 	});
 	const showdown = runResult.showdownResult;
 	const showdownSummary = summarizeShowdown(showdown);
+	assertEquals(getPlayerTournamentPlacement(gameState.players, shortStack), 3);
 	const nextHandPlan = createNextHandTransitionPlan(gameState, 2);
 	applyPlayerPatches(nextHandPlan.playerPatches);
 	applyGameStatePatch(gameState, nextHandPlan.gameStatePatch);

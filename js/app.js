@@ -46,6 +46,7 @@ import {
 	getNextPhasePlan,
 	getPlayerActionFollowUpEffects,
 	getPlayerActionStatsContext,
+	getPlayerTournamentPlacement,
 	getResolvedTurnContinuation,
 	getVisibleSolvedHand,
 	INITIAL_BIG_BLIND,
@@ -57,6 +58,7 @@ import {
 	resolveShowdown,
 	resolveTurnAction,
 } from "./gameEngine.js";
+import { createStatsSnapshot, savePlayerProfileResult } from "./playerProfile.js";
 import QrCreator from "./qr-creator.js";
 import {
 	getActionButtonLabel,
@@ -256,6 +258,8 @@ let nextChipTransferId = 1;
 let pendingSavedGameSnapshot = null;
 let currentFlowState = { type: "setup" };
 let currentGameSaveEligible = false;
+let currentTournamentId = null;
+let currentTournamentResultSaved = false;
 
 // --- Analytics --------------------------------------------------------------
 let totalHands = 0;
@@ -365,38 +369,29 @@ function normalizeNumber(value, fallback) {
 	return Number.isFinite(value) ? value : fallback;
 }
 
-function createStatsSnapshot(stats = {}) {
-	return {
-		hands: normalizeNumber(stats.hands, 0),
-		handsWon: normalizeNumber(stats.handsWon, 0),
-		flopsSeen: normalizeNumber(stats.flopsSeen, 0),
-		handsWonAfterFlop: normalizeNumber(stats.handsWonAfterFlop, 0),
-		vpip: normalizeNumber(stats.vpip, 0),
-		pfr: normalizeNumber(stats.pfr, 0),
-		threeBets: normalizeNumber(stats.threeBets, 0),
-		threeBetOpportunities: normalizeNumber(stats.threeBetOpportunities, 0),
-		foldsToThreeBet: normalizeNumber(stats.foldsToThreeBet, 0),
-		foldToThreeBetOpportunities: normalizeNumber(stats.foldToThreeBetOpportunities, 0),
-		raisesFirstIn: normalizeNumber(stats.raisesFirstIn, 0),
-		raiseFirstInOpportunities: normalizeNumber(stats.raiseFirstInOpportunities, 0),
-		stealAttempts: normalizeNumber(stats.stealAttempts, 0),
-		stealOpportunities: normalizeNumber(stats.stealOpportunities, 0),
-		foldsBigBlindToSteal: normalizeNumber(stats.foldsBigBlindToSteal, 0),
-		bigBlindStealOpportunities: normalizeNumber(stats.bigBlindStealOpportunities, 0),
-		flopCbets: normalizeNumber(stats.flopCbets, 0),
-		flopCbetOpportunities: normalizeNumber(stats.flopCbetOpportunities, 0),
-		foldsToFlopCbet: normalizeNumber(stats.foldsToFlopCbet, 0),
-		foldToFlopCbetOpportunities: normalizeNumber(stats.foldToFlopCbetOpportunities, 0),
-		calls: normalizeNumber(stats.calls, 0),
-		aggressiveActs: normalizeNumber(stats.aggressiveActs, 0),
-		reveals: normalizeNumber(stats.reveals, 0),
-		showdowns: normalizeNumber(stats.showdowns, 0),
-		showdownsWon: normalizeNumber(stats.showdownsWon, 0),
-		folds: normalizeNumber(stats.folds, 0),
-		foldsPreflop: normalizeNumber(stats.foldsPreflop, 0),
-		foldsPostflop: normalizeNumber(stats.foldsPostflop, 0),
-		allins: normalizeNumber(stats.allins, 0),
-	};
+function saveCompletedSoloTournament() {
+	if (
+		SPEED_MODE || !currentGameSaveEligible || currentTournamentResultSaved ||
+		!currentTournamentId || gameState.handInProgress
+	) {
+		return;
+	}
+	const player = gameState.allPlayers.find((currentPlayer) => !currentPlayer.isBot);
+	const placement = getPlayerTournamentPlacement(gameState.players, player);
+	if (placement === null) {
+		return;
+	}
+	const storage = getLocalStorage();
+	if (!storage) {
+		return;
+	}
+	currentTournamentResultSaved = savePlayerProfileResult(storage, {
+		id: currentTournamentId,
+		finishedAt: Date.now(),
+		participantCount: gameState.allPlayers.length,
+		placement,
+		stats: createStatsSnapshot(player.stats),
+	});
 }
 
 function createBotLineSnapshot(botLine = {}) {
@@ -507,6 +502,8 @@ function createSavedGameSnapshot() {
 			totalHands,
 			hadHumansAtStart,
 			currentGameSaveEligible,
+			currentTournamentId,
+			currentTournamentResultSaved,
 			exitEventSent,
 			summaryButtonsVisible,
 			handFastForwardActive,
@@ -688,6 +685,10 @@ function restoreRuntimeState(runtimeState = {}) {
 	totalHands = normalizeNumber(runtimeState.totalHands, 0);
 	hadHumansAtStart = runtimeState.hadHumansAtStart === true;
 	currentGameSaveEligible = runtimeState.currentGameSaveEligible === true;
+	currentTournamentId = typeof runtimeState.currentTournamentId === "string"
+		? runtimeState.currentTournamentId
+		: null;
+	currentTournamentResultSaved = runtimeState.currentTournamentResultSaved === true;
 	exitEventSent = false;
 	handFastForwardActive = runtimeState.handFastForwardActive === true;
 	autoplayToGameEnd = runtimeState.autoplayToGameEnd === true;
@@ -891,6 +892,10 @@ function restoreSavedGame(snapshot) {
 	restoreRuntimeState(snapshot.runtimeState);
 	restoreGameState(snapshot.gameState);
 	currentGameSaveEligible = hasExactlyOneHumanPlayer(gameState.players);
+	if (currentGameSaveEligible && !currentTournamentId) {
+		currentTournamentId = crypto.randomUUID();
+	}
+	saveCompletedSoloTournament();
 	restoreTableUrl(snapshot.tableId);
 	renderRestoredGameState();
 	syncRuntimePlayback();
@@ -2336,6 +2341,8 @@ function startGame() {
 		createPlayers();
 		hadHumansAtStart = gameState.players.some((p) => !p.isBot);
 		currentGameSaveEligible = hasExactlyOneHumanPlayer(gameState.players);
+		currentTournamentId = currentGameSaveEligible && !SPEED_MODE ? crypto.randomUUID() : null;
+		currentTournamentResultSaved = false;
 		exitEventSent = false;
 
 		if (gameState.players.length > 1) {
@@ -3198,6 +3205,7 @@ function finishHandAfterShowdown() {
 
 	clearActiveTurnPlayer(false);
 	applyGameStatePatch(handEndPlan.gameStatePatch);
+	saveCompletedSoloTournament();
 	renderPot();
 
 	humanTurnController.hide();
@@ -3533,7 +3541,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-11-14-v8";
+const SERVICE_WORKER_VERSION = "2026-11-14-v9";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
