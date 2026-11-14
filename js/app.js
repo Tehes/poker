@@ -368,6 +368,8 @@ function createStatsSnapshot(stats = {}) {
 	return {
 		hands: normalizeNumber(stats.hands, 0),
 		handsWon: normalizeNumber(stats.handsWon, 0),
+		flopsSeen: normalizeNumber(stats.flopsSeen, 0),
+		handsWonAfterFlop: normalizeNumber(stats.handsWonAfterFlop, 0),
 		vpip: normalizeNumber(stats.vpip, 0),
 		pfr: normalizeNumber(stats.pfr, 0),
 		calls: normalizeNumber(stats.calls, 0),
@@ -2401,6 +2403,8 @@ function createPlayers() {
 			stats: {
 				hands: 0,
 				handsWon: 0,
+				flopsSeen: 0,
+				handsWonAfterFlop: 0,
 				vpip: 0,
 				pfr: 0,
 				calls: 0,
@@ -2627,6 +2631,7 @@ function dealCommunityCards(amount) {
 		logFlow("dealCommunityCards: not enough slots");
 		return;
 	}
+	applyPlayerPatches(dealPlan.playerPatches);
 	applyGameStatePatch(dealPlan.gameStatePatch);
 	renderTableCommunityCards(communityCardSlots, gameState.communityCards);
 	updateHandStrengthDisplays();
@@ -3498,7 +3503,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-11-14-v3";
+const SERVICE_WORKER_VERSION = "2026-11-14-v4";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

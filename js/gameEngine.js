@@ -375,6 +375,9 @@ function buildShowdownStatsPatch(player, showdownResult) {
 	}
 	if (isWinner) {
 		patch.handsWon = player.stats.handsWon + 1;
+		if (player.spotState?.sawFlop) {
+			patch.handsWonAfterFlop = player.stats.handsWonAfterFlop + 1;
+		}
 		if (showdownResult.hadShowdown) {
 			patch.showdownsWon = player.stats.showdownsWon + 1;
 		}
@@ -668,6 +671,7 @@ export function createPlayerSpotState() {
 		voluntaryThisStreet: false,
 		aggressiveThisStreet: false,
 		enteredPreflop: false,
+		sawFlop: false,
 	};
 }
 
@@ -1284,6 +1288,7 @@ function advanceEngineHandRunPhase(gameState, result) {
 		if (!dealPlan) {
 			return { type: "deal-error", phasePlan };
 		}
+		applyEnginePlayerPatches(dealPlan.playerPatches);
 		applyEngineGameStatePatch(gameState, dealPlan.gameStatePatch);
 		result.communityDealPlans.push(dealPlan);
 		return { type: "continue" };
@@ -1775,9 +1780,29 @@ export function dealCommunityCardsForPhase(gameState, amount, maxCommunityCards 
 		}
 	}
 
+	const playerPatches = [];
+	if (gameState.communityCards.length === 0 && dealtCards.length === 3) {
+		gameState.players.forEach((player) => {
+			if (player.folded) {
+				return;
+			}
+			const patch = {
+				spotState: {
+					...(player.spotState ?? createPlayerSpotState()),
+					sawFlop: true,
+				},
+			};
+			if (player.stats) {
+				patch.stats = { ...player.stats, flopsSeen: player.stats.flopsSeen + 1 };
+			}
+			addPlayerPatch(playerPatches, player, patch);
+		});
+	}
+
 	return {
 		burnedCard,
 		dealtCards,
+		playerPatches,
 		gameStatePatch: {
 			deck,
 			cardGraveyard,

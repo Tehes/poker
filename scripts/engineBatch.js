@@ -162,6 +162,8 @@ function createStats() {
 	return {
 		hands: 0,
 		handsWon: 0,
+		flopsSeen: 0,
+		handsWonAfterFlop: 0,
 		vpip: 0,
 		pfr: 0,
 		calls: 0,

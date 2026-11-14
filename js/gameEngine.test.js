@@ -14,6 +14,7 @@ import {
 	getNextPhasePlan,
 	getResolvedTurnContinuation,
 	hasPendingBettingRoundAction,
+	INITIAL_DECK,
 	isAllInRunout,
 	postBlinds,
 	recordPlayerActionStats,
@@ -98,6 +99,8 @@ function createStats({ hands = 0 } = {}) {
 	return {
 		hands,
 		handsWon: 0,
+		flopsSeen: 0,
+		handsWonAfterFlop: 0,
 		vpip: 0,
 		pfr: 0,
 		calls: 0,
@@ -1501,6 +1504,7 @@ Deno.test("createBettingRoundStartPlan creates missing hand and spot state", () 
 				voluntaryThisStreet: false,
 				aggressiveThisStreet: false,
 				enteredPreflop: false,
+				sawFlop: false,
 			},
 			roundBet: 0,
 		},
@@ -2157,6 +2161,7 @@ Deno.test("dealCommunityCardsForPhase burns and deals without mutating state", (
 	assertEquals(result, {
 		burnedCard: "2C",
 		dealtCards: ["3C"],
+		playerPatches: [],
 		gameStatePatch: {
 			deck: ["4C", "5C"],
 			cardGraveyard: ["AS", "2C", "3C"],
@@ -2176,6 +2181,121 @@ Deno.test("dealCommunityCardsForPhase rejects overfilled boards without mutating
 
 	assertEquals(dealCommunityCardsForPhase(gameState, 2), null);
 	assertEquals(gameState, gameStateBefore);
+});
+
+Deno.test("flop stats include all-in players, exclude preflop folds, and count only once", () => {
+	const players = [
+		createPlayer({ stats: createStats() }),
+		createPlayer({ seatIndex: 1, folded: true, stats: createStats() }),
+		createPlayer({ seatIndex: 2, chips: 0, allIn: true, stats: createStats() }),
+	];
+	const gameState = createFlowGameState({ players, deck: INITIAL_DECK.slice() });
+	gameState.currentPhaseIndex = 1;
+	const before = structuredClone(gameState);
+	const flopPlan = dealCommunityCardsForPhase(gameState, 3);
+	assertEquals(gameState, before);
+	applyPlayerPatches(flopPlan.playerPatches);
+	applyGameStatePatch(gameState, flopPlan.gameStatePatch);
+	assertEquals(players.map((player) => player.stats.flopsSeen), [1, 0, 1]);
+	assertEquals(players.map((player) => player.spotState?.sawFlop === true), [true, false, true]);
+
+	const roundPlan = createBettingRoundStartPlan(gameState);
+	applyPlayerPatches(roundPlan.playerPatches);
+	applyGameStatePatch(gameState, roundPlan.gameStatePatch);
+	assertEquals(players[0].spotState.sawFlop, true);
+	players[0].folded = true;
+	for (const currentPhaseIndex of [2, 3]) {
+		gameState.currentPhaseIndex = currentPhaseIndex;
+		const plan = dealCommunityCardsForPhase(gameState, 1);
+		applyPlayerPatches(plan.playerPatches);
+		applyGameStatePatch(gameState, plan.gameStatePatch);
+	}
+	assertEquals(players.map((player) => player.stats.flopsSeen), [1, 0, 1]);
+	assertEquals(players[0].spotState.sawFlop, true);
+
+	const nextHandPlan = createNextHandTransitionPlan(gameState, 2);
+	applyPlayerPatches(nextHandPlan.playerPatches);
+	applyGameStatePatch(gameState, nextHandPlan.gameStatePatch);
+	assertEquals(gameState.players.map((player) => player.spotState.sawFlop), [false, false]);
+	assertEquals(players.map((player) => player.stats.flopsSeen), [1, 0, 1]);
+});
+
+Deno.test("a preflop uncontested win does not count as a flop or a win after seeing the flop", () => {
+	const players = [
+		createPlayer({ stats: createStats() }),
+		createPlayer({ seatIndex: 1, stats: createStats() }),
+	];
+	const gameState = createFlowGameState({ players, deck: INITIAL_DECK.slice() });
+	const result = runEngineHand(gameState, () => ({ action: "fold" }), { shuffleFn: (deck) => deck });
+	assertEquals(result.type, "showdown");
+	assertEquals(players.map((player) => player.stats.flopsSeen), [0, 0]);
+	assertEquals(players.map((player) => player.stats.handsWonAfterFlop), [0, 0]);
+	assertEquals(result.showdownResult.winningPlayers.length, 1);
+});
+
+Deno.test("an uncontested flop win counts after a preflop fold and a postflop fold", () => {
+	const players = [
+		createPlayer({ name: "Winner", stats: createStats() }),
+		createPlayer({ name: "Flop Fold", seatIndex: 1, stats: createStats() }),
+		createPlayer({ name: "Preflop Fold", seatIndex: 2, stats: createStats() }),
+	];
+	const gameState = createFlowGameState({ players, deck: INITIAL_DECK.slice() });
+	const result = runEngineHand(gameState, (state, player) => {
+		if (
+			(state.currentPhaseIndex === 0 && player.name === "Preflop Fold") ||
+			(state.currentPhaseIndex === 1 && player.name === "Flop Fold")
+		) {
+			return { action: "fold" };
+		}
+		return callOrCheckAction(state, player);
+	}, { shuffleFn: (deck) => deck });
+	assertEquals(result.type, "showdown");
+	assertEquals(result.showdownResult.hadShowdown, false);
+	assertEquals(players.map((player) => player.stats.flopsSeen), [1, 1, 0]);
+	assertEquals(players.map((player) => player.stats.handsWonAfterFlop), [1, 0, 0]);
+});
+
+Deno.test("split pots count as one win after seeing the flop for each winner", () => {
+	const players = [
+		createPlayer({ totalBet: 100, holeCards: ["AS", "KD"], stats: createStats(), spotState: { sawFlop: true } }),
+		createPlayer({
+			seatIndex: 1,
+			totalBet: 100,
+			holeCards: ["AH", "KC"],
+			stats: createStats(),
+			spotState: { sawFlop: true },
+		}),
+	];
+	const showdown = resolveShowdown(players, ["2C", "3D", "4H", "5S", "9C"]);
+	const plan = createShowdownCommitPlan({ players }, showdown);
+	applyPlayerPatches(plan.playerPatches);
+	assertEquals(showdown.winningPlayers.length, 2);
+	assertEquals(players.map((player) => player.stats.handsWonAfterFlop), [1, 1]);
+});
+
+Deno.test("flop win stats count side pot winners once and exclude refund-only payouts", () => {
+	for (
+		const { cards, wins } of [
+			{ cards: [["AS", "AH"], ["KS", "KH"], ["QS", "QH"]], wins: [1, 1, 0] },
+			{ cards: [["QS", "QH"], ["KS", "KH"], ["AS", "AH"]], wins: [0, 0, 1] },
+		]
+	) {
+		const players = cards.map((holeCards, seatIndex) =>
+			createPlayer({
+				name: `Player ${seatIndex}`,
+				seatIndex,
+				totalBet: [50, 100, 200][seatIndex],
+				holeCards,
+				stats: createStats(),
+				spotState: { sawFlop: true },
+			})
+		);
+		const showdown = resolveShowdown(players, ["2C", "7D", "9H", "TC", "3S"]);
+		const plan = createShowdownCommitPlan({ players }, showdown);
+		applyPlayerPatches(plan.playerPatches);
+		assertEquals(players.map((player) => player.stats.handsWonAfterFlop), wins);
+		assertEquals(showdown.potResults.some((pot) => pot.isRefundOnly), true);
+	}
 });
 
 Deno.test("heads-up setup makes dealer the small blind and starts preflop action on the dealer", () => {
@@ -2493,8 +2613,8 @@ Deno.test("full engine flow runs out a preflop all-in", () => {
 });
 
 Deno.test("runEngineTournament plays a browserless mini tournament to champion", () => {
-	const shortButton = createPlayer({ name: "Short Button", seatIndex: 0, chips: 20 });
-	const bigBlind = createPlayer({ name: "Big Blind", seatIndex: 1, chips: 1000 });
+	const shortButton = createPlayer({ name: "Short Button", seatIndex: 0, chips: 20, stats: createStats() });
+	const bigBlind = createPlayer({ name: "Big Blind", seatIndex: 1, chips: 1000, stats: createStats() });
 	const events = [];
 	const gameState = createFlowGameState({
 		players: [shortButton, bigBlind],
@@ -2521,6 +2641,9 @@ Deno.test("runEngineTournament plays a browserless mini tournament to champion",
 		maxHands: 5,
 		shuffleFn: (deck) => deck,
 	});
+
+	assertEquals([shortButton.stats.flopsSeen, bigBlind.stats.flopsSeen], [1, 1]);
+	assertEquals([shortButton.stats.handsWonAfterFlop, bigBlind.stats.handsWonAfterFlop], [0, 1]);
 
 	assertEquals({
 		type: result.type,
