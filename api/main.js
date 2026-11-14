@@ -247,7 +247,11 @@ function routeRequest(request) {
 	}
 
 	const origin = request.headers.get("origin");
-	if (origin !== null && !allowedOrigins.has(origin)) {
+	// Requests without an Origin header previously bypassed the allowlist entirely,
+	// letting any direct (non-browser) client read/write table state and actions
+	// without authenticating as one of the trusted front-ends. Require a valid,
+	// allowlisted Origin for every request instead of only checking it when present.
+	if (!origin || !allowedOrigins.has(origin)) {
 		return textResponse("Forbidden", 403, origin);
 	}
 
