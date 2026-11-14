@@ -12,6 +12,7 @@ import {
 	getBlindLevelUpdateForHand,
 	getNextBettingRoundStep,
 	getNextPhasePlan,
+	getPlayerActionStatsContext,
 	getResolvedTurnContinuation,
 	hasPendingBettingRoundAction,
 	INITIAL_DECK,
@@ -103,6 +104,8 @@ function createStats({ hands = 0 } = {}) {
 		handsWonAfterFlop: 0,
 		vpip: 0,
 		pfr: 0,
+		threeBets: 0,
+		threeBetOpportunities: 0,
 		calls: 0,
 		aggressiveActs: 0,
 		reveals: 0,
@@ -123,6 +126,15 @@ function applyPlayerPatches(playerPatches) {
 
 function applyGameStatePatch(gameState, gameStatePatch) {
 	Object.assign(gameState, gameStatePatch);
+}
+
+function applyActionForStatsTest(gameState, player, actionRequest) {
+	const resolved = resolveTurnAction(gameState, player, actionRequest);
+	Object.assign(resolved.actionMeta, getPlayerActionStatsContext(gameState, player));
+	Object.assign(player, resolved.playerPatch);
+	Object.assign(gameState, resolved.gameStatePatch);
+	recordPlayerActionStats(gameState, player, resolved.action, resolved.actionMeta);
+	return resolved;
 }
 
 function applyHandContextPatch(gameState, handContextPatch) {
@@ -841,6 +853,133 @@ Deno.test("postflop all-in bets and raises stay aggressive instead of counting a
 	}
 });
 
+Deno.test("3-bet opportunities distinguish folds, calls, raises, and all-in calls", () => {
+	for (
+		const { action, chips, opportunities, threeBets } of [
+			{ action: "fold", chips: 300, opportunities: 1, threeBets: 0 },
+			{ action: "call", chips: 300, opportunities: 1, threeBets: 0 },
+			{ action: "raise", chips: 300, opportunities: 1, threeBets: 1 },
+			{ action: "allin", chips: 40, opportunities: 0, threeBets: 0 },
+			{ action: "allin", chips: 80, opportunities: 0, threeBets: 0 },
+			{ action: "allin", chips: 90, opportunities: 1, threeBets: 1 },
+			{ action: "allin", chips: 300, opportunities: 1, threeBets: 1 },
+		]
+	) {
+		const player = createPlayer({ chips, roundBet: 20, stats: createStats({ hands: 1 }) });
+		const { gameState } = createGameState({ player, currentPhaseIndex: 0, currentBet: 100, lastRaise: 80 });
+		gameState.handContext = { preflopRaiseCount: 1, preflopAggressorSeatIndex: 1 };
+		applyActionForStatsTest(gameState, player, { action, amount: 160 });
+		assertEquals([player.stats.threeBetOpportunities, player.stats.threeBets], [opportunities, threeBets]);
+	}
+});
+
+Deno.test("3-bet opportunities require a remaining opponent who can contest another raise", () => {
+	const player = createPlayer({ chips: 500, stats: createStats() });
+	const allInOpener = createPlayer({ seatIndex: 1, roundBet: 100, chips: 0, allIn: true });
+	for (
+		const { chips, folded, expected } of [
+			{ chips: 0, folded: false, expected: false },
+			{ chips: 50, folded: false, expected: false },
+			{ chips: 100, folded: false, expected: false },
+			{ chips: 200, folded: true, expected: false },
+			{ chips: 200, folded: false, expected: true },
+		]
+	) {
+		const other = createPlayer({ seatIndex: 2, chips, folded });
+		const { gameState } = createGameState({
+			player,
+			opponents: [allInOpener, other],
+			currentPhaseIndex: 0,
+			currentBet: 100,
+		});
+		gameState.handContext = { preflopRaiseCount: 1 };
+		const before = structuredClone(gameState);
+		assertEquals(getPlayerActionStatsContext(gameState, player).threeBetOpportunity, expected);
+		assertEquals(gameState, before);
+	}
+});
+
+Deno.test("a short all-in does not reopen a 3-bet opportunity for a player who already acted", () => {
+	for (
+		const { currentBet, actedThisStreet, expected } of [
+			{ currentBet: 30, actedThisStreet: true, expected: false },
+			{ currentBet: 30, actedThisStreet: false, expected: true },
+			{ currentBet: 40, actedThisStreet: true, expected: true },
+		]
+	) {
+		const player = createPlayer({ roundBet: 20, spotState: { actedThisStreet } });
+		const { gameState } = createGameState({ player, currentPhaseIndex: 0, currentBet, lastRaise: 20 });
+		gameState.handContext = { preflopRaiseCount: 1 };
+		assertEquals(getPlayerActionStatsContext(gameState, player).threeBetOpportunity, expected);
+	}
+});
+
+Deno.test("3-bet opportunities are counted once across save and restore and reset for the next hand", () => {
+	const players = [
+		createPlayer({ stats: createStats({ hands: 1 }) }),
+		createPlayer({ seatIndex: 1, stats: createStats({ hands: 1 }) }),
+	];
+	const gameState = { players, currentPhaseIndex: 0 };
+	const meta = { aggressive: false, voluntary: true, threeBetOpportunity: true };
+	recordPlayerActionStats(gameState, players[0], "call", meta);
+	const restored = JSON.parse(JSON.stringify(gameState));
+	recordPlayerActionStats(restored, restored.players[0], "call", meta);
+	assertEquals(restored.players[0].stats.threeBetOpportunities, 1);
+	const next = createNextHandTransitionPlan(restored, 2);
+	applyPlayerPatches(next.playerPatches);
+	applyGameStatePatch(restored, next.gameStatePatch);
+	assertEquals(restored.players[0].spotState.threeBetOpportunityCounted, false);
+	recordPlayerActionStats(restored, restored.players[0], "raise", { ...meta, aggressive: true });
+	assertEquals(restored.players[0].stats.threeBetOpportunities, 2);
+	assertEquals(restored.players[0].stats.threeBets, 1);
+});
+
+Deno.test("engine flow counts cold 3-bets and calls but excludes open raises and 4-bets", () => {
+	const players = [0, 1, 2].map((seatIndex) => createPlayer({ seatIndex, stats: createStats() }));
+	const state = createFlowGameState({ players, deck: INITIAL_DECK.slice() });
+	const result = runEngineHand(state, (gameState, player) => {
+		const raises = gameState.handContext.preflopRaiseCount;
+		if (player.seatIndex === 0 && raises === 0) {
+			return { action: "raise", amount: 80 };
+		}
+		if (player.seatIndex === 1 && raises === 1) {
+			return { action: "call" };
+		}
+		if (player.seatIndex === 2 && raises === 1) {
+			return { action: "raise", amount: 200 };
+		}
+		if (player.seatIndex === 0 && raises === 2) {
+			return { action: "raise", amount: 500 };
+		}
+		return { action: "fold" };
+	}, { shuffleFn: (deck) => deck });
+	assertEquals(result.type, "showdown");
+	assertEquals(state.handContext.preflopRaiseCount, 3);
+	assertEquals(players.map((player) => player.stats.threeBetOpportunities), [0, 1, 1]);
+	assertEquals(players.map((player) => player.stats.threeBets), [0, 0, 1]);
+});
+
+Deno.test("engine flow counts a limp-reraise as a 3-bet", () => {
+	const players = [0, 1, 2].map((seatIndex) => createPlayer({ seatIndex, stats: createStats() }));
+	const state = createFlowGameState({ players, deck: INITIAL_DECK.slice() });
+	const result = runEngineHand(state, (gameState, player) => {
+		const raises = gameState.handContext.preflopRaiseCount;
+		if (player.seatIndex === 0 && raises === 0) {
+			return { action: "call" };
+		}
+		if (player.seatIndex === 1 && raises === 0) {
+			return { action: "raise", amount: 80 };
+		}
+		if (player.seatIndex === 0 && raises === 1) {
+			return { action: "raise", amount: 200 };
+		}
+		return { action: "fold" };
+	}, { shuffleFn: (deck) => deck });
+	assertEquals(result.type, "showdown");
+	assertEquals(players.map((player) => player.stats.threeBetOpportunities), [1, 0, 1]);
+	assertEquals(players.map((player) => player.stats.threeBets), [1, 0, 0]);
+});
+
 Deno.test("resolveTurnAction allows check with no call required", () => {
 	const { gameState, player } = createGameState();
 
@@ -1505,6 +1644,7 @@ Deno.test("createBettingRoundStartPlan creates missing hand and spot state", () 
 				aggressiveThisStreet: false,
 				enteredPreflop: false,
 				sawFlop: false,
+				threeBetOpportunityCounted: false,
 			},
 			roundBet: 0,
 		},

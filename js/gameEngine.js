@@ -1,5 +1,5 @@
 import { Hand } from "./pokersolver.js";
-import { getPlayerActionState } from "./shared/actionModel.js";
+import { getEffectiveRaiseCap, getPlayerActionState } from "./shared/actionModel.js";
 
 /* ==================================================================================================
 MODULE BOUNDARY: Pure Poker Engine
@@ -366,6 +366,7 @@ export function getPlayerStatsRates(stats) {
 	return {
 		flopSeenPct: stats.hands > 0 ? stats.flopsSeen / stats.hands * 100 : null,
 		wtsdPct: stats.flopsSeen > 0 ? stats.showdowns / stats.flopsSeen * 100 : null,
+		threeBetPct: stats.threeBetOpportunities > 0 ? stats.threeBets / stats.threeBetOpportunities * 100 : null,
 	};
 }
 
@@ -679,6 +680,7 @@ export function createPlayerSpotState() {
 		aggressiveThisStreet: false,
 		enteredPreflop: false,
 		sawFlop: false,
+		threeBetOpportunityCounted: false,
 	};
 }
 
@@ -709,6 +711,17 @@ function ensurePlayerSpotState(player) {
 	return player.spotState;
 }
 
+export function getPlayerActionStatsContext(gameState, player) {
+	const needToCall = Math.max(0, gameState.currentBet - player.roundBet);
+	return {
+		threeBetOpportunity: gameState.currentPhaseIndex === 0 &&
+			gameState.handContext?.preflopRaiseCount === 1 &&
+			needToCall > 0 && player.chips > needToCall &&
+			(!player.spotState?.actedThisStreet || needToCall >= gameState.lastRaise) &&
+			getEffectiveRaiseCap(gameState, player) > needToCall,
+	};
+}
+
 export function recordPlayerActionStats(gameState, player, actionName, actionMeta = {}) {
 	if (!gameState || !player) {
 		return;
@@ -722,6 +735,19 @@ export function recordPlayerActionStats(gameState, player, actionName, actionMet
 		(actionName === "call" || actionName === "raise" || actionName === "allin");
 	const isAggressiveAction = actionMeta.aggressive ??
 		(actionName === "raise" || actionName === "allin");
+
+	if (
+		gameState.currentPhaseIndex === 0 && actionMeta.threeBetOpportunity &&
+		!spotState.threeBetOpportunityCounted
+	) {
+		spotState.threeBetOpportunityCounted = true;
+		if (player.stats) {
+			player.stats.threeBetOpportunities++;
+			if (isAggressiveAction) {
+				player.stats.threeBets++;
+			}
+		}
+	}
 
 	spotState.actedThisStreet = true;
 	if (isVoluntaryAction) {
@@ -1200,6 +1226,7 @@ function commitResolvedEngineAction(gameState, player, actionRequest) {
 		return null;
 	}
 
+	Object.assign(resolvedAction.actionMeta, getPlayerActionStatsContext(gameState, player));
 	Object.assign(player, resolvedAction.playerPatch);
 	Object.assign(gameState, resolvedAction.gameStatePatch);
 	recordPlayerActionStats(

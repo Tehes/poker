@@ -649,6 +649,7 @@ async function main() {
 		console.log(`decisions=${aggregateMetrics.decisionCount}`);
 		console.log(`flop_seen=${aggregatePlayerStats.flopsSeen}/${aggregatePlayerStats.hands}`);
 		console.log(`wtsd=${aggregatePlayerStats.showdowns}/${aggregatePlayerStats.flopsSeen}`);
+		console.log(`three_bet=${aggregatePlayerStats.threeBets}/${aggregatePlayerStats.threeBetOpportunities}`);
 		console.log(
 			`decision_join_coverage=${summary.outcomeMetrics.decisionJoinCoverage.joinedDecisions}/${summary.outcomeMetrics.decisionJoinCoverage.totalDecisions}`,
 		);

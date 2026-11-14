@@ -170,6 +170,8 @@ function createStats() {
 		handsWonAfterFlop: 0,
 		vpip: 0,
 		pfr: 0,
+		threeBets: 0,
+		threeBetOpportunities: 0,
 		calls: 0,
 		aggressiveActs: 0,
 		reveals: 0,
@@ -1251,6 +1253,7 @@ async function main() {
 	console.log(`player_busts=${aggregateEngineMetrics.playerBustCount}`);
 	console.log(`flop_seen=${aggregatePlayerStats.flopsSeen}/${aggregatePlayerStats.hands}`);
 	console.log(`wtsd=${aggregatePlayerStats.showdowns}/${aggregatePlayerStats.flopsSeen}`);
+	console.log(`three_bet=${aggregatePlayerStats.threeBets}/${aggregatePlayerStats.threeBetOpportunities}`);
 	console.log(`output_dir=${outputDir}`);
 }
 

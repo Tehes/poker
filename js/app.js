@@ -45,6 +45,7 @@ import {
 	getNextBettingRoundStep,
 	getNextPhasePlan,
 	getPlayerActionFollowUpEffects,
+	getPlayerActionStatsContext,
 	getResolvedTurnContinuation,
 	getVisibleSolvedHand,
 	INITIAL_BIG_BLIND,
@@ -372,6 +373,8 @@ function createStatsSnapshot(stats = {}) {
 		handsWonAfterFlop: normalizeNumber(stats.handsWonAfterFlop, 0),
 		vpip: normalizeNumber(stats.vpip, 0),
 		pfr: normalizeNumber(stats.pfr, 0),
+		threeBets: normalizeNumber(stats.threeBets, 0),
+		threeBetOpportunities: normalizeNumber(stats.threeBetOpportunities, 0),
 		calls: normalizeNumber(stats.calls, 0),
 		aggressiveActs: normalizeNumber(stats.aggressiveActs, 0),
 		reveals: normalizeNumber(stats.reveals, 0),
@@ -2407,6 +2410,8 @@ function createPlayers() {
 				handsWonAfterFlop: 0,
 				vpip: 0,
 				pfr: 0,
+				threeBets: 0,
+				threeBetOpportunities: 0,
 				calls: 0,
 				aggressiveActs: 0,
 				reveals: 0,
@@ -2842,6 +2847,7 @@ function applyTurnAction(player, actionRequest) {
 		return null;
 	}
 
+	Object.assign(resolvedAction.actionMeta, getPlayerActionStatsContext(gameState, player));
 	applyResolvedTurnActionPatches(player, resolvedAction);
 	notifyPlayerAction(
 		player,
@@ -3503,7 +3509,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-11-14-v5";
+const SERVICE_WORKER_VERSION = "2026-11-14-v6";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
