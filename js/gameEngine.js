@@ -705,6 +705,8 @@ export function recordPlayerActionStats(gameState, player, actionName, actionMet
 
 	const handContext = ensureHandContext(gameState);
 	const spotState = ensurePlayerSpotState(player);
+	const hadEnteredPreflop = spotState.enteredPreflop;
+	const hadAggressiveActionThisStreet = spotState.aggressiveThisStreet;
 	const isVoluntaryAction = actionMeta.voluntary ??
 		(actionName === "call" || actionName === "raise" || actionName === "allin");
 	const isAggressiveAction = actionMeta.aggressive ??
@@ -740,10 +742,10 @@ export function recordPlayerActionStats(gameState, player, actionName, actionMet
 	}
 
 	if (gameState.currentPhaseIndex === 0) {
-		if (player.stats && isVoluntaryAction) {
+		if (player.stats && isVoluntaryAction && !hadEnteredPreflop) {
 			player.stats.vpip++;
 		}
-		if (player.stats && isAggressiveAction) {
+		if (player.stats && isAggressiveAction && !hadAggressiveActionThisStreet) {
 			player.stats.pfr++;
 		}
 		if (isAggressiveAction) {

@@ -16,6 +16,7 @@ import {
 	hasPendingBettingRoundAction,
 	isAllInRunout,
 	postBlinds,
+	recordPlayerActionStats,
 	resetPlayersForNewHand,
 	resolveShowdown,
 	resolveTurnAction,
@@ -710,6 +711,93 @@ Deno.test("createShowdownCommitPlan pays refund-only pots without winner stats",
 		],
 		winningPlayers: ["Main"],
 	});
+});
+
+Deno.test("preflop stats count a call and repeated raises once per hand", () => {
+	const player = createPlayer({ stats: createStats({ hands: 1 }) });
+	const gameState = { currentPhaseIndex: 0, players: [player] };
+
+	recordPlayerActionStats(gameState, player, "call");
+	assertEquals([player.stats.vpip, player.stats.pfr], [1, 0]);
+	recordPlayerActionStats(gameState, player, "raise");
+	recordPlayerActionStats(gameState, player, "raise");
+	recordPlayerActionStats(gameState, player, "call");
+	assertEquals([player.stats.vpip, player.stats.pfr], [1, 1]);
+	assertEquals(gameState.handContext.preflopRaiseCount, 2);
+});
+
+Deno.test("preflop stats count a raise first in as both VPIP and PFR", () => {
+	const player = createPlayer({ stats: createStats({ hands: 1 }) });
+	const gameState = { currentPhaseIndex: 0, players: [player] };
+
+	recordPlayerActionStats(gameState, player, "raise");
+	recordPlayerActionStats(gameState, player, "raise");
+	assertEquals([player.stats.vpip, player.stats.pfr], [1, 1]);
+});
+
+Deno.test("preflop stats exclude forced blinds, checks, and folds", () => {
+	const players = [
+		createPlayer({ stats: createStats({ hands: 1 }) }),
+		createPlayer({ seatIndex: 1, stats: createStats({ hands: 1 }) }),
+	];
+	const gameState = { currentPhaseIndex: 0, players, smallBlind: 10, bigBlind: 20 };
+	const blindPlan = postBlinds(gameState);
+	applyPlayerPatches(blindPlan.playerPatches);
+	applyGameStatePatch(gameState, blindPlan.gameStatePatch);
+	recordPlayerActionStats(gameState, players[0], "fold");
+	recordPlayerActionStats(gameState, players[1], "check");
+
+	assertEquals(players.map((player) => [player.stats.vpip, player.stats.pfr]), [[0, 0], [0, 0]]);
+});
+
+Deno.test("preflop stats distinguish all-in calls from all-in raises", () => {
+	for (const chips of [10, 20, 100]) {
+		const player = createPlayer({ chips, stats: createStats({ hands: 1 }) });
+		const { gameState } = createGameState({ player, currentPhaseIndex: 0, currentBet: 20 });
+		const resolved = resolveTurnAction(gameState, player, { action: "allin" });
+		Object.assign(player, resolved.playerPatch);
+		Object.assign(gameState, resolved.gameStatePatch);
+		recordPlayerActionStats(gameState, player, resolved.action, resolved.actionMeta);
+
+		assertEquals([player.stats.vpip, player.stats.pfr], [1, chips > 20 ? 1 : 0]);
+	}
+});
+
+Deno.test("preflop stats count again in the next hand without changing earlier totals", () => {
+	const players = [
+		createPlayer({ stats: createStats() }),
+		createPlayer({ seatIndex: 1, stats: createStats() }),
+	];
+	const gameState = { players };
+	for (const handId of [1, 2]) {
+		const plan = createNextHandTransitionPlan(gameState, handId);
+		applyPlayerPatches(plan.playerPatches);
+		applyGameStatePatch(gameState, plan.gameStatePatch);
+		recordPlayerActionStats(gameState, players[0], "call");
+		recordPlayerActionStats(gameState, players[0], "raise");
+		recordPlayerActionStats(gameState, players[0], "raise");
+		assertEquals([players[0].stats.hands, players[0].stats.vpip, players[0].stats.pfr], [handId, handId, handId]);
+	}
+});
+
+Deno.test("preflop stats preserve hand markers through save and restore", () => {
+	const player = createPlayer({ stats: createStats({ hands: 1 }) });
+	const gameState = { currentPhaseIndex: 0, players: [player] };
+	recordPlayerActionStats(gameState, player, "raise");
+	const restoredState = JSON.parse(JSON.stringify(gameState));
+	const restoredPlayer = restoredState.players[0];
+	recordPlayerActionStats(restoredState, restoredPlayer, "call");
+	recordPlayerActionStats(restoredState, restoredPlayer, "raise");
+	assertEquals([restoredPlayer.stats.vpip, restoredPlayer.stats.pfr], [1, 1]);
+});
+
+Deno.test("postflop actions do not change VPIP or PFR and still count each raise", () => {
+	const player = createPlayer({ stats: createStats({ hands: 1 }) });
+	const gameState = { currentPhaseIndex: 1, players: [player] };
+	recordPlayerActionStats(gameState, player, "raise");
+	recordPlayerActionStats(gameState, player, "raise");
+	recordPlayerActionStats(gameState, player, "call");
+	assertEquals([player.stats.vpip, player.stats.pfr, player.stats.aggressiveActs, player.stats.calls], [0, 0, 2, 1]);
 });
 
 Deno.test("resolveTurnAction allows check with no call required", () => {
