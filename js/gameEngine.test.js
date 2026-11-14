@@ -115,6 +115,10 @@ function createStats({ hands = 0 } = {}) {
 		stealOpportunities: 0,
 		foldsBigBlindToSteal: 0,
 		bigBlindStealOpportunities: 0,
+		flopCbets: 0,
+		flopCbetOpportunities: 0,
+		foldsToFlopCbet: 0,
+		foldToFlopCbetOpportunities: 0,
 		calls: 0,
 		aggressiveActs: 0,
 		reveals: 0,
@@ -234,6 +238,28 @@ function createPreflopStatsTable(playerCount = 6) {
 	const gameState = createFlowGameState({ players, deck: INITIAL_DECK.slice() });
 	startEngineHand(gameState);
 	return { players, gameState };
+}
+
+function createFlopStatsTable(playerCount = 3, threeBet = false) {
+	const table = createPreflopStatsTable(playerCount);
+	const { players, gameState } = table;
+	applyActionForStatsTest(gameState, players[0], { action: "raise", amount: 80 });
+	if (threeBet) {
+		applyActionForStatsTest(gameState, players[1], { action: "raise", amount: 200 });
+	}
+	for (const player of players) {
+		if (player.roundBet < gameState.currentBet) {
+			applyActionForStatsTest(gameState, player, { action: "call" });
+		}
+	}
+	const phasePlan = getNextPhasePlan(gameState);
+	applyGameStatePatch(gameState, phasePlan.gameStatePatch);
+	applyHandContextPatch(gameState, phasePlan.handContextPatch);
+	const dealPlan = dealCommunityCardsForPhase(gameState, phasePlan.cardsToDeal);
+	applyPlayerPatches(dealPlan.playerPatches);
+	applyGameStatePatch(gameState, dealPlan.gameStatePatch);
+	applyBettingRoundStartPlanForTest(gameState);
+	return table;
 }
 
 function callOrCheckAction(gameState, player) {
@@ -870,6 +896,151 @@ Deno.test("postflop all-in bets and raises stay aggressive instead of counting a
 
 		assertEquals([player.stats.calls, player.stats.aggressiveActs, player.stats.allins], [0, 1, 1]);
 	}
+});
+
+Deno.test("flop c-bets count the last preflop raiser's first bet after checks", () => {
+	for (const threeBet of [false, true]) {
+		const { players, gameState } = createFlopStatsTable(3, threeBet);
+		const aggressor = players[threeBet ? 1 : 0];
+		for (const player of [players[1], players[2], players[0]]) {
+			if (player === aggressor) {
+				break;
+			}
+			applyActionForStatsTest(gameState, player, { action: "check" });
+		}
+		applyActionForStatsTest(gameState, aggressor, { action: "raise", amount: 100 });
+		assertEquals([aggressor.stats.flopCbetOpportunities, aggressor.stats.flopCbets], [1, 1]);
+		assertEquals(gameState.handContext.flopCbetSeatIndex, aggressor.seatIndex);
+		assertEquals(players.filter((player) => player !== aggressor).map((player) => player.stats.flopCbets), [0, 0]);
+	}
+});
+
+Deno.test("flop c-bet checks count as opportunities without turning a later check-raise into a c-bet", () => {
+	const { players, gameState } = createFlopStatsTable(3, true);
+	applyActionForStatsTest(gameState, players[1], { action: "check" });
+	applyActionForStatsTest(gameState, players[2], { action: "raise", amount: 100 });
+	applyActionForStatsTest(gameState, players[0], { action: "call" });
+	applyActionForStatsTest(gameState, players[1], { action: "raise", amount: 300 });
+	assertEquals([players[1].stats.flopCbetOpportunities, players[1].stats.flopCbets], [1, 0]);
+	assertEquals(gameState.handContext.flopCbetSeatIndex, null);
+	assertEquals(players.map((player) => player.stats.foldToFlopCbetOpportunities), [0, 0, 0]);
+});
+
+Deno.test("donk bets and limped pots do not produce flop c-bet observations", () => {
+	const { players, gameState } = createFlopStatsTable();
+	applyActionForStatsTest(gameState, players[1], { action: "raise", amount: 100 });
+	applyActionForStatsTest(gameState, players[2], { action: "fold" });
+	applyActionForStatsTest(gameState, players[0], { action: "raise", amount: 300 });
+	assertEquals(players.map((player) => player.stats.flopCbetOpportunities), [0, 0, 0]);
+	assertEquals(players.map((player) => player.stats.foldToFlopCbetOpportunities), [0, 0, 0]);
+
+	const limped = createFlopStatsTable();
+	limped.gameState.handContext.preflopAggressorSeatIndex = null;
+	applyActionForStatsTest(limped.gameState, limped.players[1], { action: "raise", amount: 100 });
+	applyActionForStatsTest(limped.gameState, limped.players[2], { action: "fold" });
+	assertEquals(limped.players.map((player) => player.stats.flopCbets), [0, 0, 0]);
+	assertEquals(limped.players[2].stats.foldToFlopCbetOpportunities, 0);
+});
+
+Deno.test("fold-to-flop-c-bet counts folds, calls, raises, and short all-in calls after a check", () => {
+	for (const action of ["fold", "call", "raise", "allin"]) {
+		for (const chips of [40, 100, 920]) {
+			const { players, gameState } = createFlopStatsTable();
+			players[1].chips = chips;
+			applyActionForStatsTest(gameState, players[1], { action: "check" });
+			applyActionForStatsTest(gameState, players[2], { action: "check" });
+			applyActionForStatsTest(gameState, players[0], { action: "raise", amount: 100 });
+			const resolved = applyActionForStatsTest(gameState, players[1], { action, amount: 300 });
+			assertEquals([players[1].stats.foldToFlopCbetOpportunities, players[1].stats.foldsToFlopCbet], [
+				1,
+				action === "fold" ? 1 : 0,
+			]);
+			assertEquals([players[1].stats.calls, players[1].stats.aggressiveActs], [
+				resolved.actionMeta.voluntary && !resolved.actionMeta.aggressive ? 1 : 0,
+				resolved.actionMeta.aggressive ? 1 : 0,
+			]);
+		}
+	}
+});
+
+Deno.test("multiway c-bet responses include an intervening call but exclude an intervening raise", () => {
+	for (const action of ["call", "raise", "allin"]) {
+		const { players, gameState } = createFlopStatsTable(3, true);
+		applyActionForStatsTest(gameState, players[1], { action: "raise", amount: 100 });
+		applyActionForStatsTest(gameState, players[2], { action, amount: 300 });
+		applyActionForStatsTest(gameState, players[0], { action: "fold" });
+		assertEquals(players[2].stats.foldToFlopCbetOpportunities, 1);
+		assertEquals(players[0].stats.foldToFlopCbetOpportunities, action === "call" ? 1 : 0);
+		assertEquals(players[0].stats.foldsToFlopCbet, action === "call" ? 1 : 0);
+		assertEquals(players[1].stats.foldToFlopCbetOpportunities, 0);
+	}
+});
+
+Deno.test("a c-bet caller's later response to a check-raise does not count twice", () => {
+	const { players, gameState } = createFlopStatsTable(3, true);
+	applyActionForStatsTest(gameState, players[1], { action: "raise", amount: 100 });
+	applyActionForStatsTest(gameState, players[2], { action: "call" });
+	applyActionForStatsTest(gameState, players[0], { action: "raise", amount: 300 });
+	applyActionForStatsTest(gameState, players[1], { action: "fold" });
+	applyActionForStatsTest(gameState, players[2], { action: "fold" });
+	assertEquals([players[2].stats.foldToFlopCbetOpportunities, players[2].stats.foldsToFlopCbet], [1, 0]);
+	assertEquals(players[1].stats.flopCbets, 1);
+	assertEquals(players[1].stats.foldToFlopCbetOpportunities, 0);
+});
+
+Deno.test("short all-in flop bets count as c-bets, but all-in runouts offer no c-bet decision", () => {
+	const { players, gameState } = createFlopStatsTable(2);
+	players[0].chips = 10;
+	applyActionForStatsTest(gameState, players[1], { action: "check" });
+	applyActionForStatsTest(gameState, players[0], { action: "allin" });
+	applyActionForStatsTest(gameState, players[1], { action: "call" });
+	assertEquals([players[0].stats.flopCbetOpportunities, players[0].stats.flopCbets], [1, 1]);
+	assertEquals([players[1].stats.foldToFlopCbetOpportunities, players[1].stats.foldsToFlopCbet], [1, 0]);
+	for (const seat of [0, 1]) {
+		const runout = createFlopStatsTable(2);
+		runout.players[seat].chips = 0;
+		runout.players[seat].allIn = true;
+		assertEquals(getPlayerActionStatsContext(runout.gameState, runout.players[0]).flopCbetOpportunity, false);
+	}
+});
+
+Deno.test("c-bet tracking uses public actions even when the aggressor has no stats or bot line", () => {
+	const { players, gameState } = createFlopStatsTable(3, true);
+	delete players[1].stats;
+	delete players[1].botLine;
+	applyActionForStatsTest(gameState, players[1], { action: "raise", amount: 100 });
+	applyActionForStatsTest(gameState, players[2], { action: "fold" });
+	assertEquals(gameState.handContext.flopCbetSeatIndex, 1);
+	assertEquals([players[2].stats.foldToFlopCbetOpportunities, players[2].stats.foldsToFlopCbet], [1, 1]);
+});
+
+Deno.test("c-bet observations survive restore, stay on the flop, and reset at a new hand", () => {
+	const { players, gameState } = createFlopStatsTable(3, true);
+	applyActionForStatsTest(gameState, players[1], { action: "raise", amount: 100 });
+	const restored = JSON.parse(JSON.stringify(gameState));
+	applyActionForStatsTest(restored, restored.players[2], { action: "call" });
+	applyActionForStatsTest(restored, restored.players[0], { action: "fold" });
+	assertEquals(restored.handContext.flopCbetSeatIndex, 1);
+	assertEquals(restored.players[1].spotState.flopCbetOpportunityCounted, true);
+	assertEquals(restored.players[2].spotState.foldToFlopCbetOpportunityCounted, true);
+	for (const currentPhaseIndex of [2, 3]) {
+		restored.currentPhaseIndex = currentPhaseIndex;
+		applyBettingRoundStartPlanForTest(restored);
+		applyActionForStatsTest(restored, restored.players[1], { action: "raise", amount: 100 });
+		applyActionForStatsTest(restored, restored.players[2], { action: "call" });
+		assertEquals(restored.players[1].stats.flopCbets, 1);
+		assertEquals(
+			[restored.players[2].stats.foldToFlopCbetOpportunities, restored.players[2].stats.foldsToFlopCbet],
+			[1, 0],
+		);
+	}
+	const next = createNextHandTransitionPlan(restored, 2);
+	applyPlayerPatches(next.playerPatches);
+	applyGameStatePatch(restored, next.gameStatePatch);
+	assertEquals(restored.handContext.flopCbetSeatIndex, null);
+	assertEquals(restored.players[1].spotState.flopCbetOpportunityCounted, false);
+	assertEquals(restored.players[2].spotState.foldToFlopCbetOpportunityCounted, false);
+	assertEquals(restored.players[1].stats.flopCbets, 1);
 });
 
 Deno.test("hand positions stay fixed when players fold and cover every table size", () => {
@@ -1825,6 +1996,8 @@ Deno.test("createBettingRoundStartPlan creates missing hand and spot state", () 
 				raiseFirstInOpportunityCounted: false,
 				foldToThreeBetOpportunityCounted: false,
 				bigBlindStealOpportunityCounted: false,
+				flopCbetOpportunityCounted: false,
+				foldToFlopCbetOpportunityCounted: false,
 				position: null,
 				tableSize: null,
 			},
@@ -1839,6 +2012,7 @@ Deno.test("createBettingRoundStartPlan creates missing hand and spot state", () 
 				preflopAggressorSeatIndex: null,
 				preflopOpenerSeatIndex: null,
 				stealAttemptSeatIndex: null,
+				flopCbetSeatIndex: null,
 				streetAggressorSeatIndex: null,
 				flopCheckedThrough: false,
 				turnCheckedThrough: false,

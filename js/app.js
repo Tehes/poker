@@ -383,6 +383,10 @@ function createStatsSnapshot(stats = {}) {
 		stealOpportunities: normalizeNumber(stats.stealOpportunities, 0),
 		foldsBigBlindToSteal: normalizeNumber(stats.foldsBigBlindToSteal, 0),
 		bigBlindStealOpportunities: normalizeNumber(stats.bigBlindStealOpportunities, 0),
+		flopCbets: normalizeNumber(stats.flopCbets, 0),
+		flopCbetOpportunities: normalizeNumber(stats.flopCbetOpportunities, 0),
+		foldsToFlopCbet: normalizeNumber(stats.foldsToFlopCbet, 0),
+		foldToFlopCbetOpportunities: normalizeNumber(stats.foldToFlopCbetOpportunities, 0),
 		calls: normalizeNumber(stats.calls, 0),
 		aggressiveActs: normalizeNumber(stats.aggressiveActs, 0),
 		reveals: normalizeNumber(stats.reveals, 0),
@@ -2428,6 +2432,10 @@ function createPlayers() {
 				stealOpportunities: 0,
 				foldsBigBlindToSteal: 0,
 				bigBlindStealOpportunities: 0,
+				flopCbets: 0,
+				flopCbetOpportunities: 0,
+				foldsToFlopCbet: 0,
+				foldToFlopCbetOpportunities: 0,
 				calls: 0,
 				aggressiveActs: 0,
 				reveals: 0,
@@ -3525,7 +3533,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-11-14-v7";
+const SERVICE_WORKER_VERSION = "2026-11-14-v8";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

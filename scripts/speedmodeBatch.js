@@ -651,6 +651,15 @@ async function main() {
 		console.log(`wtsd=${aggregatePlayerStats.showdowns}/${aggregatePlayerStats.flopsSeen}`);
 		console.log(`three_bet=${aggregatePlayerStats.threeBets}/${aggregatePlayerStats.threeBetOpportunities}`);
 		console.log(
+			`flop_cbet=${aggregatePlayerStats.flopCbets}/${aggregatePlayerStats.flopCbetOpportunities}`,
+		);
+		console.log(
+			`fold_to_flop_cbet=${aggregatePlayerStats.foldsToFlopCbet}/${aggregatePlayerStats.foldToFlopCbetOpportunities}`,
+		);
+		console.log(
+			`aggression_factor=${aggregatePlayerStats.aggressiveActs}/${aggregatePlayerStats.calls}`,
+		);
+		console.log(
 			`fold_to_three_bet=${aggregatePlayerStats.foldsToThreeBet}/${aggregatePlayerStats.foldToThreeBetOpportunities}`,
 		);
 		console.log(

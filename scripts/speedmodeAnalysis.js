@@ -68,6 +68,12 @@ export function createEmptyPlayerStatsMetrics() {
 		stealOpportunities: 0,
 		foldsBigBlindToSteal: 0,
 		bigBlindStealOpportunities: 0,
+		flopCbets: 0,
+		flopCbetOpportunities: 0,
+		foldsToFlopCbet: 0,
+		foldToFlopCbetOpportunities: 0,
+		calls: 0,
+		aggressiveActs: 0,
 	};
 }
 

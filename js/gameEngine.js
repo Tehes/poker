@@ -377,6 +377,11 @@ export function getPlayerStatsRates(stats) {
 		foldBigBlindToStealPct: stats.bigBlindStealOpportunities > 0
 			? stats.foldsBigBlindToSteal / stats.bigBlindStealOpportunities * 100
 			: null,
+		flopCbetPct: stats.flopCbetOpportunities > 0 ? stats.flopCbets / stats.flopCbetOpportunities * 100 : null,
+		foldToFlopCbetPct: stats.foldToFlopCbetOpportunities > 0
+			? stats.foldsToFlopCbet / stats.foldToFlopCbetOpportunities * 100
+			: null,
+		aggressionFactor: stats.calls > 0 ? stats.aggressiveActs / stats.calls : null,
 	};
 }
 
@@ -669,6 +674,7 @@ export function createHandContextState() {
 		preflopAggressorSeatIndex: null,
 		preflopOpenerSeatIndex: null,
 		stealAttemptSeatIndex: null,
+		flopCbetSeatIndex: null,
 		streetAggressorSeatIndex: null,
 		flopCheckedThrough: false,
 		turnCheckedThrough: false,
@@ -696,6 +702,8 @@ export function createPlayerSpotState() {
 		raiseFirstInOpportunityCounted: false,
 		foldToThreeBetOpportunityCounted: false,
 		bigBlindStealOpportunityCounted: false,
+		flopCbetOpportunityCounted: false,
+		foldToFlopCbetOpportunityCounted: false,
 		position: null,
 		tableSize: null,
 	};
@@ -752,6 +760,12 @@ export function getPlayerActionStatsContext(gameState, player) {
 				currentPlayer !== player && currentPlayer.seatIndex !== handContext.stealAttemptSeatIndex &&
 				currentPlayer.spotState?.enteredPreflop
 			),
+		flopCbetOpportunity: gameState.currentPhaseIndex === 1 && gameState.currentBet === 0 &&
+			handContext?.preflopAggressorSeatIndex === player.seatIndex && !spotState.actedThisStreet &&
+			player.chips > 0 && getEffectiveRaiseCap(gameState, player) > 0,
+		foldToFlopCbetOpportunity: gameState.currentPhaseIndex === 1 && needToCall > 0 &&
+			handContext?.flopCbetSeatIndex !== null && handContext?.flopCbetSeatIndex !== undefined &&
+			handContext.flopCbetSeatIndex !== player.seatIndex && handContext.streetAggressiveActionCounts.flop === 1,
 	};
 }
 
@@ -768,6 +782,28 @@ export function recordPlayerActionStats(gameState, player, actionName, actionMet
 		(actionName === "call" || actionName === "raise" || actionName === "allin");
 	const isAggressiveAction = actionMeta.aggressive ??
 		(actionName === "raise" || actionName === "allin");
+
+	if (actionMeta.flopCbetOpportunity && !spotState.flopCbetOpportunityCounted) {
+		spotState.flopCbetOpportunityCounted = true;
+		if (player.stats) {
+			player.stats.flopCbetOpportunities++;
+			if (isAggressiveAction) {
+				player.stats.flopCbets++;
+			}
+		}
+		if (isAggressiveAction) {
+			handContext.flopCbetSeatIndex = player.seatIndex;
+		}
+	}
+	if (actionMeta.foldToFlopCbetOpportunity && !spotState.foldToFlopCbetOpportunityCounted) {
+		spotState.foldToFlopCbetOpportunityCounted = true;
+		if (player.stats) {
+			player.stats.foldToFlopCbetOpportunities++;
+			if (actionName === "fold") {
+				player.stats.foldsToFlopCbet++;
+			}
+		}
+	}
 
 	if (
 		gameState.currentPhaseIndex === 0 && actionMeta.raiseFirstInOpportunity &&
