@@ -1460,7 +1460,6 @@ Deno.test("resetPlayersForNewHand prepares remaining players and removes busted 
 		roundBet: humanPatch.roundBet,
 		holeCards: humanPatch.holeCards,
 		visibleHoleCards: humanPatch.visibleHoleCards,
-		hands: humanPatch.stats.hands,
 		botLinePreflopAggressor: humanPatch.botLine.preflopAggressor,
 		spotActed: humanPatch.spotState.actedThisStreet,
 	}, {
@@ -1470,11 +1469,11 @@ Deno.test("resetPlayersForNewHand prepares remaining players and removes busted 
 		roundBet: 0,
 		holeCards: [null, null],
 		visibleHoleCards: [false, false],
-		hands: 3,
 		botLinePreflopAggressor: false,
 		spotActed: false,
 	});
-	assertEquals(botPatch.stats.hands, 4);
+	assertEquals(humanPatch.stats, undefined);
+	assertEquals(botPatch.stats, undefined);
 	assertEquals(bustedPatch.chips, 0);
 	assertEquals({
 		currentPhaseIndex: result.gameStatePatch.currentPhaseIndex,
@@ -1518,6 +1517,22 @@ Deno.test("createHandEndPlan clears deterministic hand-end state without mutatin
 		},
 	});
 	assertEquals(gameState, gameStateBefore);
+});
+
+Deno.test("createNextHandTransitionPlan counts the first hand from zero", () => {
+	const players = [
+		createPlayer({ stats: createStats() }),
+		createPlayer({ seatIndex: 1, stats: createStats() }),
+	];
+	const gameState = { players };
+	const plan = createNextHandTransitionPlan(gameState, 1);
+
+	assertEquals(plan.type, "next-hand");
+	assertEquals(players.map((player) => player.stats.hands), [0, 0]);
+	applyPlayerPatches(plan.playerPatches);
+	applyGameStatePatch(gameState, plan.gameStatePatch);
+	assertEquals(players.map((player) => player.stats.hands), [1, 1]);
+	assertEquals(gameState.handId, 1);
 });
 
 Deno.test("createNextHandTransitionPlan starts a new hand with remaining players", () => {
@@ -1592,6 +1607,8 @@ Deno.test("createNextHandTransitionPlan starts a new hand with remaining players
 		communityCards: gameState.communityCards,
 		players: gameState.players.map((player) => player.name),
 		humanHands: human.stats.hands,
+		botHands: bot.stats.hands,
+		bustedHands: busted.stats.hands,
 		humanWinner: human.isWinner,
 		bustedChips: busted.chips,
 	}, {
@@ -1609,6 +1626,8 @@ Deno.test("createNextHandTransitionPlan starts a new hand with remaining players
 		communityCards: [],
 		players: ["Human", "Bot"],
 		humanHands: 3,
+		botHands: 5,
+		bustedHands: 5,
 		humanWinner: false,
 		bustedChips: 0,
 	});
@@ -1670,6 +1689,7 @@ Deno.test("createNextHandTransitionPlan marks the last remaining player as champ
 		players: gameState.players.map((player) => player.name),
 		championWinner: champion.isWinner,
 		championHands: champion.stats.hands,
+		bustedHands: busted.stats.hands,
 		bustedChips: busted.chips,
 	}, {
 		gameFinished: true,
@@ -1678,7 +1698,8 @@ Deno.test("createNextHandTransitionPlan marks the last remaining player as champ
 		pendingAction: null,
 		players: ["Champion"],
 		championWinner: true,
-		championHands: 8,
+		championHands: 7,
+		bustedHands: 7,
 		bustedChips: 0,
 	});
 });

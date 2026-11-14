@@ -1022,10 +1022,6 @@ export function resetPlayersForNewHand(gameState) {
 			bustedPlayers.push(player);
 		} else {
 			remainingPlayers.push(player);
-			const nextStats = buildNextHandStats(player.stats);
-			if (nextStats) {
-				patch.stats = nextStats;
-			}
 			patch.botLine = createBotLineState();
 			patch.spotState = createPlayerSpotState();
 		}
@@ -1081,6 +1077,13 @@ export function createNextHandTransitionPlan(gameState, handId) {
 			},
 		};
 	}
+
+	resetPlan.remainingPlayers.forEach((player) => {
+		const nextStats = buildNextHandStats(player.stats);
+		if (nextStats) {
+			addPlayerPatch(resetPlan.playerPatches, player, { stats: nextStats });
+		}
+	});
 
 	return {
 		type: "next-hand",

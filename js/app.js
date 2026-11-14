@@ -2509,8 +2509,6 @@ function preFlop() {
 	// --- Hand Start And Reset ---------------------------------------------------
 	setCurrentFlowState({ type: "hand-start" });
 	clearNewRoundCountdown({ notify: false });
-	// Analytics: count hands and mark start time
-	totalHands++;
 	if (runoutPhaseTimer) {
 		clearTimeout(runoutPhaseTimer);
 		runoutPhaseTimer = null;
@@ -2524,7 +2522,7 @@ function preFlop() {
 	clearActionLabels();
 	clearActiveTurnPlayer(false);
 
-	const nextHandPlan = createNextHandTransitionPlan(gameState, totalHands);
+	const nextHandPlan = createNextHandTransitionPlan(gameState, totalHands + 1);
 	applyPlayerPatches(nextHandPlan.playerPatches);
 	applyGameStatePatch(nextHandPlan.gameStatePatch);
 
@@ -2582,6 +2580,7 @@ function preFlop() {
 	// ----------------------------------------------------------
 
 	// --- Dealer, Blinds, Deal, And First Round ----------------------------------
+	totalHands++;
 	updateFastForwardButton();
 
 	// Assign dealer
@@ -3499,7 +3498,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-10-13-v1";
+const SERVICE_WORKER_VERSION = "2026-11-14-v1";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
