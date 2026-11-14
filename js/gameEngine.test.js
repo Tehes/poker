@@ -760,6 +760,7 @@ Deno.test("preflop stats distinguish all-in calls from all-in raises", () => {
 		recordPlayerActionStats(gameState, player, resolved.action, resolved.actionMeta);
 
 		assertEquals([player.stats.vpip, player.stats.pfr], [1, chips > 20 ? 1 : 0]);
+		assertEquals([player.stats.calls, player.stats.aggressiveActs, player.stats.allins], [0, 0, 1]);
 	}
 });
 
@@ -798,6 +799,43 @@ Deno.test("postflop actions do not change VPIP or PFR and still count each raise
 	recordPlayerActionStats(gameState, player, "raise");
 	recordPlayerActionStats(gameState, player, "call");
 	assertEquals([player.stats.vpip, player.stats.pfr, player.stats.aggressiveActs, player.stats.calls], [0, 0, 2, 1]);
+});
+
+Deno.test("postflop all-in calls count as calls on every street", () => {
+	for (const currentPhaseIndex of [1, 2, 3]) {
+		for (const chips of [40, 100]) {
+			for (const action of ["call", "allin"]) {
+				const player = createPlayer({ chips, roundBet: 50, stats: createStats({ hands: 1 }) });
+				const { gameState } = createGameState({ player, currentPhaseIndex, currentBet: 150 });
+				const resolved = resolveTurnAction(gameState, player, { action });
+				Object.assign(player, resolved.playerPatch);
+				Object.assign(gameState, resolved.gameStatePatch);
+				recordPlayerActionStats(gameState, player, resolved.action, resolved.actionMeta);
+
+				assertEquals(resolved.action, "allin");
+				assertEquals([player.stats.calls, player.stats.aggressiveActs, player.stats.allins], [1, 0, 1]);
+			}
+		}
+	}
+});
+
+Deno.test("postflop all-in bets and raises stay aggressive instead of counting as calls", () => {
+	for (
+		const { currentBet, lastRaise, chips } of [
+			{ currentBet: 0, lastRaise: 20, chips: 100 },
+			{ currentBet: 20, lastRaise: 20, chips: 100 },
+			{ currentBet: 100, lastRaise: 100, chips: 110 },
+		]
+	) {
+		const player = createPlayer({ chips, stats: createStats({ hands: 1 }) });
+		const { gameState } = createGameState({ player, currentPhaseIndex: 1, currentBet, lastRaise });
+		const resolved = resolveTurnAction(gameState, player, { action: "allin" });
+		Object.assign(player, resolved.playerPatch);
+		Object.assign(gameState, resolved.gameStatePatch);
+		recordPlayerActionStats(gameState, player, resolved.action, resolved.actionMeta);
+
+		assertEquals([player.stats.calls, player.stats.aggressiveActs, player.stats.allins], [0, 1, 1]);
+	}
 });
 
 Deno.test("resolveTurnAction allows check with no call required", () => {

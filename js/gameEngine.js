@@ -756,7 +756,7 @@ export function recordPlayerActionStats(gameState, player, actionName, actionMet
 		if (player.stats && isAggressiveAction) {
 			player.stats.aggressiveActs++;
 		}
-		if (player.stats && actionName === "call") {
+		if (player.stats && (actionName === "call" || (actionName === "allin" && !isAggressiveAction))) {
 			player.stats.calls++;
 		}
 	}
