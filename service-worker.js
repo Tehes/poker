@@ -53,6 +53,7 @@ const CORE_ASSETS = [
 	"./js/qr-creator.js",
 	"./js/shared/actionModel.js",
 	"./js/shared/humanTurnController.js",
+	"./js/shared/playerProfileView.js",
 	"./js/shared/sound.js",
 	"./js/shared/syncViewModel.js",
 	"./js/shared/tableViewRenderer.js",

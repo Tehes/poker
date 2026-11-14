@@ -10,9 +10,20 @@ Version log writing guide:
 - Add optional contributor credits as dedicated metadata instead of release notes.
 */
 
-export const APP_VERSION = "1.5.2";
+export const APP_VERSION = "1.6.0";
 
 export const VERSION_LOG = [
+	{
+		version: "1.6.0",
+		date: "2026-11-14",
+		title: "My profile",
+		notes: [
+			"Your completed Solo vs Bots tournaments now build a personal profile saved on this device.",
+			"Compare your latest tournament with your career totals and, after ten finishes, your last ten tournaments.",
+			"Explore preflop and postflop statistics, their sample sizes, and your recent placements after being eliminated or winning.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.5.2",
 		date: "2026-08-22",

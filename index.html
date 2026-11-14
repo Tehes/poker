@@ -293,6 +293,7 @@
 				</div>
 				<button type="button" id="instructions-button" name="button">Instructions</button>
 				<button type="button" id="stats-button" class="hidden" name="button">Stats</button>
+				<button type="button" id="profile-button" class="hidden" name="button">My profile</button>
 				<button type="button" id="log-button" class="hidden" name="button">Log</button>
 				<button type="button" id="fast-forward-button" class="hidden" name="button">Fast Forward</button>
 				<button type="button" id="fold-button" class="hidden" name="button">Fold</button>
@@ -356,6 +357,54 @@
 		</div>
 		<button type="button" id="stats-close-button" class="overlay-close">Close</button>
 	</section>
+	<section id="profile-overlay" class="overlay-panel profile-panel hidden">
+		<header class="profile-header">
+			<h2>My profile</h2>
+			<p>Completed Solo vs Bots tournaments on this device.</p>
+		</header>
+		<div class="profile-content">
+			<div id="profile-groups"></div>
+			<section class="profile-history">
+				<h3>Recent placements</h3>
+				<p>Oldest to latest · finishing place / players</p>
+				<div class="history-chart">
+					<div class="history-axis"><span>First</span><span>Last</span></div>
+					<ol id="profile-history-list"></ol>
+				</div>
+			</section>
+			<p class="profile-note">Percentages describe your play; higher does not automatically mean better.
+				Counts below each rate show its sample. — means the value cannot be calculated.</p>
+		</div>
+		<button type="button" id="profile-close-button" class="overlay-close">Close</button>
+	</section>
+	<template id="profile-group-template">
+		<section class="profile-group">
+			<h3></h3>
+			<table>
+				<thead><tr><th scope="col">Metric</th></tr></thead>
+				<tbody></tbody>
+			</table>
+			<details class="profile-help">
+				<summary>What these stats mean</summary>
+				<dl></dl>
+			</details>
+		</section>
+	</template>
+	<template id="profile-heading-template">
+		<th scope="col"><span class="period-label"></span><small class="period-detail"></small></th>
+	</template>
+	<template id="profile-row-template">
+		<tr><th scope="row"></th></tr>
+	</template>
+	<template id="profile-cell-template">
+		<td><span class="metric-value"></span><small class="metric-sample"></small></td>
+	</template>
+	<template id="profile-help-template">
+		<div><dt></dt><dd></dd></div>
+	</template>
+	<template id="profile-history-template">
+		<li><div class="history-track"><span class="history-marker"></span></div><span class="history-place"></span></li>
+	</template>
 	<section id="log-overlay" class="overlay-panel log-panel hidden">
 		<div class="log-list-wrap">
 			<div id="log-list"></div>

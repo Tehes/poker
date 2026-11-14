@@ -29,6 +29,9 @@ Commercial use, paid hosting, resale, and misleading rebranding are not allowed 
   names and start playing.
 - **Local Solo Saves**: Unfinished Solo vs Bots games are saved locally in the browser and can be
   continued later on the same device.
+- **My profile**: Track completed Solo vs Bots tournaments, recorded when you are eliminated or win.
+  Compare Latest, L10 (available after ten finishes), and Overall with preflop and postflop stats,
+  sample sizes, hands per game, and recent placements.
 - **Private Player Views**: Human players can join on their own devices without exposing private
   information on the shared screen.
 - **QR + Link Joining**: Each human seat provides both a QR code and a direct link for easy access.
@@ -310,7 +313,9 @@ deno task speedmode -- --out=tmp/poker-speedmode-latest
 
 - Live syncing is best-effort; if the backend is unreachable, joined devices fall back to read-only
   companion access, and actions stay on the shared table.
-- Saved games are local to the same browser/device and apply only to Solo vs Bots games.
+- Saved games and player profiles are local to the same browser/device and apply only to Solo vs
+  Bots games. Profiles retain ten recent results plus career totals. Clearing browser data removes
+  the saved games and profile.
 - Remote table links are lightweight and trust-based; there are no seat tokens or connection checks
   yet.
 - The blind progression (formula-based increase every 6 hands) is not customizable.

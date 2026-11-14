@@ -58,7 +58,7 @@ import {
 	resolveShowdown,
 	resolveTurnAction,
 } from "./gameEngine.js";
-import { createStatsSnapshot, savePlayerProfileResult } from "./playerProfile.js";
+import { createStatsSnapshot, readPlayerProfile, savePlayerProfileResult } from "./playerProfile.js";
 import QrCreator from "./qr-creator.js";
 import {
 	getActionButtonLabel,
@@ -85,6 +85,7 @@ import {
 	renderSeatRotation,
 	renderSeatSetupState,
 } from "./shared/tableViewRenderer.js";
+import { renderPlayerProfile } from "./shared/playerProfileView.js";
 import { initServiceWorker } from "./serviceWorkerRegistration.js";
 import { APP_VERSION, VERSION_LOG } from "./version.js";
 
@@ -111,6 +112,7 @@ const amountDecrementButton = document.querySelector(
 	"#amount-decrement-button",
 );
 const statsButton = document.querySelector("#stats-button");
+const profileButton = document.querySelector("#profile-button");
 const logButton = document.querySelector("#log-button");
 const fastForwardButton = document.querySelector("#fast-forward-button");
 const potEl = document.getElementById("pot");
@@ -130,6 +132,18 @@ const resumeNewButton = document.querySelector("#resume-new-button");
 const statsOverlay = document.querySelector("#stats-overlay");
 const statsCloseButton = document.querySelector("#stats-close-button");
 const statsTableBody = document.querySelector("#stats-table-body");
+const profileOverlay = document.querySelector("#profile-overlay");
+const profileCloseButton = document.querySelector("#profile-close-button");
+const profileElements = {
+	groups: document.querySelector("#profile-groups"),
+	history: document.querySelector("#profile-history-list"),
+	groupTemplate: document.querySelector("#profile-group-template"),
+	headingTemplate: document.querySelector("#profile-heading-template"),
+	rowTemplate: document.querySelector("#profile-row-template"),
+	cellTemplate: document.querySelector("#profile-cell-template"),
+	helpTemplate: document.querySelector("#profile-help-template"),
+	historyTemplate: document.querySelector("#profile-history-template"),
+};
 const logOverlay = document.querySelector("#log-overlay");
 const logCloseButton = document.querySelector("#log-close-button");
 const versionButton = document.querySelector("#version-button");
@@ -176,6 +190,16 @@ const seatRefs = Array.from(document.querySelectorAll(".seat")).map((
 	clearWinnerReactionState: null,
 }));
 const overlays = {
+	profile: {
+		el: profileOverlay,
+		canOpen: () => playerProfile?.totals.tournaments > 0,
+		beforeOpen: () => {
+			if (shouldPauseForProfile()) {
+				clearNewRoundCountdown({ notify: false });
+			}
+			renderPlayerProfile(profileElements, playerProfile);
+		},
+	},
 	stats: {
 		el: statsOverlay,
 		beforeOpen: () => renderStatsOverlay(),
@@ -260,6 +284,7 @@ let currentFlowState = { type: "setup" };
 let currentGameSaveEligible = false;
 let currentTournamentId = null;
 let currentTournamentResultSaved = false;
+let playerProfile = null;
 
 // --- Analytics --------------------------------------------------------------
 let totalHands = 0;
@@ -392,6 +417,13 @@ function saveCompletedSoloTournament() {
 		placement,
 		stats: createStatsSnapshot(player.stats),
 	});
+	if (currentTournamentResultSaved) {
+		playerProfile = readPlayerProfile(storage);
+		syncLogUi();
+		if (!profileOverlay.classList.contains("hidden")) {
+			renderPlayerProfile(profileElements, playerProfile);
+		}
+	}
 }
 
 function createBotLineSnapshot(botLine = {}) {
@@ -1490,9 +1522,14 @@ function closeOverlay(name) {
 	syncOverlayBackdrop();
 }
 
-function closeAllOverlays() {
+function shouldPauseForProfile() {
+	return !profileOverlay.classList.contains("hidden") && getHumansWithChipsCount() > 0 &&
+		gameState.players.filter((player) => player.chips > 0).length > 1;
+}
+
+function closeAllOverlays({ keepProfile = false } = {}) {
 	Object.values(overlays).forEach(({ el, blocking }) => {
-		if (blocking !== true) {
+		if (blocking !== true && (!keepProfile || el !== profileOverlay)) {
 			el?.classList.add("hidden");
 		}
 	});
@@ -1504,6 +1541,9 @@ function syncLogUi() {
 	const showSummaryButtons = !SPEED_MODE && summaryButtonsVisible;
 
 	statsButton.classList.toggle("hidden", !showSummaryButtons);
+	const showProfile = !SPEED_MODE && playerProfile?.totals.tournaments > 0 &&
+		(!gameState.handInProgress || getHumansWithChipsCount() === 0);
+	profileButton.classList.toggle("hidden", !showProfile);
 	logButton.classList.toggle("hidden", !showSummaryButtons || !hasLogHistory);
 }
 
@@ -1578,7 +1618,7 @@ function tickNewRoundCountdown() {
 
 function startNewRoundCountdown() {
 	clearNewRoundCountdown({ notify: false });
-	if (SPEED_MODE || autoplayToGameEnd) {
+	if (SPEED_MODE || autoplayToGameEnd || shouldPauseForProfile()) {
 		return;
 	}
 	newRoundCountdownSeconds = NEW_ROUND_COUNTDOWN_SECONDS;
@@ -2557,7 +2597,7 @@ function preFlop() {
 	clearChipTransferAnimation(tableRenderTarget);
 
 	startButton.classList.add("hidden");
-	closeAllOverlays();
+	closeAllOverlays({ keepProfile: !shouldPauseForProfile() });
 	setSummaryButtonsVisible(false);
 	clearActionLabels();
 	clearActiveTurnPlayer(false);
@@ -3456,6 +3496,8 @@ function init() {
 	);
 	notification.addEventListener("click", () => openOverlay("log"), false);
 	statsButton.addEventListener("click", () => openOverlay("stats"), false);
+	profileButton.addEventListener("click", () => openOverlay("profile"), false);
+	profileCloseButton.addEventListener("click", () => closeOverlay("profile"), false);
 	logButton.addEventListener("click", () => openOverlay("log"), false);
 	fastForwardButton.addEventListener("click", activateFastForward, false);
 	statsCloseButton.addEventListener(
@@ -3507,6 +3549,11 @@ function init() {
 		closeButton.addEventListener("click", deletePlayer, false);
 	}
 
+	if (!SPEED_MODE) {
+		const storage = getLocalStorage();
+		playerProfile = storage ? readPlayerProfile(storage) : null;
+		syncLogUi();
+	}
 	const savedGameSnapshot = readSavedGameSnapshot();
 	if (savedGameSnapshot) {
 		openResumeGameOverlay(savedGameSnapshot);
@@ -3541,7 +3588,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-11-14-v9";
+const SERVICE_WORKER_VERSION = "2026-11-14-v10";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
