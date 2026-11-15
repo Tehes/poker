@@ -292,18 +292,6 @@ deno task speedmode:10
 output goes to `tmp/poker-speedmode-batch-YYYYMMDD-HHMMSS/`. Use it for app integration, DOM,
 timer, notification, animation, bootstrap, and browser-context behavior.
 
-To compare opponent reads against an accepted bot version, use a retained checkout of that version:
-
-```sh
-deno task reads:compare -- --baseline=/path/to/accepted/js/bot.js --runs=300 --out=tmp/read-comparison
-```
-
-This compares the accepted bot, individual reads without history, and individual reads with history.
-Fixed opponent styles, held-out seeds, rotating seats, and histories collected from ten earlier test
-games keep the comparison reproducible. Reports include paired confidence intervals, individual-read
-diagnostics, and safety checks. A strategy-change scenario tests a history that differs from the
-opponent's current style.
-
 Both runners share the same analysis layer. The detailed bot log includes tags such as `PMH`
 (private made hand via positive edge), `Edge` (private score minus public board score), and `PRE`
 (private raise edge at `>= 0.05`) to make postflop validation easier. `LT` distinguishes `none`,
