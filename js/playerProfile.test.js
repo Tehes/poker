@@ -3,6 +3,7 @@ import {
 	createEmptyPlayerProfile,
 	createStatsSnapshot,
 	getPlayerProfileComparison,
+	getPlayerReadHistory,
 	PLAYER_PROFILE_STORAGE_KEY,
 	readPlayerProfile,
 	savePlayerProfileResult,
@@ -244,4 +245,21 @@ Deno.test("unavailable storage and failed writes do not count a result and can b
 	storage.setItem = originalSetItem;
 	assertEquals(savePlayerProfileResult(storage, createResult(1)), true);
 	assertEquals(readPlayerProfile(storage).totals.tournaments, 1);
+});
+
+Deno.test("read history uses up to ten results without waiting for the L10 display threshold", () => {
+	let profile = createEmptyPlayerProfile();
+	assertEquals(getPlayerReadHistory(profile).hands, 0);
+	profile = addTournamentToProfile(profile, createResult(1));
+	profile = addTournamentToProfile(profile, createResult(2));
+	assertEquals(getPlayerReadHistory(profile).hands, 3);
+	assertEquals(getPlayerProfileComparison(profile).last10, null);
+	const frozen = getPlayerReadHistory(profile);
+	for (let index = 3; index <= 15; index++) {
+		profile = addTournamentToProfile(profile, createResult(index));
+	}
+	assertEquals(getPlayerReadHistory(profile).hands, 105);
+	assertEquals(getPlayerReadHistory(profile, "tournament-15").hands, 90);
+	assertEquals(frozen.hands, 3);
+	assertEquals(profile.totals.stats.hands, 120);
 });

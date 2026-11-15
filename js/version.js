@@ -10,9 +10,20 @@ Version log writing guide:
 - Add optional contributor credits as dedicated metadata instead of release notes.
 */
 
-export const APP_VERSION = "1.6.0";
+export const APP_VERSION = "1.6.1";
 
 export const VERSION_LOG = [
+	{
+		version: "1.6.1",
+		date: "2026-11-15",
+		title: "Opponent memory",
+		notes: [
+			"In Solo vs Bots, bots can use observations from your last ten completed tournaments alongside the current game.",
+			"Opponent reads are weighted separately for each player, so a well-known opponent does not make unfamiliar players look equally predictable.",
+			"Saved games preserve the observations available when the game started; your tournament and career statistics continue to count each new hand once.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.6.0",
 		date: "2026-11-14",

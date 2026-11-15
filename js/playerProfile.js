@@ -120,6 +120,12 @@ export function getPlayerProfileComparison(profile) {
 	};
 }
 
+export function getPlayerReadHistory(profile, currentTournamentId) {
+	return profile.recentTournaments
+		.filter((tournament) => tournament.id !== currentTournamentId)
+		.reduce(addTournamentToTotals, createEmptyProfileTotals()).stats;
+}
+
 function isValidStoredStats(stats) {
 	return stats !== null && typeof stats === "object" && !Array.isArray(stats) &&
 		PLAYER_STATS_KEYS.every((key) => stats[key] === undefined || (Number.isInteger(stats[key]) && stats[key] >= 0));

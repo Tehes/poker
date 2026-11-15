@@ -224,7 +224,7 @@ function createBotPlayer(index, startingChips) {
 	};
 }
 
-function createEngineBatchGameState({ playerCount, startingChips }) {
+export function createEngineBatchGameState({ playerCount, startingChips }) {
 	const players = Array.from({ length: playerCount }, (_, index) => createBotPlayer(index, startingChips));
 	return {
 		currentPhaseIndex: 0,
@@ -1288,4 +1288,6 @@ async function main() {
 	console.log(`output_dir=${outputDir}`);
 }
 
-await main();
+if (import.meta.main) {
+	await main();
+}

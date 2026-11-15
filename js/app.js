@@ -58,7 +58,12 @@ import {
 	resolveShowdown,
 	resolveTurnAction,
 } from "./gameEngine.js";
-import { createStatsSnapshot, readPlayerProfile, savePlayerProfileResult } from "./playerProfile.js";
+import {
+	createStatsSnapshot,
+	getPlayerReadHistory,
+	readPlayerProfile,
+	savePlayerProfileResult,
+} from "./playerProfile.js";
 import QrCreator from "./qr-creator.js";
 import {
 	getActionButtonLabel,
@@ -474,6 +479,7 @@ function createPlayerSnapshot(player) {
 		totalBet: normalizeNumber(player.totalBet, 0),
 		roundBet: normalizeNumber(player.roundBet, 0),
 		stats: createStatsSnapshot(player.stats),
+		readHistory: player.readHistory ? createStatsSnapshot(player.readHistory) : null,
 		botLine: createBotLineSnapshot(player.botLine),
 		spotState: {
 			...createPlayerSpotState(),
@@ -705,6 +711,7 @@ function normalizeSavedPlayer(player) {
 		totalBet: normalizeNumber(player?.totalBet, 0),
 		roundBet: normalizeNumber(player?.roundBet, 0),
 		stats: createStatsSnapshot(player?.stats),
+		readHistory: player?.readHistory ? createStatsSnapshot(player.readHistory) : null,
 		botLine: createBotLineSnapshot(player?.botLine),
 		spotState: {
 			...createPlayerSpotState(),
@@ -926,6 +933,13 @@ function restoreSavedGame(snapshot) {
 	currentGameSaveEligible = hasExactlyOneHumanPlayer(gameState.players);
 	if (currentGameSaveEligible && !currentTournamentId) {
 		currentTournamentId = crypto.randomUUID();
+	}
+	if (currentGameSaveEligible) {
+		const savedHuman = snapshot.gameState.allPlayers.find((player) => !player.isBot);
+		if (!Object.hasOwn(savedHuman, "readHistory")) {
+			const human = gameState.allPlayers.find((player) => !player.isBot);
+			human.readHistory = playerProfile ? getPlayerReadHistory(playerProfile, currentTournamentId) : null;
+		}
 	}
 	saveCompletedSoloTournament();
 	restoreTableUrl(snapshot.tableId);
@@ -2383,6 +2397,10 @@ function startGame() {
 		currentGameSaveEligible = hasExactlyOneHumanPlayer(gameState.players);
 		currentTournamentId = currentGameSaveEligible && !SPEED_MODE ? crypto.randomUUID() : null;
 		currentTournamentResultSaved = false;
+		if (currentGameSaveEligible && !SPEED_MODE) {
+			const human = gameState.allPlayers.find((player) => !player.isBot);
+			human.readHistory = playerProfile ? getPlayerReadHistory(playerProfile, currentTournamentId) : null;
+		}
 		exitEventSent = false;
 
 		if (gameState.players.length > 1) {
@@ -3588,7 +3606,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-11-14-v10";
+const SERVICE_WORKER_VERSION = "2026-11-15-v1";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

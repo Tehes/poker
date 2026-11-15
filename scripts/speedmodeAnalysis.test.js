@@ -1,8 +1,11 @@
 import { getPlayerStatsRates } from "../js/gameEngine.js";
 import {
+	analyzeRunDecisions,
+	createEmptyMetrics,
 	createEmptyPlayerStatsMetrics,
 	finalizePlayerStatsMetrics,
 	mergePlayerStatsMetrics,
+	mergeRunMetrics,
 } from "./speedmodeAnalysis.js";
 
 function assertEquals(actual, expected) {
@@ -172,4 +175,28 @@ Deno.test("postflop rates preserve zero observations and undefined aggression wi
 	assertEquals(getPlayerStatsRates(stats).aggressionFactor, 1.5);
 	stats.aggressiveActs = 0;
 	assertEquals(getPlayerStatsRates(stats).aggressionFactor, 0);
+});
+
+Deno.test("batch read diagnostics preserve individual samples and merge historical-read counts", () => {
+	const first = analyzeRunDecisions([{
+		action: "check",
+		phase: "preflop",
+		opponentReads: [
+			{ seatIndex: 1, hands: 205, historicalHands: 200, weight: 1 },
+			{ seatIndex: 2, hands: 3, historicalHands: 0, weight: 0 },
+		],
+	}], []);
+	assertEquals(first.opponentReads, {
+		decisions: 1,
+		decisionsWithHistory: 1,
+		count: 2,
+		historicalCount: 1,
+		zeroWeightCount: 1,
+		weightSum: 1,
+	});
+	const legacy = analyzeRunDecisions([{ action: "check", phase: "preflop" }], []);
+	const total = createEmptyMetrics();
+	mergeRunMetrics(total, first);
+	mergeRunMetrics(total, legacy);
+	assertEquals(total.opponentReads, first.opponentReads);
 });

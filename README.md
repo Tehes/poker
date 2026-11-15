@@ -193,7 +193,13 @@ Core principles:
   Bots adapt aggression based on position, number of opponents, and remaining players.
 
 - **Opponent tendencies (lightweight reads)**  
-  VPIP, aggression, fold rate, and showdown strength slightly shift thresholds without dominating decisions.
+  VPIP, PFR, aggression, fold rate, and showdown results inform bot decisions. Each opponent's read
+  is weighted by observations about that player. Group reads include only opponents still in the hand.
+
+- **Opponent memory in Solo vs Bots**
+  Bots combine observations from up to your ten most recent completed tournaments with the current
+  game. The starting history is preserved when saving and resuming. Historical hands are never
+  added to the current tournament's statistics or counted again in the career profile.
 
 - **Board texture and draw equity**  
   Wet boards increase protection and reduce bluffing; dry boards enable more aggression.
@@ -285,6 +291,18 @@ deno task speedmode:10
 `?speedmode=1&botdebug=detail`, and writes one log plus one JSON summary per run. By default the
 output goes to `tmp/poker-speedmode-batch-YYYYMMDD-HHMMSS/`. Use it for app integration, DOM,
 timer, notification, animation, bootstrap, and browser-context behavior.
+
+To compare opponent reads against an accepted bot version, use a retained checkout of that version:
+
+```sh
+deno task reads:compare -- --baseline=/path/to/accepted/js/bot.js --runs=300 --out=tmp/read-comparison
+```
+
+This compares the accepted bot, individual reads without history, and individual reads with history.
+Fixed opponent styles, held-out seeds, rotating seats, and histories collected from ten earlier test
+games keep the comparison reproducible. Reports include paired confidence intervals, individual-read
+diagnostics, and safety checks. A strategy-change scenario tests a history that differs from the
+opponent's current style.
 
 Both runners share the same analysis layer. The detailed bot log includes tags such as `PMH`
 (private made hand via positive edge), `Edge` (private score minus public board score), and `PRE`

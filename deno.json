@@ -7,6 +7,7 @@
 		"semiColons": true
 	},
 	"tasks": {
+		"reads:compare": "deno run --allow-read --allow-write=.,/tmp ./scripts/readComparison.js",
 		"engine:batch": "deno run --allow-read=. --allow-write=.,/tmp ./scripts/engineBatch.js",
 		"engine:batch:equity": "deno run --allow-read=. --allow-write=.,/tmp ./scripts/engineBatch.js --equity",
 		"engine:batch:500": "deno run --allow-read=. --allow-write=.,/tmp ./scripts/engineBatch.js --runs=500",

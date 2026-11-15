@@ -128,10 +128,11 @@ const AGG_FACTOR = 0.1; // Aggressiveness increase per missing opponent
 // Lower raise threshold slightly as opponents drop out; using a small factor so
 // heads-up play only reduces it by ~0.6
 const THRESHOLD_FACTOR = 0.3;
-// Minimum average hands before opponent stats influence the bot
+// Minimum observations about each opponent before their stats influence the bot
 const MIN_HANDS_FOR_WEIGHT = 10;
 // Controls how quickly stat influence grows as more hands are played
 const WEIGHT_GROWTH = 10;
+const READ_STATS_KEYS = ["hands", "vpip", "pfr", "folds", "aggressiveActs", "calls", "showdowns", "showdownsWon"];
 // Detect opponents that shove frequently
 const ALLIN_HAND_PREFLOP = 0.85;
 const ALLIN_HAND_POSTFLOP = 0.38;
@@ -519,68 +520,52 @@ function getLegacyPreflopLogScores(cardA, cardB, context = {}) {
 	};
 }
 
-// Calculate how often a player folds
-function buildAggregateRead(opponents) {
-	if (opponents.length === 0) {
-		return {
-			vpip: 0,
-			pfr: 0,
-			foldRate: 0,
-			agg: 1,
-			showdownWin: 0.5,
-			showdowns: 0,
-			weight: 0,
-		};
+export function getOpponentRead(opponent) {
+	let stats = opponent.stats;
+	const historicalHands = opponent.readHistory?.hands ?? 0;
+	if (opponent.readHistory) {
+		stats = { ...stats };
+		for (const key of READ_STATS_KEYS) {
+			stats[key] += opponent.readHistory[key];
+		}
 	}
-
-	const count = opponents.length;
-	const avgHands = opponents.reduce((sum, opponent) => sum + opponent.stats.hands, 0) /
-		count;
-	const weight = avgHands < MIN_HANDS_FOR_WEIGHT
-		? 0
-		: 1 - Math.exp(-(avgHands - MIN_HANDS_FOR_WEIGHT) / WEIGHT_GROWTH);
-
 	return {
-		vpip: opponents.reduce(
-			(sum, opponent) => sum + (opponent.stats.vpip + 1) / (opponent.stats.hands + 2),
-			0,
-		) / count,
-		pfr: opponents.reduce(
-			(sum, opponent) => sum + (opponent.stats.pfr + 1) / (opponent.stats.hands + 2),
-			0,
-		) / count,
-		foldRate: opponents.reduce(
-			(sum, opponent) => sum + (opponent.stats.folds + 1) / (opponent.stats.hands + 2),
-			0,
-		) / count,
-		agg: opponents.reduce(
-			(sum, opponent) =>
-				sum +
-				(opponent.stats.aggressiveActs + 1) /
-					(opponent.stats.calls + 1),
-			0,
-		) / count,
-		showdownWin: opponents.reduce(
-			(sum, opponent) =>
-				sum +
-				(opponent.stats.showdownsWon + 1) /
-					(opponent.stats.showdowns + 2),
-			0,
-		) / count,
-		showdowns: opponents.reduce(
-			(sum, opponent) => sum + opponent.stats.showdowns,
-			0,
-		) / count,
-		weight,
+		hands: stats.hands,
+		historicalHands,
+		vpip: (stats.vpip + 1) / (stats.hands + 2),
+		pfr: (stats.pfr + 1) / (stats.hands + 2),
+		foldRate: (stats.folds + 1) / (stats.hands + 2),
+		agg: (stats.aggressiveActs + 1) / (stats.calls + 1),
+		showdownWin: (stats.showdownsWon + 1) / (stats.showdowns + 2),
+		showdowns: stats.showdowns,
+		weight: stats.hands < MIN_HANDS_FOR_WEIGHT
+			? 0
+			: 1 - Math.exp(-(stats.hands - MIN_HANDS_FOR_WEIGHT) / WEIGHT_GROWTH),
 	};
 }
 
+export function buildAggregateRead(opponents) {
+	const read = { vpip: 0, pfr: 0, foldRate: 0, agg: 1, showdownWin: 0.5, showdowns: 0, weight: 0 };
+	for (const opponent of opponents) {
+		const individual = getOpponentRead(opponent);
+		const weight = individual.weight / opponents.length;
+		// Unknown players contribute no frequency signal and retain neutral aggression/showdown reads.
+		read.vpip += individual.vpip * weight;
+		read.pfr += individual.pfr * weight;
+		read.foldRate += individual.foldRate * weight;
+		read.agg += (individual.agg - 1) * weight;
+		read.showdownWin += (individual.showdownWin - 0.5) * weight;
+		read.showdowns += individual.showdowns;
+		read.weight += weight;
+	}
+	return read;
+}
+
 function hasShowdownStrongRead(opponents) {
-	return opponents.some((opponent) =>
-		opponent.stats.showdowns >= 4 &&
-		(opponent.stats.showdownsWon + 1) / (opponent.stats.showdowns + 2) >=
-			0.55
-	);
+	return opponents.some((opponent) => {
+		const read = getOpponentRead(opponent);
+		return read.showdowns >= 4 && read.showdownWin >= 0.55;
+	});
 }
 
 function getStreetLineCount(counts, street) {
@@ -3251,9 +3236,8 @@ export function chooseBotAction(player, gameState) {
 		currentPhaseIndex,
 		handContext,
 	});
-	const tableReadProfile = buildAggregateRead(
-		players.filter((currentPlayer) => currentPlayer !== player),
-	);
+	const tableOpponents = players.filter((currentPlayer) => currentPlayer !== player && !currentPlayer.folded);
+	const tableReadProfile = buildAggregateRead(tableOpponents);
 	const preflopSeatClass = preflop ? getPreflopSeatClass(players, player) : null;
 	const preflopActionOrderSeatClass = preflop ? getPreflopActionOrderSeatClass(players, player) : null;
 	const preflopAggressor = preflop ? getLastPreflopAggressor(players, handContext) : null;
@@ -3785,8 +3769,6 @@ export function chooseBotAction(player, gameState) {
 	let bluffDecisionChance = 0;
 	let foldRate = 0;
 	let statsWeight = 0;
-	let avgVPIP = 0;
-	let avgAgg = 0;
 	function countMatchedPreflopCallers(excludedSeatIndexes = []) {
 		const excludedSeatIndexSet = new Set(excludedSeatIndexes);
 		return players.filter((currentPlayer) => {
@@ -4347,25 +4329,26 @@ export function chooseBotAction(player, gameState) {
 	// Adjust based on observed opponent tendencies
 	const statOpponents = liveOpponents;
 	if (statOpponents.length > 0) {
-		avgVPIP = tableReadProfile.vpip;
-		avgAgg = tableReadProfile.agg;
 		foldRate = liveRead.foldRate;
 		const weight = tableReadProfile.weight;
 		statsWeight = weight;
 		bluffChance = computeSpotBluffChance(weight);
 
-		if (avgVPIP < 0.25) {
-			raiseThreshold -= 0.5 * weight;
-			aggressiveness += 0.1 * weight;
-		} else if (avgVPIP > 0.5) {
-			raiseThreshold += 0.5 * weight;
-			aggressiveness -= 0.1 * weight;
-		}
-
-		if (avgAgg > 1.5) {
-			aggressiveness -= 0.1 * weight;
-		} else if (avgAgg < 0.7) {
-			aggressiveness += 0.1 * weight;
+		for (const opponent of tableOpponents) {
+			const read = getOpponentRead(opponent);
+			const individualWeight = read.weight / tableOpponents.length;
+			if (read.vpip < 0.25) {
+				raiseThreshold -= 0.5 * individualWeight;
+				aggressiveness += 0.1 * individualWeight;
+			} else if (read.vpip > 0.5) {
+				raiseThreshold += 0.5 * individualWeight;
+				aggressiveness -= 0.1 * individualWeight;
+			}
+			if (read.agg > 1.5) {
+				aggressiveness -= 0.1 * individualWeight;
+			} else if (read.agg < 0.7) {
+				aggressiveness += 0.1 * individualWeight;
+			}
 		}
 	}
 
@@ -5383,6 +5366,15 @@ export function chooseBotAction(player, gameState) {
 		eliminationReliefApplied,
 		positionFactor: toRoundedNumber(positionFactor),
 		activeOpponents,
+		opponentReads: tableOpponents.map((opponent) => {
+			const read = getOpponentRead(opponent);
+			return {
+				seatIndex: opponent.seatIndex,
+				hands: read.hands,
+				historicalHands: read.historicalHands,
+				weight: toRoundedNumber(read.weight, 4),
+			};
+		}),
 		activePlayers: activeOpponents + 1,
 		effectiveStack,
 		previousStreetCheckedThrough,

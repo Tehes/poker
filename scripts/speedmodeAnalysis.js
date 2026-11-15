@@ -2648,6 +2648,14 @@ function createEmptyPostflopMetrics() {
 
 export function createEmptyMetrics() {
 	return {
+		opponentReads: {
+			decisions: 0,
+			decisionsWithHistory: 0,
+			count: 0,
+			historicalCount: 0,
+			zeroWeightCount: 0,
+			weightSum: 0,
+		},
 		decisionCount: 0,
 		actionCounts: {},
 		phaseCounts: {},
@@ -2746,6 +2754,19 @@ export function analyzeRunDecisions(decisions, hands, playerBusts = []) {
 		const line = decision.line;
 
 		metrics.decisionCount += 1;
+		const reads = decision.opponentReads ?? [];
+		if (reads.length > 0) {
+			metrics.opponentReads.decisions++;
+			if (reads.some((read) => read.historicalHands > 0)) {
+				metrics.opponentReads.decisionsWithHistory++;
+			}
+			for (const read of reads) {
+				metrics.opponentReads.count++;
+				metrics.opponentReads.historicalCount += read.historicalHands > 0 ? 1 : 0;
+				metrics.opponentReads.zeroWeightCount += read.weight === 0 ? 1 : 0;
+				metrics.opponentReads.weightSum += read.weight;
+			}
+		}
 		incrementCount(metrics.actionCounts, decision.action);
 		incrementCount(metrics.phaseCounts, decision.phase);
 		incrementNestedCount(metrics.actionsByPhase, decision.phase, decision.action);
@@ -3880,6 +3901,9 @@ export function analyzeRunDecisions(decisions, hands, playerBusts = []) {
 }
 
 export function mergeRunMetrics(target, source) {
+	for (const key of Object.keys(target.opponentReads)) {
+		target.opponentReads[key] += source.opponentReads[key];
+	}
 	target.decisionCount += source.decisionCount;
 	target.postflopSpots += source.postflopSpots;
 	target.kickerRaiseCount += source.kickerRaiseCount;
