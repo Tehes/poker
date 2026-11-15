@@ -1556,6 +1556,7 @@ function syncLogUi() {
 
 	statsButton.classList.toggle("hidden", !showSummaryButtons);
 	const showProfile = !SPEED_MODE && playerProfile?.totals.tournaments > 0 &&
+		(!gameState.gameStarted || gameState.allPlayers.some((player) => !player.isBot)) &&
 		(!gameState.handInProgress || getHumansWithChipsCount() === 0);
 	profileButton.classList.toggle("hidden", !showProfile);
 	logButton.classList.toggle("hidden", !showSummaryButtons || !hasLogHistory);
@@ -3606,7 +3607,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-11-15-v1";
+const SERVICE_WORKER_VERSION = "2026-11-15-v2";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
