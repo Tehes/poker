@@ -33,7 +33,7 @@ export function getAnalyticsSnapshot(state, now) {
 
 export function analyticsPayload(state, action, handCount, extra = {}) {
 	return {
-		trackingVersion: 2,
+		trackingVersion: 3,
 		action,
 		mode: state.mode,
 		humans: state.humans,
