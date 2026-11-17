@@ -944,6 +944,11 @@ export function recordPlayerActionStats(gameState, player, actionName, actionMet
 
 	if (player.stats && actionName === "allin") {
 		player.stats.allins++;
+		if (isAggressiveAction) {
+			player.stats.aggressiveAllins++;
+		} else {
+			player.stats.allinCalls++;
+		}
 	}
 
 	if (player.stats && actionName === "fold") {

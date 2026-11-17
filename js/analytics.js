@@ -75,12 +75,14 @@ export function getHumanAnalytics(stats) {
 		humanPostflopCalls: stats.calls,
 		humanPostflopAggressiveActs: stats.aggressiveActs,
 		humanHandsWonAfterFlop: stats.handsWonAfterFlop,
-		humanAllins: stats.allins,
+		humanAllinCalls: stats.allinCalls,
+		humanAggressiveAllins: stats.aggressiveAllins,
 	};
 	if (stats.hands > 0) {
 		values.humanVpipPct = Math.round(stats.vpip / stats.hands * 1000) / 10;
 		values.humanPfrPct = Math.round(stats.pfr / stats.hands * 1000) / 10;
-		values.humanAllinPct = Math.round(stats.allins / stats.hands * 1000) / 10;
+		values.humanAllinCallPct = Math.round(stats.allinCalls / stats.hands * 1000) / 10;
+		values.humanAggressiveAllinPct = Math.round(stats.aggressiveAllins / stats.hands * 1000) / 10;
 	}
 	if (stats.flopsSeen > 0) {
 		values.humanWwsfPct = Math.round(stats.handsWonAfterFlop / stats.flopsSeen * 1000) / 10;

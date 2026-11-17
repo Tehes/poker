@@ -33,6 +33,8 @@ const PLAYER_STATS_KEYS = [
 	"foldsPreflop",
 	"foldsPostflop",
 	"allins",
+	"allinCalls",
+	"aggressiveAllins",
 ];
 
 export function createStatsSnapshot(stats = {}) {

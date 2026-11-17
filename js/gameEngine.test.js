@@ -129,6 +129,8 @@ function createStats({ hands = 0 } = {}) {
 		foldsPreflop: 0,
 		foldsPostflop: 0,
 		allins: 0,
+		allinCalls: 0,
+		aggressiveAllins: 0,
 	};
 }
 
@@ -822,6 +824,7 @@ Deno.test("preflop stats distinguish all-in calls from all-in raises", () => {
 
 		assertEquals([player.stats.vpip, player.stats.pfr], [1, chips > 20 ? 1 : 0]);
 		assertEquals([player.stats.calls, player.stats.aggressiveActs, player.stats.allins], [0, 0, 1]);
+		assertEquals([player.stats.allinCalls, player.stats.aggressiveAllins], chips > 20 ? [0, 1] : [1, 0]);
 	}
 });
 
@@ -875,6 +878,7 @@ Deno.test("postflop all-in calls count as calls on every street", () => {
 
 				assertEquals(resolved.action, "allin");
 				assertEquals([player.stats.calls, player.stats.aggressiveActs, player.stats.allins], [1, 0, 1]);
+				assertEquals([player.stats.allinCalls, player.stats.aggressiveAllins], [1, 0]);
 			}
 		}
 	}
@@ -896,6 +900,7 @@ Deno.test("postflop all-in bets and raises stay aggressive instead of counting a
 		recordPlayerActionStats(gameState, player, resolved.action, resolved.actionMeta);
 
 		assertEquals([player.stats.calls, player.stats.aggressiveActs, player.stats.allins], [0, 1, 1]);
+		assertEquals([player.stats.allinCalls, player.stats.aggressiveAllins], [0, 1]);
 	}
 });
 
