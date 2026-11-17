@@ -32,6 +32,7 @@ import {
 	finishAnalytics,
 	getAnalyticsSnapshot,
 	getDiscardOutcome,
+	getHumanAnalytics,
 	getSoloOutcome,
 	setAnalyticsVisible,
 } from "./analytics.js";
@@ -1017,6 +1018,7 @@ function discardSavedGame() {
 		}
 		globalThis.umami?.track("Poker", analyticsPayload(state, "result", snapshot.runtimeState.totalHands, {
 			outcome,
+			...getHumanAnalytics(snapshot.gameState.allPlayers.find((player) => !player.isBot).stats),
 		}));
 	}
 	removeSavedGameSnapshot();
@@ -3311,7 +3313,8 @@ function finishHandAfterShowdown() {
 	if (analyticsState?.mode === "solo" && !analyticsState.resultSent) {
 		const outcome = getSoloOutcome(gameState.players);
 		if (outcome) {
-			trackResult(outcome);
+			const human = gameState.allPlayers.find((player) => !player.isBot);
+			trackResult(outcome, getHumanAnalytics(human.stats));
 		}
 	}
 	saveCompletedSoloTournament();
@@ -3668,7 +3671,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-11-17-v1";
+const SERVICE_WORKER_VERSION = "2026-11-17-v2";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
