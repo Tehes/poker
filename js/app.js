@@ -1592,9 +1592,8 @@ function syncLogUi() {
 	const showSummaryButtons = !SPEED_MODE && summaryButtonsVisible;
 
 	statsButton.classList.toggle("hidden", !showSummaryButtons);
-	const showProfile = !SPEED_MODE && playerProfile?.totals.tournaments > 0 &&
-		(!gameState.gameStarted || gameState.allPlayers.some((player) => !player.isBot)) &&
-		(!gameState.handInProgress || getHumansWithChipsCount() === 0);
+	const showProfile = showSummaryButtons && playerProfile?.totals.tournaments > 0 &&
+		gameState.allPlayers.some((player) => !player.isBot);
 	profileButton.classList.toggle("hidden", !showProfile);
 	logButton.classList.toggle("hidden", !showSummaryButtons || !hasLogHistory);
 }
@@ -3673,7 +3672,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-11-17-v4";
+const SERVICE_WORKER_VERSION = "2026-11-17-v5";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

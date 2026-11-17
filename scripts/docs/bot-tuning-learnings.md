@@ -15,7 +15,7 @@ Purpose: This document records accepted and rejected bot-tuning routes so future
 - **Do not repeat blindly:** Do not tighten all paired-board calls, weaken all two-pair hands, or chase MDF by adding trash calls. Use board shape, private contribution, price, and pressure together.
 - **Watchpoint:** Weak paired-board calls still contain a high low-equity share. Treat that as a future diagnosis trigger only if a fresh report shows a stable remaining cluster; do not stack another broad penalty onto this accepted route.
 
-### Validation Snapshot
+### Validation Snapshot: Paired-Board Private-Pair Calls
 
 - **Comparison baseline:** `tmp/v150-multiraise-realization-acceptance-20260815-1000`
 - **Accepted core batch:** `tmp/poker-engine-batch-20260822-135113`
@@ -104,7 +104,7 @@ Purpose: This document records accepted and rejected bot-tuning routes so future
 - **Why:** It improved AJo but over-corrected adjacent clusters: KQo early/6 reached `0.0%` folds and small pairs early/6 reached `3.5%` folds.
 - **Allowed again only if:** A future patch proves the broader range mix stays stable across early-position broadways, small pairs, UO rates, and postflop guardrails.
 
-### Validation Snapshot
+### Validation Snapshot: Unopened Preflop Range Policy
 
 - **Baseline batch:** `/private/tmp/poker-baseline-compare.KMqkKi/tmp/poker-engine-batch-20260614-195549`
 - **Rejected symptom batch:** `tmp/poker-engine-batch-20260614-194645`
