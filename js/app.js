@@ -27,6 +27,15 @@ import {
 	setBotPlaybackFast,
 } from "./bot.js";
 import {
+	analyticsPayload,
+	createAnalyticsState,
+	finishAnalytics,
+	getAnalyticsSnapshot,
+	getDiscardOutcome,
+	getSoloOutcome,
+	setAnalyticsVisible,
+} from "./analytics.js";
+import {
 	advanceDealer,
 	calculateWinProbabilities,
 	createBettingRoundProgressState,
@@ -295,6 +304,7 @@ let playerProfile = null;
 let totalHands = 0;
 let hadHumansAtStart = false;
 let exitEventSent = false;
+let analyticsState = null;
 
 /* --------------------------------------------------------------------------------------------------
 Game Constants And Game State
@@ -543,6 +553,7 @@ function createSavedGameSnapshot() {
 			currentTournamentId,
 			currentTournamentResultSaved,
 			exitEventSent,
+			analytics: analyticsState ? getAnalyticsSnapshot(analyticsState, Date.now()) : null,
 			summaryButtonsVisible,
 			handFastForwardActive,
 			autoplayToGameEnd,
@@ -930,6 +941,12 @@ function restoreSavedGame(snapshot) {
 	resetRuntimeBeforeRestore();
 	restoreRuntimeState(snapshot.runtimeState);
 	restoreGameState(snapshot.gameState);
+	analyticsState = snapshot.runtimeState.analytics;
+	if (analyticsState) {
+		analyticsState.activeSince = null;
+		analyticsState.resumeCount++;
+		setAnalyticsVisible(analyticsState, document.visibilityState === "visible", Date.now());
+	}
 	currentGameSaveEligible = hasExactlyOneHumanPlayer(gameState.players);
 	if (currentGameSaveEligible && !currentTournamentId) {
 		currentTournamentId = crypto.randomUUID();
@@ -953,9 +970,7 @@ function trackSavedGameResume() {
 	if (SPEED_MODE) {
 		return;
 	}
-	globalThis.umami?.track("Poker", {
-		resumedGame: true,
-	});
+	trackAnalytics("resumed", { resumedGame: true });
 }
 
 function openResumeGameOverlay(snapshot) {
@@ -984,14 +999,34 @@ function continueSavedGame() {
 	closeResumeGameOverlay();
 	restoreSavedGame(snapshot);
 	trackSavedGameResume();
+	saveCurrentGameSnapshot();
 }
 
 function discardSavedGame() {
+	const snapshot = pendingSavedGameSnapshot;
+	const state = snapshot.runtimeState.analytics;
+	if (state && !state.resultSent) {
+		const outcome = getDiscardOutcome(snapshot);
+		finishAnalytics(state, Date.now());
+		snapshot.runtimeState.analytics = state;
+		const storage = getLocalStorage();
+		try {
+			storage?.setItem(SAVED_GAME_STORAGE_KEY, JSON.stringify(snapshot));
+		} catch (error) {
+			console.warn("saved game write failed", error);
+		}
+		globalThis.umami?.track("Poker", analyticsPayload(state, "result", snapshot.runtimeState.totalHands, {
+			outcome,
+		}));
+	}
 	removeSavedGameSnapshot();
 	closeResumeGameOverlay();
 }
 
 function handlePageLifecycleSave() {
+	if (analyticsState) {
+		setAnalyticsVisible(analyticsState, false, Date.now());
+	}
 	saveCurrentGameSnapshot();
 	trackUnfinishedExit();
 }
@@ -1905,6 +1940,22 @@ function getExitCounts() {
 	return { humansWithChipsAtExit, botsWithChipsAtExit };
 }
 
+function trackAnalytics(action, extra = {}) {
+	if (SPEED_MODE || !analyticsState) {
+		return;
+	}
+	const state = getAnalyticsSnapshot(analyticsState, Date.now());
+	globalThis.umami?.track("Poker", analyticsPayload(state, action, totalHands, extra));
+}
+
+function trackResult(outcome, extra = {}) {
+	if (SPEED_MODE || !analyticsState || !finishAnalytics(analyticsState, Date.now())) {
+		return;
+	}
+	saveCurrentGameSnapshot();
+	trackAnalytics("result", { outcome, ...extra });
+}
+
 function trackUnfinishedExit() {
 	if (
 		SPEED_MODE ||
@@ -1921,23 +1972,11 @@ function trackUnfinishedExit() {
 		? "last_human_bust"
 		: "humans_left_with_chips";
 	exitEventSent = true;
-	globalThis.umami?.track("Poker", {
+	trackAnalytics("paused", {
 		finished: false,
 		humansWithChipsAtExit,
 		botsWithChipsAtExit,
 		exitCategory,
-	});
-}
-
-function registerBotReveal(player) {
-	if (player?.stats) {
-		player.stats.reveals++;
-	}
-	if (SPEED_MODE) {
-		return;
-	}
-	globalThis.umami?.track("Poker", {
-		botReveal: true,
 	});
 }
 
@@ -2395,6 +2434,7 @@ function startGame() {
 		gameState.handInProgress = false;
 		createPlayers();
 		hadHumansAtStart = gameState.players.some((p) => !p.isBot);
+		analyticsState = createAnalyticsState(gameState.players);
 		currentGameSaveEligible = hasExactlyOneHumanPlayer(gameState.players);
 		currentTournamentId = currentGameSaveEligible && !SPEED_MODE ? crypto.randomUUID() : null;
 		currentTournamentResultSaved = false;
@@ -2415,6 +2455,7 @@ function startGame() {
 			instructionsButton.classList.add("hidden");
 			closeAllOverlays();
 			gameState.gameStarted = true;
+			setAnalyticsVisible(analyticsState, document.visibilityState === "visible", Date.now());
 			initStateSyncForGame();
 
 			preFlop();
@@ -2661,7 +2702,10 @@ function preFlop() {
 		humanTurnController.hide();
 		resetRuntimeFastForward();
 		if (!SPEED_MODE) {
-			globalThis.umami?.track("Poker", {
+			if (analyticsState && analyticsState.mode !== "solo") {
+				trackResult(champion.isBot ? "bot_won" : "human_won", { botWon: champion.isBot });
+			}
+			trackAnalytics("tournament_finished", {
 				champion: champion.name,
 				botWon: champion.isBot,
 				handsPlayed: getHandsPlayedBucket(totalHands),
@@ -2692,7 +2736,7 @@ function preFlop() {
 	// Shuffle and deal new hole cards
 	dealCards();
 	if (totalHands === 1 && !SPEED_MODE) {
-		globalThis.umami?.track("Poker", {
+		trackAnalytics("started", {
 			players: gameState.players.length,
 			bots: gameState.players.filter((p) => p.isBot).length,
 			humans: gameState.players.filter((p) => !p.isBot).length,
@@ -3264,6 +3308,12 @@ function finishHandAfterShowdown() {
 
 	clearActiveTurnPlayer(false);
 	applyGameStatePatch(handEndPlan.gameStatePatch);
+	if (analyticsState?.mode === "solo" && !analyticsState.resultSent) {
+		const outcome = getSoloOutcome(gameState.players);
+		if (outcome) {
+			trackResult(outcome);
+		}
+	}
 	saveCompletedSoloTournament();
 	renderPot();
 
@@ -3365,7 +3415,9 @@ function doShowdown() {
 		if (revealDecision) {
 			revealedPlayers.add(uncontestedWinner);
 			applyBotReveal(uncontestedWinner, revealDecision);
-			registerBotReveal(uncontestedWinner);
+			if (uncontestedWinner?.stats) {
+				uncontestedWinner.stats.reveals++;
+			}
 			enqueueNotification(
 				`${uncontestedWinner.name} reveals ${
 					revealDecision.codes.map(formatCardLabel).join(" ")
@@ -3543,6 +3595,12 @@ function init() {
 		}
 	}, false);
 	globalThis.addEventListener("pagehide", handlePageLifecycleSave, false);
+	globalThis.addEventListener("pageshow", () => {
+		if (analyticsState && gameState.gameStarted && !gameState.gameFinished && document.visibilityState === "visible") {
+			exitEventSent = false;
+			setAnalyticsVisible(analyticsState, true, Date.now());
+		}
+	}, false);
 	globalThis.addEventListener(
 		"beforeunload",
 		handlePageLifecycleSave,
@@ -3553,6 +3611,9 @@ function init() {
 		() => {
 			if (document.visibilityState === "hidden") {
 				handlePageLifecycleSave();
+			} else if (analyticsState && gameState.gameStarted && !gameState.gameFinished) {
+				exitEventSent = false;
+				setAnalyticsVisible(analyticsState, true, Date.now());
 			}
 		},
 		false,
@@ -3607,7 +3668,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-11-15-v2";
+const SERVICE_WORKER_VERSION = "2026-11-17-v1";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({
