@@ -10,22 +10,15 @@ const METRIC_GROUPS = [
 				help: "Completed tournaments. Leaving an unfinished game does not add a result.",
 			},
 			{
-				label: "Wins",
-				kind: "wins",
-				help: "Tournaments in which you finished first, with your tournament win rate below.",
+				label: "Win rate",
+				kind: "winRate",
+				help: "Percentage of tournaments you won.",
 			},
 			{
 				label: "Placement",
 				kind: "placement",
 				help:
-					"Latest shows your place and the original number of players. Other columns show your average finishing place.",
-			},
-			{
-				label: "Relative placement",
-				kind: "relative",
-				note: "0% first · 100% last",
-				help:
-					"Finishing place adjusted for each tournament's original field size. This allows comparisons between different table sizes.",
+					"Latest shows your actual finish. L10 and Overall average finishes after scaling them to six players.",
 			},
 			{
 				label: "Hands per game",
@@ -37,16 +30,15 @@ const METRIC_GROUPS = [
 				label: "Hands won",
 				numerator: "handsWon",
 				denominator: "hands",
-				unit: "hands",
 				help:
 					"Hands in which you won a pot. Split pots count as one won hand; returned, uncalled chips do not count as a win.",
 			},
 			{
-				label: "Pots without showdown",
-				kind: "count",
+				label: "Non-showdown wins",
 				numerator: "handsWon",
 				subtract: "showdownsWon",
-				help: "Hands won because every opponent folded, including hands that ended before the flop.",
+				denominator: "handsWon",
+				help: "Percentage of hands you won that ended without a showdown.",
 			},
 		],
 	},
@@ -57,14 +49,12 @@ const METRIC_GROUPS = [
 				label: "VPIP",
 				numerator: "vpip",
 				denominator: "hands",
-				unit: "hands",
 				help: "Hands in which you voluntarily called or raised preflop. Posting blinds does not count.",
 			},
 			{
 				label: "PFR",
 				numerator: "pfr",
 				denominator: "hands",
-				unit: "hands",
 				help: "Hands in which you raised preflop at least once.",
 			},
 			{
@@ -73,50 +63,34 @@ const METRIC_GROUPS = [
 				numerator: "vpip",
 				subtract: "pfr",
 				denominator: "hands",
-				unit: "hands",
 				help:
 					"VPIP minus PFR, in percentage points (pp). This describes how often you entered preflop without raising.",
 			},
 			{
 				label: "3-Bet",
 				rate: "threeBetPct",
-				numerator: "threeBets",
-				denominator: "threeBetOpportunities",
-				unit: "chances",
 				help: "How often you reraised when facing one preflop raise and able to raise.",
 			},
 			{
 				label: "Fold to 3-Bet",
 				rate: "foldToThreeBetPct",
-				numerator: "foldsToThreeBet",
-				denominator: "foldToThreeBetOpportunities",
-				unit: "chances",
 				help: "How often you folded your original preflop raise to a 3-bet. An intervening 4-bet is excluded.",
 			},
 			{
 				label: "Raise first in",
 				rate: "raiseFirstInPct",
-				numerator: "raisesFirstIn",
-				denominator: "raiseFirstInOpportunities",
-				unit: "chances",
 				help:
 					"How often you raised when nobody had voluntarily entered the pot before you and you could raise.",
 			},
 			{
 				label: "Attempt to steal",
 				rate: "attemptToStealPct",
-				numerator: "stealAttempts",
-				denominator: "stealOpportunities",
-				unit: "chances",
 				help:
 					"Raises first in from the cutoff, button, or small blind, including the small blind in heads-up play.",
 			},
 			{
 				label: "Fold BB to steal",
 				rate: "foldBigBlindToStealPct",
-				numerator: "foldsBigBlindToSteal",
-				denominator: "bigBlindStealOpportunities",
-				unit: "chances",
 				help:
 					"How often you folded the big blind directly to a steal. Intervening calls or raises are excluded.",
 			},
@@ -124,15 +98,11 @@ const METRIC_GROUPS = [
 				label: "Preflop fold",
 				numerator: "foldsPreflop",
 				denominator: "hands",
-				unit: "hands",
 				help: "Hands in which you folded before the flop.",
 			},
 			{
 				label: "Flop seen",
 				rate: "flopSeenPct",
-				numerator: "flopsSeen",
-				denominator: "hands",
-				unit: "hands",
 				help:
 					"Hands in which you reached the flop without folding, including all-in runouts and free flops in the big blind.",
 			},
@@ -144,17 +114,11 @@ const METRIC_GROUPS = [
 			{
 				label: "Flop C-Bet",
 				rate: "flopCbetPct",
-				numerator: "flopCbets",
-				denominator: "flopCbetOpportunities",
-				unit: "chances",
 				help: "How often you made the first bet on the flop as the last preflop raiser, when able to bet.",
 			},
 			{
 				label: "Fold to flop C-Bet",
 				rate: "foldToFlopCbetPct",
-				numerator: "foldsToFlopCbet",
-				denominator: "foldToFlopCbetOpportunities",
-				unit: "chances",
 				help:
 					"How often you folded directly to a flop continuation bet. Calls by other players still count; an intervening raise does not.",
 			},
@@ -162,38 +126,30 @@ const METRIC_GROUPS = [
 				label: "Aggression factor",
 				kind: "ratio",
 				rate: "aggressionFactor",
-				numerator: "aggressiveActs",
-				denominator: "calls",
 				help:
 					"Postflop bets and raises divided by calls. All-in calls count as calls. With no calls, there is no finite factor to display.",
 			},
 			{
 				label: "WTSD",
 				rate: "wtsdPct",
-				numerator: "showdowns",
-				denominator: "flopsSeen",
-				unit: "flops",
 				help: "Went to showdown: how often you reached a showdown after seeing the flop.",
 			},
 			{
 				label: "W$SD",
 				numerator: "showdownsWon",
 				denominator: "showdowns",
-				unit: "showdowns",
 				help: "Won at showdown: how often you won a pot when reaching showdown. Split-pot wins count once.",
 			},
 			{
 				label: "WWSF",
 				numerator: "handsWonAfterFlop",
 				denominator: "flopsSeen",
-				unit: "flops",
 				help: "Won when saw flop: how often you won a pot after seeing the flop, with or without a showdown.",
 			},
 			{
 				label: "All-in",
 				numerator: "allins",
 				denominator: "hands",
-				unit: "hands",
 				help: "Hands in which you went all-in by calling or raising. Forced blind all-ins are excluded.",
 			},
 		],
@@ -210,44 +166,34 @@ function formatDate(timestamp) {
 
 function formatMetric(period, metric) {
 	if (metric.kind === "tournaments") {
-		return { value: formatNumber(period.tournaments), sample: "" };
+		return formatNumber(period.tournaments);
 	}
-	if (metric.kind === "wins") {
-		return { value: formatNumber(period.wins), sample: `${period.winPct.toFixed(1)}%` };
+	if (metric.kind === "winRate") {
+		return `${period.winPct.toFixed(1)}%`;
 	}
 	if (metric.kind === "placement") {
-		return period.placement !== undefined
-			? { value: `${period.placement} / ${period.participantCount}`, sample: "" }
-			: { value: period.averagePlacement.toFixed(1), sample: "average place" };
-	}
-	if (metric.kind === "relative") {
-		return { value: `${period.averageRelativePlacementPct.toFixed(1)}%`, sample: "" };
+		if (period.placement !== undefined) {
+			return `${period.placement} / ${period.participantCount}`;
+		}
+		const averagePlaceAtSix = 1 + (period.averageRelativePlacementPct / 100) * 5;
+		return `${averagePlaceAtSix.toFixed(1)} / 6`;
 	}
 	if (metric.kind === "handsPerGame") {
-		return {
-			value: (period.stats.hands / period.tournaments).toLocaleString("en", { maximumFractionDigits: 1 }),
-			sample: "",
-		};
+		return (period.stats.hands / period.tournaments).toLocaleString("en", { maximumFractionDigits: 1 });
 	}
-	const numerator = period.stats[metric.numerator] - (metric.subtract ? period.stats[metric.subtract] : 0);
-	if (metric.kind === "count") {
-		return { value: formatNumber(numerator), sample: "" };
-	}
-	const denominator = period.stats[metric.denominator];
 	if (metric.kind === "ratio") {
 		const ratio = period.rates[metric.rate];
-		return {
-			value: ratio === null ? "—" : ratio.toFixed(2),
-			sample: `${formatNumber(numerator)} bets + raises / ${formatNumber(denominator)} calls`,
-		};
+		return ratio === null ? "—" : ratio.toFixed(2);
 	}
-	const rate = metric.rate ? period.rates[metric.rate] : denominator > 0 ? numerator / denominator * 100 : null;
-	return {
-		value: rate === null ? "—" : `${rate.toFixed(1)}${metric.kind === "gap" ? " pp" : "%"}`,
-		sample: metric.kind === "gap"
-			? `${formatNumber(denominator)} ${metric.unit}`
-			: `${formatNumber(numerator)} / ${formatNumber(denominator)} ${metric.unit}`,
-	};
+	let rate;
+	if (metric.rate) {
+		rate = period.rates[metric.rate];
+	} else {
+		const numerator = period.stats[metric.numerator] - (metric.subtract ? period.stats[metric.subtract] : 0);
+		const denominator = period.stats[metric.denominator];
+		rate = denominator > 0 ? numerator / denominator * 100 : null;
+	}
+	return rate === null ? "—" : `${rate.toFixed(1)}${metric.kind === "gap" ? " pp" : "%"}`;
 }
 
 export function renderPlayerProfile(elements, profile) {
@@ -274,18 +220,10 @@ export function renderPlayerProfile(elements, profile) {
 		}
 		for (const metric of group.metrics) {
 			const row = elements.rowTemplate.content.firstElementChild.cloneNode(true);
-			const label = row.querySelector("th");
-			label.textContent = metric.label;
-			if (metric.note) {
-				const note = document.createElement("small");
-				note.textContent = metric.note;
-				label.appendChild(note);
-			}
+			row.querySelector("th").textContent = metric.label;
 			for (const period of periods) {
 				const cell = elements.cellTemplate.content.firstElementChild.cloneNode(true);
-				const metricValue = formatMetric(period, metric);
-				cell.querySelector(".metric-value").textContent = metricValue.value;
-				cell.querySelector(".metric-sample").textContent = metricValue.sample;
+				cell.querySelector(".metric-value").textContent = formatMetric(period, metric);
 				row.appendChild(cell);
 			}
 			body.appendChild(row);

@@ -58,7 +58,7 @@ Deno.test("empty profiles have no Latest or L10 and reading does not create a st
 	const comparison = getPlayerProfileComparison(profile);
 	assertEquals([comparison.latest, comparison.last10], [null, null]);
 	assertEquals([comparison.overall.tournaments, comparison.overall.winPct], [0, null]);
-	assertEquals(comparison.overall.averagePlacement, null);
+	assertEquals(comparison.overall.averageRelativePlacementPct, null);
 });
 
 Deno.test("profile snapshots keep only known counters and preserve saved-game defaults", () => {
@@ -90,12 +90,11 @@ Deno.test("only the last ten compact results remain while career totals keep old
 	const comparison = getPlayerProfileComparison(profile);
 	assertEquals([comparison.latest.id, comparison.latest.stats.hands], ["tournament-15", 15]);
 	assertEquals([comparison.last10.tournaments, comparison.last10.stats.hands], [10, 105]);
-	assertEquals([comparison.overall.tournaments, comparison.overall.stats.hands, comparison.overall.wins], [
+	assertEquals([comparison.overall.tournaments, comparison.overall.stats.hands, comparison.overall.winPct], [
 		15,
 		120,
-		5,
+		5 / 15 * 100,
 	]);
-	assertEquals(comparison.overall.averagePlacement, 25 / 15);
 });
 
 Deno.test("Latest, L10, and Overall calculate rates from their raw observations", () => {
@@ -132,7 +131,6 @@ Deno.test("profile placement averages take the original field size into account"
 	const comparison = getPlayerProfileComparison(profile);
 	assertEquals(comparison.latest.averageRelativePlacementPct, 20);
 	assertEquals(comparison.overall.averageRelativePlacementPct, 60);
-	assertEquals(comparison.overall.averagePlacement, 2);
 	profile = addTournamentToProfile(profile, createResult(3, { placement: 1, participantCount: 3 }));
 	assertEquals(getPlayerProfileComparison(profile).overall.winPct, 1 / 3 * 100);
 });

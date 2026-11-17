@@ -98,9 +98,7 @@ export function addTournamentToProfile(profile, result) {
 function summarizeProfileTotals(totals) {
 	return {
 		tournaments: totals.tournaments,
-		wins: totals.wins,
 		winPct: totals.tournaments > 0 ? totals.wins / totals.tournaments * 100 : null,
-		averagePlacement: totals.tournaments > 0 ? totals.placementSum / totals.tournaments : null,
 		averageRelativePlacementPct: totals.tournaments > 0
 			? totals.relativePlacementSum / totals.tournaments * 100
 			: null,
