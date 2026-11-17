@@ -595,7 +595,7 @@ OVERLAY
 
 #profile-overlay p {
     margin: 0.35rem 0 0;
-    font-size: 0.85rem;
+    font-size: 0.95rem;
 }
 
 #profile-overlay .profile-content {
@@ -626,7 +626,7 @@ OVERLAY
 }
 
 #profile-overlay tr > th:first-child {
-    width: 35%;
+    width: 30%;
     font-size: 0.9rem;
 }
 
@@ -637,7 +637,7 @@ OVERLAY
 #profile-overlay small {
     display: block;
     margin-top: 0.2rem;
-    font-size: 0.7rem;
+    font-size: 0.85rem;
     line-height: 1.35;
 }
 
@@ -688,7 +688,7 @@ OVERLAY
     flex-direction: column;
     justify-content: space-between;
     color: var(--blue-lightest);
-    font-size: 0.7rem;
+    font-size: 0.85rem;
 }
 
 #profile-history-list {
@@ -722,11 +722,12 @@ OVERLAY
 #profile-overlay .history-place {
     display: block;
     text-align: center;
-    font-size: 0.75rem;
+    font-size: 0.85rem;
 }
 
 #profile-overlay .profile-note {
     margin-top: 1.25rem;
+    font-size: 0.8rem;
     line-height: 1.5;
 }
 
@@ -744,17 +745,9 @@ OVERLAY
         padding: 0.5rem 0.25rem;
     }
 
-    #profile-overlay tr > th:first-child {
-        font-size: 0.8rem;
-    }
-
     #profile-overlay .period-label,
     #profile-overlay .metric-value {
         font-size: 0.9rem;
-    }
-
-    #profile-overlay small {
-        font-size: 0.65rem;
     }
 
     #profile-history-list {
