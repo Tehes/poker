@@ -2,6 +2,25 @@
 
 Purpose: This document records accepted and rejected bot-tuning routes so future iterations do not repeat already falsified hypotheses without new evidence.
 
+## 2026-11-21: River Calls After the Same Bettor Opened Flop and Turn
+
+### No Qualified Candidate
+
+- The audit tested a `+0.04` call-barrier adjustment for weak private pairs facing the first river bet heads-up at 20% to 33⅓% pot odds, when the bettor also opened the betting on both earlier streets.
+- In the fresh 1,000-tournament six-bot baseline, all 48 flipped calls lost. Folding saved 21,580 chips versus 16,070 from folding the same number by hand strength and price alone. Cheap calls, top pair or better, and comparable calls against other lines stayed stable in replay.
+- The equal-fold chip advantage was `+5,510` in the fresh baseline, `−1,110` in a separate 1,000-tournament run, and `+1,780` in a separate 300-tournament run. All three used the same bot decision logic. The older 1,000-tournament run predates the split in all-in statistics. The fresh baseline's 95% interval spanned `−3,600` to `+14,780` chips, and the rule flipped 48 of 79,520 hands. The audit ended before a runtime change or candidate batch.
+- Reopen this route when new evidence shows a repeatable, material gain over equal-fold tightening based on hand strength and price. Audit details are in `tmp/river-call-audit-20261121/audit-results.json`.
+
+## 2026-11-21: Turn Calls With Only a Public Pair
+
+### Accepted After Reviewing the Flagged Hand
+
+- Added `+0.06` to the existing weak-private call penalty for a board-only pair with a kicker facing the first turn bet heads-up at 25% to 33⅓% pot odds. All-in spots and strong draws were excluded.
+- In the original 440-call cohort, 305 decisions flipped for sure and 65 more could flip on the tie-break. Expected net savings were 132,675 chips after giving up 35 calls with positive recorded outcomes in expectation. Both 300-tournament replicas supported the result. The replay left cheap calls, top pair or better, and strong draws stable.
+- The 100-, 500-, and 1,000-tournament batches improved realized chips per eligible spot. Across the full heads-up-at-decision scope, the 1,000-tournament call rate fell from 46.74% to 11.74% and value rose from −2.96 to −0.86 BB per spot. The final batch recorded one all-in low-edge reraise against the required count of zero.
+- The accepted MDF trade-off in the 1,000-tournament batch was 11.06 to 14.25 percentage points of overfold on heads-up turns. Outside the target spots, the gap moved from 10.31 to 9.19 percentage points. The chip gain was measured in six-bot self-play.
+- That flag came from a river flush over a public straight in the first hand of run 250. The structural upgrade scored `0.9952` against the `1.0` cutoff. Baseline and candidate both shoved 1,570 chips from the same state in replay, and a worse straight called. Tino accepted this candidate after reviewing the hand. The batch still records the single flag. Audit and batch details are in `tmp/turn-board-pair-audit-20261121/`.
+
 ## 2026-08-22: Paired-Board Private-Pair Calls
 
 ### Accepted: Formal Two Pair Is Not Always Strong Private Value

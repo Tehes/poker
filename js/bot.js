@@ -2802,6 +2802,8 @@ function getWeakPrivateShowdownPressurePenalty({
 	topPair,
 	overPair,
 	potOdds,
+	headsUp,
+	isAllIn,
 }) {
 	if (
 		!needsToCall ||
@@ -2823,6 +2825,14 @@ function getWeakPrivateShowdownPressurePenalty({
 	}
 	if (pairClass !== "board-pair-only" && liftType !== "kicker") {
 		return 0;
+	}
+
+	if (
+		streetIndex === 2 && raiseLevel === 1 && headsUp && !isAllIn &&
+		pairClass === "board-pair-only" && liftType === "kicker" &&
+		potOdds >= 0.25 && potOdds <= 1 / 3
+	) {
+		return 0.095;
 	}
 
 	const streetPenalty = streetIndex === 3 ? 0.025 : 0.02;
@@ -3637,6 +3647,8 @@ export function chooseBotAction(player, gameState) {
 			topPair,
 			overPair,
 			potOdds,
+			headsUp: spotContext.headsUp,
+			isAllIn: stackRatio === 1 || activeSizingOpponents.length === 0,
 		});
 		const preReliefCallBarrier = callBarrierBase + callBarrierAdj + marginalCallAdj +
 			potOddsShift + commitmentShift + streetPressure + weakDrawPressure +
