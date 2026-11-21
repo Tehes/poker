@@ -971,7 +971,7 @@ function trackSavedGameResume() {
 	if (SPEED_MODE) {
 		return;
 	}
-	trackAnalytics("resumed", { resumedGame: true });
+	trackAnalytics("resumed");
 }
 
 function openResumeGameOverlay(snapshot) {
@@ -1017,6 +1017,7 @@ function discardSavedGame() {
 			console.warn("saved game write failed", error);
 		}
 		globalThis.umami?.track("Poker", analyticsPayload(state, "result", snapshot.runtimeState.totalHands, {
+			...(snapshot.runtimeState.currentTournamentId ? { tournamentId: snapshot.runtimeState.currentTournamentId } : {}),
 			outcome,
 			...getHumanAnalytics(snapshot.gameState.allPlayers.find((player) => !player.isBot).stats),
 		}));
@@ -1918,21 +1919,6 @@ function activateFastForward() {
 Analytics And Remote State-Sync Helpers
 ---------------------------------------------------------------------------------------------------*/
 
-function getHandsPlayedBucket(handCount) {
-	if (handCount < 35) return "<35";
-	if (handCount <= 40) return "36-40";
-	if (handCount <= 45) return "41-45";
-	if (handCount <= 50) return "46-50";
-	if (handCount <= 55) return "51-55";
-	if (handCount <= 60) return "56-60";
-	if (handCount <= 70) return "61-70";
-	if (handCount <= 80) return "71-80";
-	if (handCount <= 90) return "81-90";
-	if (handCount <= 100) return "91-100";
-	if (handCount <= 120) return "101-120";
-	return ">120";
-}
-
 function getExitCounts() {
 	const humansWithChipsAtExit =
 		gameState.players.filter((p) => !p.isBot && p.chips > 0).length;
@@ -1946,7 +1932,10 @@ function trackAnalytics(action, extra = {}) {
 		return;
 	}
 	const state = getAnalyticsSnapshot(analyticsState, Date.now());
-	globalThis.umami?.track("Poker", analyticsPayload(state, action, totalHands, extra));
+	globalThis.umami?.track("Poker", analyticsPayload(state, action, totalHands, {
+		...(state.mode === "solo" && currentTournamentId ? { tournamentId: currentTournamentId } : {}),
+		...extra,
+	}));
 }
 
 function trackResult(outcome, extra = {}) {
@@ -1969,15 +1958,10 @@ function trackUnfinishedExit() {
 		return;
 	}
 	const { humansWithChipsAtExit, botsWithChipsAtExit } = getExitCounts();
-	const exitCategory = humansWithChipsAtExit === 0
-		? "last_human_bust"
-		: "humans_left_with_chips";
 	exitEventSent = true;
 	trackAnalytics("paused", {
-		finished: false,
 		humansWithChipsAtExit,
 		botsWithChipsAtExit,
-		exitCategory,
 	});
 }
 
@@ -2706,13 +2690,11 @@ function preFlop() {
 		resetRuntimeFastForward();
 		if (!SPEED_MODE) {
 			if (analyticsState && analyticsState.mode !== "solo") {
-				trackResult(champion.isBot ? "bot_won" : "human_won", { botWon: champion.isBot });
+				trackResult(champion.isBot ? "bot_won" : "human_won");
 			}
 			trackAnalytics("tournament_finished", {
 				champion: champion.name,
 				botWon: champion.isBot,
-				handsPlayed: getHandsPlayedBucket(totalHands),
-				finished: true,
 			});
 			renderStatsOverlay();
 			setSummaryButtonsVisible(true);
@@ -2739,11 +2721,7 @@ function preFlop() {
 	// Shuffle and deal new hole cards
 	dealCards();
 	if (totalHands === 1 && !SPEED_MODE) {
-		trackAnalytics("started", {
-			players: gameState.players.length,
-			bots: gameState.players.filter((p) => p.isBot).length,
-			humans: gameState.players.filter((p) => !p.isBot).length,
-		});
+		trackAnalytics("started");
 	}
 	logSpeedmodeEvent("hand_start", {
 		handId: gameState.handId,
@@ -3672,7 +3650,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-11-17-v9";
+const SERVICE_WORKER_VERSION = "2026-11-21-v1";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

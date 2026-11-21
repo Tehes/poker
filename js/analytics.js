@@ -1,4 +1,4 @@
-import { getPlayerStatsRates, getPlayerTournamentPlacement } from "./gameEngine.js";
+import { getPlayerTournamentPlacement } from "./gameEngine.js";
 
 export function createAnalyticsState(players) {
 	const humans = players.filter((player) => !player.isBot).length;
@@ -33,9 +33,8 @@ export function getAnalyticsSnapshot(state, now) {
 
 export function analyticsPayload(state, action, handCount, extra = {}) {
 	return {
-		trackingVersion: 3,
+		trackingVersion: 4,
 		action,
-		mode: state.mode,
 		humans: state.humans,
 		bots: state.bots,
 		handCount,
@@ -51,7 +50,7 @@ export function getSoloOutcome(players) {
 }
 
 export function getHumanAnalytics(stats) {
-	const values = {
+	return {
 		humanHands: stats.hands,
 		humanVpipHands: stats.vpip,
 		humanPfrHands: stats.pfr,
@@ -78,25 +77,6 @@ export function getHumanAnalytics(stats) {
 		humanAllinCalls: stats.allinCalls,
 		humanAggressiveAllins: stats.aggressiveAllins,
 	};
-	if (stats.hands > 0) {
-		values.humanVpipPct = Math.round(stats.vpip / stats.hands * 1000) / 10;
-		values.humanPfrPct = Math.round(stats.pfr / stats.hands * 1000) / 10;
-		values.humanAllinCallPct = Math.round(stats.allinCalls / stats.hands * 1000) / 10;
-		values.humanAggressiveAllinPct = Math.round(stats.aggressiveAllins / stats.hands * 1000) / 10;
-	}
-	if (stats.flopsSeen > 0) {
-		values.humanWwsfPct = Math.round(stats.handsWonAfterFlop / stats.flopsSeen * 1000) / 10;
-	}
-	if (stats.showdowns > 0) {
-		values.humanShowdownWinPct = Math.round(stats.showdownsWon / stats.showdowns * 1000) / 10;
-	}
-	const rates = getPlayerStatsRates(stats);
-	for (const [name, value] of Object.entries(rates)) {
-		if (value !== null) {
-			values[`human${name[0].toUpperCase()}${name.slice(1)}`] = Math.round(value * 100) / 100;
-		}
-	}
-	return values;
 }
 
 export function getDiscardOutcome(snapshot) {
