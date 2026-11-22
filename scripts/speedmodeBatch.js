@@ -852,15 +852,6 @@ async function main() {
 		console.log(
 			`postflop_fold_watch=${JSON.stringify(aggregateMetrics.postflop.foldWatchByTag)}`,
 		);
-		console.log(
-			`mdf_override_after_river_low_edge_block=${aggregateMetrics.postflop.mdf.overrideCallAfterRiverLowEdgeBlockCount}`,
-		);
-		console.log(
-			`mdf_override_after_marginal_defense_block=${aggregateMetrics.postflop.mdf.overrideCallAfterMarginalDefenseBlockCount}`,
-		);
-		console.log(
-			`mdf_override_after_non_value_block=${aggregateMetrics.postflop.mdf.overrideCallAfterNonValueBlockCount}`,
-		);
 		console.log(`kicker_raises=${aggregateMetrics.kickerRaiseCount}`);
 		console.log(`meaningful_raises=${aggregateMetrics.meaningfulRaiseCount}`);
 		console.log(
@@ -871,13 +862,6 @@ async function main() {
 				mdfAnalysis.facingBetOverall.requiredFoldRate.toFixed(3)
 			} over=${mdfAnalysis.facingBetOverall.overfold.toFixed(3)}`,
 		);
-		console.log(
-			`mdf_overall_candidates=${mdfAnalysis.candidateOverall.total} defends=${mdfAnalysis.candidateOverall.defends} actual_vs_alpha=${
-				mdfAnalysis.candidateOverall.actualFoldRate.toFixed(3)
-			}/${mdfAnalysis.candidateOverall.requiredFoldRate.toFixed(3)} over=${
-				mdfAnalysis.candidateOverall.overfold.toFixed(3)
-			}`,
-		);
 		for (const street of ["flop", "turn", "river"]) {
 			const facingBetRow = aggregateMetrics.postflop.mdf.facingBetByStreet[street];
 			const facingBetSummary = summarizeFoldRateRow(facingBetRow);
@@ -885,16 +869,6 @@ async function main() {
 				`mdf_${street}_actual_vs_alpha=${facingBetSummary.actualFoldRate.toFixed(3)}/${
 					facingBetSummary.requiredFoldRate.toFixed(3)
 				} over=${facingBetSummary.overfold.toFixed(3)}`,
-			);
-
-			const candidateRow = aggregateMetrics.postflop.mdf.candidateByStreet[street];
-			const candidateSummary = summarizeFoldRateRow(candidateRow);
-			console.log(
-				`mdf_${street}_candidates=${candidateRow?.total || 0} defends=${
-					candidateRow?.defends || 0
-				} actual_vs_alpha=${candidateSummary.actualFoldRate.toFixed(3)}/${
-					candidateSummary.requiredFoldRate.toFixed(3)
-				} over=${candidateSummary.overfold.toFixed(3)}`,
 			);
 			console.log(
 				`mdf_${street}_facing_by_margin=${
@@ -923,48 +897,7 @@ async function main() {
 					)
 				}`,
 			);
-			console.log(
-				`mdf_${street}_candidates_by_margin=${
-					JSON.stringify(mdfAnalysis.candidateByStreetAndMargin[street] || {})
-				}`,
-			);
-			console.log(
-				`mdf_${street}_candidates_by_margin_and_betsize=${
-					JSON.stringify(mdfAnalysis.candidateByStreetAndMarginAndBetSize[street] || {})
-				}`,
-			);
-			console.log(
-				`mdf_${street}_candidates_by_raise_level=${
-					JSON.stringify(mdfAnalysis.candidateByStreetAndRaiseLevel[street] || {})
-				}`,
-			);
-			console.log(
-				`mdf_${street}_candidates_by_structure=${
-					JSON.stringify(mdfAnalysis.candidateByStreetAndStructure[street] || {})
-				}`,
-			);
-			console.log(
-				`mdf_${street}_candidates_by_pressure=${
-					JSON.stringify(mdfAnalysis.candidateByStreetAndPressure[street] || {})
-				}`,
-			);
-			console.log(
-				`mdf_${street}_candidates_by_lift=${
-					JSON.stringify(mdfAnalysis.candidateByStreetAndLift[street] || {})
-				}`,
-			);
-			console.log(
-				`mdf_${street}_candidates_by_raw_hand=${
-					JSON.stringify(mdfAnalysis.candidateByStreetAndRawHand[street] || {})
-				}`,
-			);
-			console.log(
-				`mdf_${street}_overrides_by_margin=${
-					JSON.stringify(mdfAnalysis.overrideCallByStreetAndMargin[street] || {})
-				}`,
-			);
 		}
-		console.log(`mdf_override_calls=${aggregateMetrics.postflop.mdf.overrideCallCount}`);
 		console.log(`output_dir=${outputDir}`);
 	} finally {
 		serverAbort.abort();

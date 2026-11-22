@@ -269,8 +269,10 @@ deno task engine:batch:1000
 
 `engineBatch` runs full bot tournaments directly through the pure engine without launching a
 browser. It is the primary runner for bot tuning, poker-rule changes, tournament flow, outcome
-joining, and large samples. It writes one log plus one JSON summary per run. By default the output
-goes to `tmp/poker-engine-batch-YYYYMMDD-HHMMSS/` and includes a combined `summary.json`.
+joining, and large samples. Each run writes `run-NN.json` with metrics and `run-NN.details.json`
+with engine events and bot decisions. Join the two decision records by `handId` and `decisionId`
+within a run. Output defaults to `tmp/poker-engine-batch-YYYYMMDD-HHMMSS/` and includes a combined
+`summary.json`.
 `deno task engine:batch` runs 100 tournaments by default; use the 500 or 1000 task when a bot-tuning
 change is noisy and needs a larger sample.
 

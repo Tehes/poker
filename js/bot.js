@@ -613,7 +613,6 @@ function buildStreetLineRead(currentPhaseIndex, handContext) {
 		turnCheckedThrough,
 		priorCheckedThroughCount,
 		priorAggressiveStreetCount,
-		passiveLineDepth: priorCheckedThroughCount,
 		doubleCheckedThrough: currentPhaseIndex === 3 &&
 			flopCheckedThrough &&
 			turnCheckedThrough,
@@ -3737,6 +3736,8 @@ export function chooseBotAction(player, gameState) {
 	let decisionBranch = null;
 	let decisionReason = null;
 	let finalAdjustment = null;
+	let actionBeforeOverride;
+	let tieBreakRoll;
 	let preflopOpenRaiseThreshold = null;
 	let preflopOpenRaiseMargin = null;
 	let preflopOpenLimpThreshold = null;
@@ -4712,7 +4713,8 @@ export function chooseBotAction(player, gameState) {
 					: needsToCall
 					? { action: "fold" }
 					: { action: "check" };
-				decision = Math.random() < 0.5 ? { action: "raise", amount: raiseAmt } : alt;
+				tieBreakRoll = Math.random();
+				decision = tieBreakRoll < 0.5 ? { action: "raise", amount: raiseAmt } : alt;
 				decisionBranch = "unopened-open-tie";
 				decisionReason = canOpenLimp ? "raise-vs-limp" : "raise-vs-release";
 			} else {
@@ -4747,7 +4749,8 @@ export function chooseBotAction(player, gameState) {
 					Math.abs(decisionStrength - raiseThreshold) <=
 						STRENGTH_TIE_DELTA
 				) {
-					decision = Math.random() < 0.5 ? { action: "check" } : { action: "raise", amount: raiseAmt };
+					tieBreakRoll = Math.random();
+					decision = tieBreakRoll < 0.5 ? { action: "check" } : { action: "raise", amount: raiseAmt };
 					decisionBranch = "no-bet-raise-tie";
 					decisionReason = "decision_strength";
 				} else {
@@ -4785,7 +4788,8 @@ export function chooseBotAction(player, gameState) {
 							passesPreflopCallLimit)
 						? { action: "call", amount: callAmt }
 						: { action: "fold" };
-					decision = Math.random() < 0.5 ? { action: "raise", amount: raiseAmt } : alt;
+					tieBreakRoll = Math.random();
+					decision = tieBreakRoll < 0.5 ? { action: "raise", amount: raiseAmt } : alt;
 					decisionBranch = "facing-bet-raise-tie";
 					decisionReason = "decision_strength";
 				} else {
@@ -4802,7 +4806,8 @@ export function chooseBotAction(player, gameState) {
 				Math.abs(callDecisionStrengthRatio - eliminationBarrier) <=
 					ODDS_TIE_DELTA
 			) {
-				decision = Math.random() < 0.5 ? { action: "call", amount: callAmt } : { action: "fold" };
+				tieBreakRoll = Math.random();
+				decision = tieBreakRoll < 0.5 ? { action: "call", amount: callAmt } : { action: "fold" };
 				decisionBranch = "call-gate-tie";
 				decisionReason = "call_strength";
 			} else {
@@ -4817,6 +4822,7 @@ export function chooseBotAction(player, gameState) {
 		}
 	}
 	if (preflop && premiumHand && decision.action === "fold") {
+		actionBeforeOverride = decision.action;
 		decision = needsToCall ? { action: "call", amount: Math.min(player.chips, needToCall) } : { action: "check" };
 		finalAdjustment = "premium_preflop_fold_guard";
 	}
@@ -4824,6 +4830,7 @@ export function chooseBotAction(player, gameState) {
 		!preflop && decision.action === "fold" && needsToCall &&
 		rawHandRank >= TOP_TIER_POSTFLOP_GUARD_RANK_MIN
 	) {
+		actionBeforeOverride = decision.action;
 		decision = {
 			action: "call",
 			amount: Math.min(player.chips, needToCall),
@@ -4897,6 +4904,7 @@ export function chooseBotAction(player, gameState) {
 				goodThreshold + eliminationPenalty,
 			);
 			if (gateStrengthRatio >= riskAdjustedThreshold) {
+				actionBeforeOverride = decision.action;
 				decision = {
 					action: "call",
 					amount: Math.min(player.chips, needToCall),
@@ -4926,6 +4934,7 @@ export function chooseBotAction(player, gameState) {
 				Math.min(1, bluffAlpha * bluffSpotWeight),
 			);
 			if (Math.random() < bluffDecisionChance) {
+				actionBeforeOverride = decision.action;
 				decision = { action: "raise", amount: bluffAmt };
 				isBluff = true;
 				finalAdjustment = "bluff_raise";
@@ -4946,6 +4955,7 @@ export function chooseBotAction(player, gameState) {
 					(!nonValueAggressionMade && !hasPrivateMadeHand)
 				) {
 					const bet = gateStrengthRatio >= 0.6 || drawEquity > 0 ? continuationBetSize() : probeBetSize();
+					actionBeforeOverride = decision.action;
 					decision = {
 						action: "raise",
 						amount: Math.min(
@@ -4964,6 +4974,7 @@ export function chooseBotAction(player, gameState) {
 					(!nonValueAggressionMade && !hasPrivateMadeHand)
 				) {
 					const bet = gateStrengthRatio >= 0.75 || drawEquity > 0 ? continuationBetSize() : probeBetSize();
+					actionBeforeOverride = decision.action;
 					decision = {
 						action: "raise",
 						amount: Math.min(
@@ -5037,6 +5048,7 @@ export function chooseBotAction(player, gameState) {
 				};
 				checkRaiseIntentAction = "set";
 				checkRaiseIntentReason = "value_raise_to_check";
+				actionBeforeOverride = decision.action;
 				decision = { action: "check" };
 			} else if (
 				passiveValueCheckBlockReason === null && botLine &&
@@ -5056,6 +5068,7 @@ export function chooseBotAction(player, gameState) {
 				};
 				passiveValueCheckAction = "set";
 				passiveValueCheckReason = "random_value_check";
+				actionBeforeOverride = decision.action;
 				decision = { action: "check" };
 			}
 		}
@@ -5101,6 +5114,7 @@ export function chooseBotAction(player, gameState) {
 			!nonValueAggressionMade
 		) {
 			const betAmt = probeBetSize();
+			actionBeforeOverride = decision.action;
 			decision = {
 				action: "raise",
 				amount: Math.max(ceilTo10(lastRaise), betAmt),
@@ -5122,6 +5136,7 @@ export function chooseBotAction(player, gameState) {
 		decision.action === "raise" && raiseLevel > 0 &&
 		gateStrengthRatio < reraiseValueRatio
 	) {
+		actionBeforeOverride = decision.action;
 		decision = needToCall > 0
 			? { action: "call", amount: Math.min(player.chips, needToCall) }
 			: { action: "check" };
@@ -5156,6 +5171,7 @@ export function chooseBotAction(player, gameState) {
 			pairClass,
 		});
 		if (noBetBlockReason) {
+			actionBeforeOverride = decision.action;
 			decision = { action: "check" };
 			isBluff = false;
 			isStab = false;
@@ -5185,6 +5201,7 @@ export function chooseBotAction(player, gameState) {
 				decision.amount = player.chips; // all-in below full raise size is allowed
 			} else {
 				// Downgrade to call (or check if nothing to call)
+				actionBeforeOverride = decision.action;
 				decision = needToCall > 0
 					? {
 						action: "call",
@@ -5245,6 +5262,7 @@ export function chooseBotAction(player, gameState) {
 		})
 	) {
 		riverLowEdgeBlocked = true;
+		actionBeforeOverride = decision.action;
 		decision = { action: "fold" };
 		finalAdjustment = "river_low_edge_call_block";
 	}
@@ -5350,19 +5368,18 @@ export function chooseBotAction(player, gameState) {
 		chipsBefore: player.chips,
 		communityCards: communityCards.slice(),
 		holeCards: player.holeCards.slice(),
-		ownWinProbability,
-		bestFieldWinProbability,
-		winProbRank,
+		ownWinProbability: ownWinProbability ?? undefined,
+		bestFieldWinProbability: bestFieldWinProbability ?? undefined,
+		winProbRank: winProbRank ?? undefined,
 		handName,
-		aggressionStrength: toRoundedNumber(strengthRatio),
-		passiveStrength: toRoundedNumber(strengthRatio),
 		strengthRatioRaw: toRoundedNumber(strengthRatio),
 		edgeBoost: toRoundedNumber(edgeBoost, 4),
 		privateAwareStrength: toRoundedNumber(privateAwareStrength),
 		mRatio: toRoundedNumber(mRatio),
 		mZone,
 		potOdds: toRoundedNumber(potOdds),
-		callBarrier: toRoundedNumber(eliminationBarrier),
+		callBarrier: eliminationBarrier,
+		callDecisionStrengthRatio: needsToCall ? callDecisionStrengthRatio : undefined,
 		mdfRequiredFoldRate: toRoundedNumber(mdfRequiredFoldRate, 4),
 		bluffChance: toRoundedNumber(bluffChance, 4),
 		bluffAlpha: toRoundedNumber(bluffAlpha, 4),
@@ -5377,7 +5394,6 @@ export function chooseBotAction(player, gameState) {
 		eliminationReliefCandidate,
 		eliminationReliefApplied,
 		positionFactor: toRoundedNumber(positionFactor),
-		activeOpponents,
 		opponentReads: tableOpponents.map((opponent) => {
 			const read = getOpponentRead(opponent);
 			return {
@@ -5394,7 +5410,6 @@ export function chooseBotAction(player, gameState) {
 		turnCheckedThrough: streetLineRead.turnCheckedThrough,
 		priorCheckedThroughCount: streetLineRead.priorCheckedThroughCount,
 		priorAggressiveStreetCount: streetLineRead.priorAggressiveStreetCount,
-		passiveLineDepth: streetLineRead.passiveLineDepth,
 		doubleCheckedThrough: streetLineRead.doubleCheckedThrough,
 		streetCheckCount: streetLineRead.streetCheckCount,
 		streetAggressiveActionCount: streetLineRead.streetAggressiveActionCount,
@@ -5402,7 +5417,6 @@ export function chooseBotAction(player, gameState) {
 		canRaiseOpportunity: canRaiseTag === "Y",
 		actingSlotIndex,
 		actingSlotCount,
-		actingSlotKey: actingSlotTag,
 		raiseThreshold: toRoundedNumber(loggedRaiseThreshold / 10),
 		aggressiveness: toRoundedNumber(aggressiveness),
 		raiseLevel,
@@ -5410,7 +5424,6 @@ export function chooseBotAction(player, gameState) {
 		spotType,
 		structureTag,
 		pressureTag,
-		spotKey: `${spotType}/${structureTag}/${pressureTag}`,
 		boardContext: boardCtx,
 		pairClass,
 		drawFlag,
@@ -5431,6 +5444,8 @@ export function chooseBotAction(player, gameState) {
 		decisionBranch,
 		decisionReason,
 		finalAdjustment,
+		actionBeforeOverride,
+		tieBreakRoll,
 		strengthScore: toRoundedNumber(preflopScores.strengthScore),
 		playabilityScore: toRoundedNumber(preflopScores.playabilityScore),
 		dominationPenalty: toRoundedNumber(preflopScores.dominationPenalty),
@@ -5523,13 +5538,13 @@ export function chooseBotAction(player, gameState) {
 		console.log(
 			`${player.name} ${h1} ${h2} → ${decision.action} | ` +
 				`H:${handName} Amt:${decision.amount ?? 0} | ` +
-				`PA:${strengthRatio.toFixed(2)} PS:${strengthRatio.toFixed(2)} ` +
+				`SRaw:${strengthRatio.toFixed(2)} ` +
 				`PAS:${privateAwareStrength.toFixed(2)} EBo:${edgeBoost.toFixed(4)} ` +
 				`M:${mRatio.toFixed(2)} Z:${mZone} | ` +
 				`PO:${potOdds.toFixed(2)} CB:${eliminationBarrier.toFixed(2)} MDFa:${
 					mdfRequiredFoldRate.toFixed(2)
 				} ` +
-				`SR:${stackRatio.toFixed(2)} SRaw:${rawStackRatio.toFixed(2)} | ` +
+				`SR:${stackRatio.toFixed(2)} StackRaw:${rawStackRatio.toFixed(2)} | ` +
 				`CP:${commitmentPressure.toFixed(2)} CPen:${commitmentPenalty.toFixed(2)} | ` +
 				`ER:${eliminationRisk.toFixed(2)} EP:${eliminationPenalty.toFixed(2)} | ` +
 				`Pos:${positionFactor.toFixed(2)} Opp:${activeOpponents} Eff:${effectiveStack} | ` +

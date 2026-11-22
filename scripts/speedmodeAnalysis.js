@@ -745,7 +745,7 @@ function summarizeFoldRateBreakdownTree(target) {
 }
 
 export function createMdfAnalysis(mdfMetrics) {
-	return {
+	const analysis = {
 		facingBetOverall: summarizeFoldRateBreakdownTree(
 			combineFoldRateRows(mdfMetrics.facingBetByStreet),
 		),
@@ -837,6 +837,13 @@ export function createMdfAnalysis(mdfMetrics) {
 		flopFacingBetByEntryRouteAndFinalPreflopRoute: summarizeFoldRateBreakdownTree(
 			mdfMetrics.flopFacingBetByEntryRouteAndFinalPreflopRoute,
 		),
+	};
+	if (Object.keys(mdfMetrics.candidateByStreet).length === 0) {
+		return analysis;
+	}
+
+	return {
+		...analysis,
 		candidateOverall: summarizeFoldRateBreakdownTree(
 			combineFoldRateRows(mdfMetrics.candidateByStreet),
 		),
@@ -1060,7 +1067,7 @@ function recordBtn3OpenTransition(target, sbResponse, bbResponse, sawFlop) {
 	}
 }
 
-function formatDecisionExample(decision) {
+function formatDecisionExample(decision, spotKey) {
 	const formatFixed = (value, digits) => typeof value === "number" ? value.toFixed(digits) : "-";
 	const toFlag = (value) => value ? "Y" : "N";
 	const noBetClass = typeof decision.noBetClass === "string" ? decision.noBetClass : "-";
@@ -1086,7 +1093,7 @@ function formatDecisionExample(decision) {
 
 	return `${decision.player} → ${decision.action} | ` +
 		`H:${decision.handName} Amt:${decision.amount ?? 0} | ` +
-		`Spot:${decision.spotKey} | ` +
+		`Spot:${spotKey} | ` +
 		`Ctx:${decision.boardContext} Draw:${decision.drawFlag} LT:${decision.liftType} | ` +
 		`PH:${decision.publicHand} RH:${decision.rawHand} RHR:${decision.rawHandRank ?? "-"} | ` +
 		`Pub:${formatFixed(decision.publicScore, 4)} Raw:${formatFixed(decision.rawScore, 4)} ` +
@@ -1096,10 +1103,7 @@ function formatDecisionExample(decision) {
 		`SRaw:${formatFixed(decision.strengthRatioRaw, 2)} ` +
 		`EBo:${formatFixed(decision.edgeBoost, 4)} ` +
 		`PAS:${formatFixed(decision.privateAwareStrength, 2)} ` +
-		`MDFa:${formatFixed(decision.mdfRequiredFoldRate, 3)} ` +
-		`MDFm:${formatFixed(decision.mdfMarginToCall, 3)} ` +
-		`MDFc:${formatFixed(decision.mdfCallChance, 3)} ` +
-		`MDF:${toFlag(decision.mdfApplied)} | ` +
+		`MDFa:${formatFixed(decision.mdfRequiredFoldRate, 3)} | ` +
 		`NVB:${toFlag(decision.nonValueBlocked)} | ` +
 		`ERC:${toFlag(decision.eliminationReliefCandidate)} ` +
 		`ERA:${toFlag(decision.eliminationReliefApplied)} | ` +
@@ -1133,17 +1137,24 @@ function normalizeStructuredDecision(decision) {
 	const flatScore = decision.flatScore ?? 0;
 	const defendScore = decision.defendScore ?? 0;
 	const lineTag = decision.lineTag ?? "-";
+	const activeOpponents = decision.activeOpponents ?? decision.activePlayers - 1;
+	const spotKey = decision.spotKey ?? `${decision.spotType}/${decision.structureTag}/${decision.pressureTag}`;
+	const actingSlotKey = decision.actingSlotKey ?? `${decision.actingSlotIndex}/${decision.actingSlotCount}`;
 	const mdfRequiredFoldRate = typeof decision.mdfRequiredFoldRate === "number" ? decision.mdfRequiredFoldRate : null;
+	// Keep historical MDF buckets comparable when newer logs carry the full-precision barrier.
 	const mdfMarginToCall = typeof decision.mdfMarginToCall === "number"
 		? decision.mdfMarginToCall
 		: typeof decision.callBarrier === "number" && typeof decision.privateAwareStrength === "number"
-		? decision.callBarrier - decision.privateAwareStrength
+		? Number(decision.callBarrier.toFixed(2)) - decision.privateAwareStrength
 		: null;
-	const quality = classifyPostflopQuality(decision);
+	const quality = classifyPostflopQuality({ ...decision, activeOpponents });
 
 	return {
 		...decision,
-		line: formatDecisionExample(decision),
+		line: formatDecisionExample(decision, spotKey),
+		activeOpponents,
+		spotKey,
+		actingSlotKey,
 		preflopSeat: decision.preflopSeat ?? "-",
 		preflopSeatContext: decision.preflopSeatContext ?? "-",
 		cbetPlan: flagToState(decision.cbetPlan),
@@ -1187,7 +1198,9 @@ function normalizeStructuredDecision(decision) {
 		priorAggressiveStreetCount: typeof decision.priorAggressiveStreetCount === "number"
 			? decision.priorAggressiveStreetCount
 			: 0,
-		passiveLineDepth: typeof decision.passiveLineDepth === "number" ? decision.passiveLineDepth : 0,
+		passiveLineDepth: typeof decision.passiveLineDepth === "number"
+			? decision.passiveLineDepth
+			: decision.priorCheckedThroughCount ?? 0,
 		doubleCheckedThrough: decision.doubleCheckedThrough === true,
 		streetCheckCount: typeof decision.streetCheckCount === "number" ? decision.streetCheckCount : 0,
 		streetAggressiveActionCount: typeof decision.streetAggressiveActionCount === "number"
@@ -1198,10 +1211,7 @@ function normalizeStructuredDecision(decision) {
 		mdfEligible: decision.mdfEligible === true,
 		mdfApplied: decision.mdfApplied === true,
 		mdfRequiredFoldRate,
-		mdfRequiredDefense: typeof decision.mdfRequiredDefense === "number" ? decision.mdfRequiredDefense : null,
 		mdfMarginToCall,
-		mdfMarginWindow: typeof decision.mdfMarginWindow === "number" ? decision.mdfMarginWindow : null,
-		mdfCallChance: typeof decision.mdfCallChance === "number" ? decision.mdfCallChance : null,
 		sizingKind: typeof decision.sizingKind === "string" ? decision.sizingKind : null,
 		targetSizeBucket: typeof decision.targetSizeBucket === "string" ? decision.targetSizeBucket : null,
 		expectedRaiseAmount: typeof decision.expectedRaiseAmount === "number" ? decision.expectedRaiseAmount : null,
@@ -2131,7 +2141,7 @@ function isProtectiveFoldDecision(decision) {
 	const behindField = decision.ownWinProbability < decision.bestFieldWinProbability;
 	const expensiveCall = typeof decision.callBarrier === "number" &&
 		typeof decision.potOdds === "number" &&
-		decision.callBarrier >= decision.potOdds + 0.03;
+		Number(decision.callBarrier.toFixed(2)) >= decision.potOdds + 0.03;
 	const survivalPressure = (typeof decision.eliminationRisk === "number" &&
 		decision.eliminationRisk >= 0.33) ||
 		(typeof decision.stackRatio === "number" && decision.stackRatio >= 0.25) ||
@@ -2165,13 +2175,16 @@ function buildJoinedHandRecord(handId, handStart, handResult) {
 }
 
 export function analyzeOutcomeLogs(logs) {
+	return analyzeOutcomeEvents(Array.from(logs, parseSpeedmodeEventLine));
+}
+
+export function analyzeOutcomeEvents(events) {
 	const handStarts = new Map();
 	const handResults = new Map();
 	const playerBusts = [];
 	const decisionEvents = [];
 
-	for (const line of logs) {
-		const event = parseSpeedmodeEventLine(line);
+	for (const event of events) {
 		if (!event) {
 			continue;
 		}

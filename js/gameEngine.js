@@ -1647,6 +1647,7 @@ function emitEngineHandEvents(gameState, handResult, tournamentResult, eventSink
 		emitEngineTournamentEvent(tournamentResult, eventSink, {
 			type: "decision",
 			handId: handResult.handId,
+			decisionId: actionRequest?.decisionId,
 			phase,
 			player: player.name,
 			seatIndex: player.seatIndex,

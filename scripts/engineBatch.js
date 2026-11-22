@@ -24,7 +24,7 @@ import {
 import { chooseBotAction, normalizeBotActionRequest, setBotDecisionSink } from "../js/bot.js";
 import { getPlayerActionState } from "../js/shared/actionModel.js";
 import {
-	analyzeOutcomeLogs,
+	analyzeOutcomeEvents,
 	analyzeRunDecisions,
 	createEmptyMetrics,
 	createEmptyOutcomeMetricsAccumulator,
@@ -37,7 +37,6 @@ import {
 	mergeOutcomeMetrics,
 	mergePlayerStatsMetrics,
 	mergeRunMetrics,
-	SPEEDMODE_EVENT_PREFIX,
 } from "./speedmodeAnalysis.js";
 
 const DEFAULT_RUN_COUNT = 100;
@@ -256,21 +255,18 @@ export function createEngineBatchGameState({ playerCount, startingChips }) {
 
 function chooseEngineBotAction(gameState, player) {
 	const decision = chooseBotAction(player, gameState);
+	const decisionId = gameState.nextDecisionId - 1;
 	const actionRequest = normalizeBotActionRequest(decision);
 	if (actionRequest) {
-		return actionRequest;
+		return { ...actionRequest, decisionId };
 	}
 
 	const actionState = getPlayerActionState(gameState, player);
-	return actionState.canCheck ? { action: "check" } : { action: "fold" };
+	return { action: actionState.canCheck ? "check" : "fold", decisionId };
 }
 
 async function ensureDirectory(path) {
 	await Deno.mkdir(path, { recursive: true });
-}
-
-function formatSpeedmodeEventLine(event) {
-	return `${SPEEDMODE_EVENT_PREFIX}${JSON.stringify(event)}`;
 }
 
 function createEmptyDecisionJoinCoverage() {
@@ -1065,8 +1061,7 @@ async function runSingleEngineBatch(config, runIndex, outputDir) {
 		setBotDecisionSink(null);
 	}
 	const elapsedMs = Date.now() - startedAt;
-	const speedmodeLogs = speedmodeEvents.map(formatSpeedmodeEventLine);
-	const runOutcome = analyzeOutcomeLogs(speedmodeLogs);
+	const runOutcome = analyzeOutcomeEvents(speedmodeEvents);
 	const engineMetrics = analyzeEngineEvents(engineEvents, result);
 	const equityDiagnostics = enrichDecisionsWithEquity(
 		runOutcome.decisions,
@@ -1075,14 +1070,12 @@ async function runSingleEngineBatch(config, runIndex, outputDir) {
 	);
 	const metrics = analyzeRunDecisions(runOutcome.decisions, runOutcome.hands, runOutcome.playerBusts);
 	const champion = result.champion?.name ?? null;
-	const logPath = `${outputDir}/run-${runLabel}.log`;
 	const summaryPath = `${outputDir}/run-${runLabel}.json`;
 	const detailsPath = `${outputDir}/run-${runLabel}.details.json`;
 	const players = summarizePlayers(gameState.allPlayers);
 	const playerStats = createEmptyPlayerStatsMetrics();
 	players.forEach((player) => mergePlayerStatsMetrics(playerStats, player.stats));
 
-	await Deno.writeTextFile(logPath, speedmodeLogs.join("\n"));
 	await Deno.writeTextFile(
 		summaryPath,
 		JSON.stringify(
@@ -1093,7 +1086,7 @@ async function runSingleEngineBatch(config, runIndex, outputDir) {
 				elapsedMs,
 				handCount: result.handCount,
 				eventCount: engineEvents.length,
-				logCount: speedmodeLogs.length,
+				logCount: speedmodeEvents.length,
 				players,
 				metrics,
 				playerStats: finalizePlayerStatsMetrics(playerStats),
@@ -1120,7 +1113,6 @@ async function runSingleEngineBatch(config, runIndex, outputDir) {
 				champion,
 				elapsedMs,
 				engineEvents,
-				speedmodeEvents,
 				hands: runOutcome.hands,
 				decisions: runOutcome.decisions,
 				playerBusts: runOutcome.playerBusts,
@@ -1147,8 +1139,7 @@ async function runSingleEngineBatch(config, runIndex, outputDir) {
 		elapsedMs,
 		handCount: result.handCount,
 		eventCount: engineEvents.length,
-		logCount: speedmodeLogs.length,
-		logPath,
+		logCount: speedmodeEvents.length,
 		summaryPath,
 		detailsPath,
 		metrics,
@@ -1222,7 +1213,6 @@ async function main() {
 			handCount: runSummary.handCount,
 			eventCount: runSummary.eventCount,
 			logCount: runSummary.logCount,
-			logPath: runSummary.logPath,
 			summaryPath: runSummary.summaryPath,
 			detailsPath: runSummary.detailsPath,
 			equity: {
