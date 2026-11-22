@@ -10,9 +10,20 @@ Version log writing guide:
 - Add optional contributor credits as dedicated metadata instead of release notes.
 */
 
-export const APP_VERSION = "1.6.2";
+export const APP_VERSION = "1.7.0";
 
 export const VERSION_LOG = [
+	{
+		version: "1.7.0",
+		date: "2026-11-22",
+		title: "Remote player status",
+		notes: [
+			"The shared table shows who has joined from another device and how long it has been since an inactive player last checked in.",
+			"Tap a yellow status badge to reopen the QR code and join link, even after that player has folded.",
+			"Remote players get more reliable turn updates when the connection is slow.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.6.2",
 		date: "2026-11-21",
