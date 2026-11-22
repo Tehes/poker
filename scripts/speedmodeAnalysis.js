@@ -74,12 +74,15 @@ export function createEmptyPlayerStatsMetrics() {
 		foldToFlopCbetOpportunities: 0,
 		calls: 0,
 		aggressiveActs: 0,
+		allins: 0,
+		allinCalls: 0,
+		aggressiveAllins: 0,
 	};
 }
 
 export function mergePlayerStatsMetrics(target, source) {
 	for (const key of Object.keys(target)) {
-		target[key] += source[key];
+		target[key] += source[key] ?? 0;
 	}
 }
 
@@ -131,6 +134,8 @@ function incrementQualityClassOutcome(target, qualityClass, decision) {
 			loser: 0,
 			unknown: 0,
 			net: 0,
+			netFromDecision: 0,
+			netFromDecisionCount: 0,
 		};
 	}
 
@@ -145,6 +150,10 @@ function incrementQualityClassOutcome(target, qualityClass, decision) {
 	}
 	if (typeof decision.netChipDelta === "number") {
 		row.net += decision.netChipDelta;
+	}
+	if (typeof decision.netChipDeltaFromDecision === "number") {
+		row.netFromDecision += decision.netChipDeltaFromDecision;
+		row.netFromDecisionCount += 1;
 	}
 }
 
@@ -199,6 +208,7 @@ export function createEmptyOutcomeMetricsAccumulator() {
 		},
 		winnerSideByPhaseAction: {},
 		winnerSideByLiftAction: {},
+		foldEquityCoverage: { total: 0, evaluated: 0 },
 		protectiveFoldCounts: {
 			total: 0,
 			preflop: 0,
@@ -272,6 +282,7 @@ export function finalizeOutcomeMetrics(metrics) {
 		decisionJoinCoverage,
 		winnerSideByPhaseAction: finalizeWinnerSideBreakdown(metrics.winnerSideByPhaseAction),
 		winnerSideByLiftAction: finalizeWinnerSideBreakdown(metrics.winnerSideByLiftAction),
+		foldEquityCoverage: { ...metrics.foldEquityCoverage },
 		protectiveFoldCounts: { ...metrics.protectiveFoldCounts },
 		favoriteStrongHandFoldCounts: { ...metrics.favoriteStrongHandFoldCounts },
 		nonStructuralMadeHandRaiseOutcome: {
@@ -2129,16 +2140,19 @@ function isExplainableBelowTripsAllInReraise(decision) {
 		decision.edge >= 2.0;
 }
 
-function isProtectiveFoldDecision(decision) {
-	if (
-		decision.action !== "fold" || decision.phase !== "postflop" || decision.toCall <= 0 ||
-		typeof decision.ownWinProbability !== "number" ||
-		typeof decision.bestFieldWinProbability !== "number"
-	) {
-		return false;
+function getFoldEquity(decision) {
+	const diagnostic = decision.equityDiagnostic?.equity;
+	const ownEquity = diagnostic?.equityPct ?? decision.ownWinProbability;
+	const bestOpponentEquity = diagnostic?.bestOpponentEquityPct ?? decision.bestFieldWinProbability;
+	const rank = diagnostic?.equityRank ?? decision.winProbRank;
+	if (typeof ownEquity !== "number" || typeof bestOpponentEquity !== "number") {
+		return null;
 	}
+	return { ownEquity, bestOpponentEquity, rank };
+}
 
-	const behindField = decision.ownWinProbability < decision.bestFieldWinProbability;
+function isProtectiveFoldDecision(decision, equity) {
+	const behindField = equity.ownEquity < equity.bestOpponentEquity;
 	const expensiveCall = typeof decision.callBarrier === "number" &&
 		typeof decision.potOdds === "number" &&
 		Number(decision.callBarrier.toFixed(2)) >= decision.potOdds + 0.03;
@@ -2149,20 +2163,6 @@ function isProtectiveFoldDecision(decision) {
 			decision.commitmentPressure >= 0.25);
 
 	return behindField && expensiveCall && survivalPressure;
-}
-
-function isFavoriteStrongHandFoldDecision(decision) {
-	if (
-		decision.action !== "fold" || decision.phase !== "postflop" || decision.toCall <= 0 ||
-		!STRONG_POSTFLOP_HANDS.has(decision.rawHand) ||
-		typeof decision.ownWinProbability !== "number" ||
-		typeof decision.bestFieldWinProbability !== "number" ||
-		decision.winProbRank !== 1
-	) {
-		return false;
-	}
-
-	return decision.ownWinProbability > decision.bestFieldWinProbability;
 }
 
 function buildJoinedHandRecord(handId, handStart, handResult) {
@@ -2238,6 +2238,7 @@ export function analyzeOutcomeEvents(events) {
 					wonShowdown: null,
 					winnerSide: "unknown",
 					netChipDelta: null,
+					netChipDeltaFromDecision: null,
 					uncontestedWin: null,
 					hadShowdown: null,
 					communityCardsFinal: decision.communityCards ?? [],
@@ -2261,6 +2262,7 @@ export function analyzeOutcomeEvents(events) {
 					wonShowdown: null,
 					winnerSide: "unknown",
 					netChipDelta: null,
+					netChipDeltaFromDecision: null,
 					uncontestedWin: null,
 					hadShowdown: joinedHand?.handResult?.hadShowdown ?? null,
 					communityCardsFinal: joinedHand?.handResult?.communityCards ??
@@ -2280,8 +2282,18 @@ export function analyzeOutcomeEvents(events) {
 			const wonShowdown = handResult.hadShowdown === true && wonHand;
 			const uncontestedWin = handResult.hadShowdown === false &&
 				handResult.uncontestedWinnerSeatIndex === decision.seatIndex;
-			const protectiveFold = isProtectiveFoldDecision(decision);
-			const favoriteStrongHandFold = isFavoriteStrongHandFoldDecision(decision);
+			const facingBetPostflopFold = decision.action === "fold" && decision.phase === "postflop" &&
+				decision.toCall > 0;
+			const foldEquity = facingBetPostflopFold ? getFoldEquity(decision) : null;
+			const protectiveFold = foldEquity !== null && isProtectiveFoldDecision(decision, foldEquity);
+			const favoriteStrongHandFold = foldEquity !== null && STRONG_POSTFLOP_HANDS.has(decision.rawHand) &&
+				foldEquity.rank === 1 && foldEquity.ownEquity > foldEquity.bestOpponentEquity;
+			if (facingBetPostflopFold) {
+				metrics.foldEquityCoverage.total += 1;
+				if (foldEquity !== null) {
+					metrics.foldEquityCoverage.evaluated += 1;
+				}
+			}
 
 			incrementWinnerSideBreakdown(
 				metrics.winnerSideByPhaseAction,
@@ -2336,6 +2348,9 @@ export function analyzeOutcomeEvents(events) {
 				wonShowdown,
 				winnerSide: wonHand ? "winner" : "loser",
 				netChipDelta: payout - totalBet,
+				netChipDeltaFromDecision: typeof decision.totalBetBefore === "number"
+					? payout - (totalBet - decision.totalBetBefore)
+					: null,
 				uncontestedWin,
 				hadShowdown: handResult.hadShowdown,
 				communityCardsFinal: handResult.communityCards.slice(),

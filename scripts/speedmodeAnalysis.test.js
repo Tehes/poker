@@ -1,5 +1,6 @@
 import { getPlayerStatsRates } from "../js/gameEngine.js";
 import {
+	analyzeOutcomeEvents,
 	analyzeRunDecisions,
 	createEmptyMetrics,
 	createEmptyPlayerStatsMetrics,
@@ -124,6 +125,9 @@ Deno.test("player stats aggregate raw observations instead of averaging percenta
 		foldToFlopCbetOpportunities: 90,
 		calls: 90,
 		aggressiveActs: 9,
+		allins: 4,
+		allinCalls: 1,
+		aggressiveAllins: 3,
 	});
 	const total = createEmptyPlayerStatsMetrics();
 	mergePlayerStatsMetrics(total, finalizePlayerStatsMetrics(first));
@@ -148,6 +152,9 @@ Deno.test("player stats aggregate raw observations instead of averaging percenta
 		foldToFlopCbetOpportunities: 92,
 		calls: 92,
 		aggressiveActs: 10,
+		allins: 4,
+		allinCalls: 1,
+		aggressiveAllins: 3,
 		rates: {
 			flopSeenPct: 92 / 210 * 100,
 			wtsdPct: 10 / 92 * 100,
@@ -161,6 +168,52 @@ Deno.test("player stats aggregate raw observations instead of averaging percenta
 			aggressionFactor: 10 / 92,
 		},
 	});
+});
+
+Deno.test("outcome analysis measures fold equity coverage and chips from the decision", () => {
+	const fold = {
+		type: "bot_decision",
+		handId: 4,
+		decisionId: 1,
+		seatIndex: 0,
+		phase: "postflop",
+		action: "fold",
+		toCall: 600,
+		totalBetBefore: 1350,
+		rawHand: "Two Pair",
+		potOdds: 0.2,
+		callBarrier: 0.35,
+		stackRatio: 0.5,
+	};
+	const favorite = { equity: { equityPct: 100, bestOpponentEquityPct: 0, equityRank: 1 } };
+	const behind = { equity: { equityPct: 0, bestOpponentEquityPct: 100, equityRank: 2 } };
+	const hand = [
+		{ type: "hand_start", handId: 4 },
+		{
+			type: "hand_result",
+			handId: 4,
+			communityCards: ["2S", "6S", "9S", "2H", "AD"],
+			hadShowdown: false,
+			winningSeatIndexes: [3],
+			mainPotWinnerSeatIndexes: [3],
+			totalBetBySeatIndex: { 0: 1350, 1: 1350, 2: 1350 },
+			totalPayoutBySeatIndex: { 3: 4650 },
+		},
+	];
+	const { decisions, metrics } = analyzeOutcomeEvents([
+		...hand,
+		{ ...fold, equityDiagnostic: favorite },
+		{ ...fold, decisionId: 2, seatIndex: 1, equityDiagnostic: behind },
+		{ ...fold, decisionId: 3, seatIndex: 2, totalBetBefore: undefined },
+	]);
+	assertEquals(metrics.foldEquityCoverage, { total: 3, evaluated: 2 });
+	assertEquals(metrics.favoriteStrongHandFoldCounts.postflop, 1);
+	assertEquals(metrics.protectiveFoldCounts.postflop, 1);
+	assertEquals(decisions.map((d) => [d.netChipDelta, d.netChipDeltaFromDecision]), [
+		[-1350, 0],
+		[-1350, 0],
+		[-1350, null],
+	]);
 });
 
 Deno.test("postflop rates preserve zero observations and undefined aggression without calls", () => {

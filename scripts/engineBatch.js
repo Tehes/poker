@@ -192,6 +192,8 @@ function createStats() {
 		foldsPreflop: 0,
 		foldsPostflop: 0,
 		allins: 0,
+		allinCalls: 0,
+		aggressiveAllins: 0,
 	};
 }
 
@@ -397,6 +399,25 @@ function getDecisionKey(handId, decisionId) {
 	return `${handId}:${decisionId}`;
 }
 
+function getDecisionCallPrice(gameState, player) {
+	const amount = Math.min(player.chips, Math.max(0, gameState.currentBet - player.roundBet));
+	if (amount === 0) {
+		return null;
+	}
+
+	const totalBetAfterCall = player.totalBet + amount;
+	const opponents = gameState.players.filter((currentPlayer) => currentPlayer !== player);
+	const largestOtherBet = Math.max(...opponents.map((opponent) => opponent.totalBet));
+	// A short big blind can leave part of the nominal call unmatched.
+	const matchedContribution = Math.min(totalBetAfterCall, largestOtherBet);
+	const amountAtRisk = Math.max(0, matchedContribution - player.totalBet);
+	const contestablePotAfterCall = opponents.reduce(
+		(pot, opponent) => pot + Math.min(opponent.totalBet, matchedContribution),
+		matchedContribution,
+	);
+	return { amount, amountAtRisk, contestablePotAfterCall, potOdds: amountAtRisk / contestablePotAfterCall };
+}
+
 function createDecisionEquityContext(gameState) {
 	return {
 		handId: gameState.handId ?? 0,
@@ -509,7 +530,7 @@ function getHighestBoardRankIndex(decision) {
 }
 
 function hasBadPrice(decision, threshold = 0.18) {
-	return typeof decision.potOdds === "number" && decision.potOdds >= threshold;
+	return (decision.callPrice?.potOdds ?? 0) >= threshold;
 }
 
 function isTurnOrRiverPressureSpot(decision) {
@@ -602,8 +623,7 @@ function isPostflopStrongFoldCandidate(decision) {
 		decision.pairClass === "overpair" ||
 		decision.pairClass === "top-pair" ||
 		decision.pairClass === "second-pair" ||
-		decision.drawFlag === "S" ||
-		decision.favoriteStrongHandFold === true
+		decision.drawFlag === "S"
 	);
 }
 
@@ -801,7 +821,7 @@ function computeDecisionEquity(context, decision, equityConfig, equityCache) {
 		sampledDeckCards: contextEquity.sampledDeckCards,
 		sampledBoardCount: contextEquity.sampledBoardCount,
 		boardsSeen: contextEquity.boardsSeen,
-		potOddsPct: typeof decision.potOdds === "number" ? toRoundedNumber(decision.potOdds * 100) : null,
+		potOddsPct: toRoundedNumber((decision.callPrice?.potOdds ?? 0) * 100),
 	};
 }
 
@@ -1010,49 +1030,56 @@ async function runSingleEngineBatch(config, runIndex, outputDir) {
 	const runLabel = String(runIndex).padStart(2, "0");
 	const gameState = createEngineBatchGameState(config);
 	const engineEvents = [];
-	const speedmodeEvents = [];
+	const botDecisions = [];
+	const outcomeEvents = [];
 	const decisionContexts = [];
 	const startedAt = Date.now();
 	let result = null;
-	let pendingDecisionContext = null;
+	let pendingDecision = null;
 
 	console.log(`run ${runLabel}: engine`);
 	setBotDecisionSink((decision) => {
-		speedmodeEvents.push({ type: "bot_decision", ...decision });
-		if (
-			config.equity.enabled &&
-			pendingDecisionContext &&
-			typeof decision.handId === "number" &&
-			typeof decision.decisionId === "number"
-		) {
+		const { totalBetBefore, callPrice, equityContext } = pendingDecision;
+		botDecisions.push({ type: "bot_decision", ...decision, totalBetBefore, callPrice });
+		if (equityContext) {
 			decisionContexts.push({
-				...pendingDecisionContext,
+				...equityContext,
 				handId: decision.handId,
 				decisionId: decision.decisionId,
-				seatIndex: decision.seatIndex,
 			});
 		}
 	});
 	try {
 		const actionProvider = (state, player) => {
-			if (config.equity.enabled) {
-				pendingDecisionContext = createDecisionEquityContext(state);
-			}
+			pendingDecision = {
+				totalBetBefore: player.totalBet,
+				callPrice: getDecisionCallPrice(state, player),
+				equityContext: config.equity.enabled ? createDecisionEquityContext(state) : null,
+			};
 			try {
 				return chooseEngineBotAction(state, player);
 			} finally {
-				pendingDecisionContext = null;
+				pendingDecision = null;
 			}
 		};
 		result = runEngineTournament(gameState, actionProvider, {
 			eventSink: (event) => {
 				engineEvents.push(event);
+				if (event.type === "hand_start") {
+					// The engine emits completed hands before dealing the next one.
+					const holeCardsBySeat = new Map(
+						gameState.players.map((player) => [player.seatIndex, player.holeCards.slice()]),
+					);
+					for (const player of event.players) {
+						player.holeCards = holeCardsBySeat.get(player.seatIndex);
+					}
+				}
 				if (
 					event.type === "hand_start" ||
 					event.type === "hand_result" ||
 					event.type === "player_bust"
 				) {
-					speedmodeEvents.push(event);
+					outcomeEvents.push(event);
 				}
 			},
 			maxHands: config.maxHands,
@@ -1061,15 +1088,12 @@ async function runSingleEngineBatch(config, runIndex, outputDir) {
 		setBotDecisionSink(null);
 	}
 	const elapsedMs = Date.now() - startedAt;
-	const runOutcome = analyzeOutcomeEvents(speedmodeEvents);
+	const equityDiagnostics = enrichDecisionsWithEquity(botDecisions, decisionContexts, config.equity);
+	const runOutcome = analyzeOutcomeEvents(outcomeEvents.concat(botDecisions));
 	const engineMetrics = analyzeEngineEvents(engineEvents, result);
-	const equityDiagnostics = enrichDecisionsWithEquity(
-		runOutcome.decisions,
-		decisionContexts,
-		config.equity,
-	);
 	const metrics = analyzeRunDecisions(runOutcome.decisions, runOutcome.hands, runOutcome.playerBusts);
 	const champion = result.champion?.name ?? null;
+	const logCount = outcomeEvents.length + botDecisions.length;
 	const summaryPath = `${outputDir}/run-${runLabel}.json`;
 	const detailsPath = `${outputDir}/run-${runLabel}.details.json`;
 	const players = summarizePlayers(gameState.allPlayers);
@@ -1086,7 +1110,7 @@ async function runSingleEngineBatch(config, runIndex, outputDir) {
 				elapsedMs,
 				handCount: result.handCount,
 				eventCount: engineEvents.length,
-				logCount: speedmodeEvents.length,
+				logCount,
 				players,
 				metrics,
 				playerStats: finalizePlayerStatsMetrics(playerStats),
@@ -1139,7 +1163,7 @@ async function runSingleEngineBatch(config, runIndex, outputDir) {
 		elapsedMs,
 		handCount: result.handCount,
 		eventCount: engineEvents.length,
-		logCount: speedmodeEvents.length,
+		logCount,
 		summaryPath,
 		detailsPath,
 		metrics,
