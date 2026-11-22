@@ -1346,7 +1346,8 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
     filter: brightness(0.6);
 }
 
-.win-probability {
+.win-probability,
+.presence {
     top: 0px;
     right: 0px;
 }
@@ -1356,7 +1357,38 @@ main .seat.folded .hole-cards img:nth-of-type(2) {
     bottom: 10px;
 }
 
-.folded .win-probability {
+.qr.joined:not(.show-join-links) {
+    display: none;
+}
+
+.presence {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    width: auto;
+    margin: 0;
+    white-space: nowrap;
+}
+
+.presence:disabled {
+    opacity: 1;
+    box-shadow: var(--shadow-close);
+}
+
+.presence::before {
+    content: "";
+    width: 0.55em;
+    height: 0.55em;
+    border-radius: 50%;
+    background-color: hsl(140, 65%, 37%);
+}
+
+.presence.inactive::before {
+    background-color: var(--yellow);
+}
+
+.folded .win-probability,
+.folded .presence {
     transform: translateX(-3.5vmin);
 }
 

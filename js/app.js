@@ -197,6 +197,7 @@ const seatRefs = Array.from(document.querySelectorAll(".seat")).map((
 	qrContainer: seatEl.querySelector(".qr"),
 	qrLink: seatEl.querySelector(".qr-link"),
 	remoteLink: seatEl.querySelector(".remote-table-link"),
+	presenceEl: seatEl.querySelector(".presence"),
 	winnerReactionEl: seatEl.querySelector(".winner-reaction"),
 	winnerReactionTimer: null,
 	actionLabelTimer: null,
@@ -284,8 +285,13 @@ const ACTION_SYNC_ENDPOINT = "https://poker.tehes.deno.net/action";
 let tableId = null;
 const STATE_SYNC_DELAY = 750;
 const ACTION_POLL_INTERVAL = 1000;
+const PRESENCE_POLL_INTERVAL = 2000;
+const PRESENCE_ACTIVE_WINDOW = 15000;
+let seatLastSeen = {};
+let presenceClockOffset = 0;
 let stateSyncTimer = null;
-let stateSyncTimerDelay = null;
+let queuedStateSyncDelay = null;
+let stateSyncInFlight = false;
 let runoutPhaseTimer = null;
 let chipTransferFinishTimer = null;
 let newRoundCountdownTimer = null;
@@ -833,8 +839,8 @@ function resetRuntimeBeforeRestore() {
 	if (stateSyncTimer !== null) {
 		clearTimeout(stateSyncTimer);
 		stateSyncTimer = null;
-		stateSyncTimerDelay = null;
 	}
+	queuedStateSyncDelay = null;
 	if (runoutPhaseTimer) {
 		clearTimeout(runoutPhaseTimer);
 		runoutPhaseTimer = null;
@@ -1264,6 +1270,44 @@ function renderPlayerSeat(player, communityCards = getCommunityCardCodes()) {
 		return;
 	}
 	renderHostSeat(seatRef, buildPlayerSeatState(player, communityCards));
+	renderPlayerPresence(player);
+}
+
+function renderPlayerPresence(player) {
+	if (!hasStateSyncEnabled() || player.isBot) {
+		return;
+	}
+
+	const { presenceEl, qrContainer } = getSeatRef(player);
+	const lastSeen = seatLastSeen[player.seatIndex];
+	const joined = Number.isFinite(lastSeen);
+	const visible = joined && gameState.handInProgress && !player.visibleHoleCards.some(Boolean) &&
+		getCurrentPhase(gameState.currentPhaseIndex) !== "showdown";
+	presenceEl.classList.toggle("hidden", !visible);
+	qrContainer.classList.toggle("joined", joined);
+
+	if (!visible) {
+		qrContainer.classList.remove("show-join-links");
+		return;
+	}
+
+	const elapsed = Date.now() + presenceClockOffset - lastSeen;
+	const active = elapsed <= PRESENCE_ACTIVE_WINDOW;
+	presenceEl.classList.toggle("inactive", !active);
+	const seconds = Math.floor(elapsed / 1000);
+	const minutes = Math.floor(seconds / 60);
+	let age = `${seconds}s`;
+	if (minutes >= 60) {
+		age = `${Math.floor(minutes / 60)}h`;
+	} else if (minutes >= 1) {
+		age = `${minutes}m`;
+	}
+	presenceEl.textContent = active ? "Active" : age;
+	presenceEl.disabled = active || qrContainer.classList.contains("hidden");
+	presenceEl.title = presenceEl.disabled ? "" : "Show join links";
+	if (active) {
+		qrContainer.classList.remove("show-join-links");
+	}
 }
 
 function renderPlayerResolvedAction(player) {
@@ -1352,6 +1396,7 @@ function showPlayerQr(player, card1, card2) {
 	}
 
 	seatRef.qrContainer.dataset.url = url;
+	renderPlayerPresence(player);
 }
 
 function hidePlayerQr(player) {
@@ -1361,11 +1406,13 @@ function hidePlayerQr(player) {
 	}
 
 	seatRef.qrContainer.classList.add("hidden");
+	seatRef.qrContainer.classList.remove("show-join-links");
 	seatRef.qrLink.replaceChildren();
 	seatRef.qrLink.removeAttribute("href");
 	seatRef.remoteLink.removeAttribute("href");
 	seatRef.remoteLink.classList.add("hidden");
 	delete seatRef.qrContainer.dataset.url;
+	renderPlayerPresence(player);
 }
 
 function resetPlayerRoundBet(player) {
@@ -1994,10 +2041,32 @@ function initStateSyncForGame() {
 		return;
 	}
 
-	const tableUrl = new URL(globalThis.location.href);
-	tableId = tableUrl.searchParams.get("tableId") ||
-		Math.random().toString(36).slice(2, 8);
+	tableId = Math.random().toString(36).slice(2, 8);
 	syncTableUrlWithState();
+	pollTablePresence();
+}
+
+async function pollTablePresence() {
+	if (!hasStateSyncEnabled() || gameState.gameFinished) {
+		return;
+	}
+
+	if (document.visibilityState === "visible") {
+		try {
+			const url = `${STATE_SYNC_ENDPOINT}?tableId=${encodeURIComponent(tableId)}&view=presence`;
+			const res = await fetch(url, { cache: "no-store" });
+			if (!res.ok) {
+				throw new Error(`Presence poll failed with status ${res.status}`);
+			}
+			const { lastSeen, now } = await res.json();
+			seatLastSeen = lastSeen;
+			presenceClockOffset = now - Date.now();
+		} catch (error) {
+			logFlow("presence poll failed", error);
+		}
+		gameState.players.forEach(renderPlayerPresence);
+	}
+	setTimeout(pollTablePresence, PRESENCE_POLL_INTERVAL);
 }
 
 function createTurnToken() {
@@ -2075,6 +2144,7 @@ async function sendTableState() {
 		view: buildSyncView(gameState, notifArr.slice(0, MAX_ITEMS)),
 	};
 
+	stateSyncInFlight = true;
 	try {
 		const res = await fetch(STATE_SYNC_ENDPOINT, {
 			method: "POST",
@@ -2087,7 +2157,20 @@ async function sendTableState() {
 	} catch (error) {
 		logFlow("state sync failed", error);
 		queueStateSync();
+	} finally {
+		stateSyncInFlight = false;
+		if (queuedStateSyncDelay !== null) {
+			scheduleStateSync();
+		}
 	}
+}
+
+function scheduleStateSync() {
+	stateSyncTimer = setTimeout(() => {
+		stateSyncTimer = null;
+		queuedStateSyncDelay = null;
+		sendTableState();
+	}, queuedStateSyncDelay);
 }
 
 function queueStateSync(delay = STATE_SYNC_DELAY) {
@@ -2096,19 +2179,18 @@ function queueStateSync(delay = STATE_SYNC_DELAY) {
 	}
 
 	const nextDelay = Math.max(0, delay);
+	if (queuedStateSyncDelay !== null && queuedStateSyncDelay <= nextDelay) {
+		return;
+	}
 	if (stateSyncTimer !== null) {
-		if (stateSyncTimerDelay !== null && stateSyncTimerDelay <= nextDelay) {
-			return;
-		}
 		clearTimeout(stateSyncTimer);
 	}
 
-	stateSyncTimerDelay = nextDelay;
-	stateSyncTimer = setTimeout(() => {
-		stateSyncTimer = null;
-		stateSyncTimerDelay = null;
-		sendTableState();
-	}, nextDelay);
+	// Let the current write finish before sending the latest snapshot.
+	queuedStateSyncDelay = nextDelay;
+	if (!stateSyncInFlight) {
+		scheduleStateSync();
+	}
 }
 
 const humanTurnController = createHumanTurnController({
@@ -2970,7 +3052,7 @@ function applyTurnAction(player, actionRequest) {
 		resolvedAction.amount,
 		resolvedAction.actionMeta,
 	);
-	if (resolvedAction.action === "fold") {
+	if (resolvedAction.action === "fold" && !hasStateSyncEnabled()) {
 		hidePlayerQr(player);
 	}
 	return resolvedAction;
@@ -3378,10 +3460,8 @@ function doShowdown() {
 	commitPlan.playerPatches.forEach(({ player }) => {
 		renderPlayerSeat(player);
 	});
-	commitPlan.revealPlayers.forEach((player) => {
-		hidePlayerQr(player);
-	});
 	if (commitPlan.revealPlayers.length > 0) {
+		gameState.players.forEach(hidePlayerQr);
 		updateHandStrengthDisplays();
 	}
 	commitPlan.mainPotWinners.forEach((player) => {
@@ -3405,7 +3485,7 @@ function doShowdown() {
 					revealDecision.codes.map(formatCardLabel).join(" ")
 				}`,
 			);
-		} else {
+		} else if (!hasStateSyncEnabled()) {
 			hidePlayerQr(uncontestedWinner);
 		}
 		triggerMainPotWinnerReactions({
@@ -3610,6 +3690,11 @@ function init() {
 	for (const closeButton of closeButtons) {
 		closeButton.addEventListener("click", deletePlayer, false);
 	}
+	for (const { presenceEl, qrContainer } of seatRefs) {
+		presenceEl.addEventListener("click", () => {
+			qrContainer.classList.toggle("show-join-links");
+		});
+	}
 
 	if (!SPEED_MODE) {
 		const storage = getLocalStorage();
@@ -3650,7 +3735,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-11-22-v1";
+const SERVICE_WORKER_VERSION = "2026-11-22-v4";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

@@ -35,6 +35,8 @@ Commercial use, paid hosting, resale, and misleading rebranding are not allowed 
 - **Private Player Views**: Human players can join on their own devices without exposing private
   information on the shared screen.
 - **QR + Link Joining**: Each human seat provides both a QR code and a direct link for easy access.
+- **Remote Player Status** – The shared table shows which players have connected and when inactive
+  player views last checked in.
 - **Companion / Remote Table Switching**: Joined players can switch between a compact companion view
   and the full remote table.
 - **Remote Player Actions**: In synced multiplayer games, the active player can act directly from
@@ -103,7 +105,7 @@ The table handles dealing, blinds, betting, and showdown automatically.
 
 ## 📶 Offline Use
 
-The table works fully offline after the first complete load.
+The shared table can run offline after the first complete load on the host device.
 
 - **First visit online** – When opened once with an internet connection, all necessary assets (HTML,
   JS, CSS, SVGs, icons) are cached in the browser.
@@ -113,8 +115,8 @@ The table works fully offline after the first complete load.
   are loaded and cached on demand.
 - **Updates** – A new version is fetched and activated in the background; refreshing the page loads
   the updated assets.
-- **Graceful QR Fallback** – If sync is unavailable, the QR code can still carry embedded hole-card
-  data so the companion view remains usable in read-only mode.
+- **QR Fallback** – If the companion page can load but the sync server is unreachable, it shows the
+  cards embedded in the QR code. Players act on the shared table.
 
 ---
 
@@ -142,9 +144,12 @@ Backend sync is used only in multiplayer games that start with at least 2 human 
 - **Human seats expose two entry points**: a QR code for the companion view (`hole-cards.html`) and
   a direct link for the full remote table (`remoteTable.html`).
 - **Both views stay connected to the same seat** and can be switched at any time.
+- **Connection status on the shared table** – Opening either player view and syncing successfully
+  replaces the seat's QR code and link with a green `Active` badge. After about 15 seconds without
+  a check-in, the badge turns yellow and shows the elapsed time, such as `24s` or `2m`. Tap the
+  yellow badge to show the links again, including after a fold. A seat that has yet to connect
+  keeps its QR code and link after a fold. The status badge and join links clear at showdown.
 - **Player actions from joined devices** are relayed back to the shared table.
-- **If the backend is unreachable**, the QR flow degrades gracefully to embedded hole-card data and
-  read-only companion access.
 
 ---
 
@@ -319,13 +324,11 @@ deno task speedmode -- --out=tmp/poker-speedmode-latest
 
 ## 📋 Known Limitations
 
-- Live syncing is best-effort; if the backend is unreachable, joined devices fall back to read-only
-  companion access, and actions stay on the shared table.
+- Live syncing is best-effort. If the backend is unreachable, players act on the shared table.
 - Saved games and player profiles are local to the same browser/device and apply only to Solo vs
   Bots games. Profiles retain ten recent results plus career totals. Clearing browser data removes
   the saved games and profile.
-- Remote table links are lightweight and trust-based; there are no seat tokens or connection checks
-  yet.
+- Remote table links are trust-based. Anyone with a seat link can open that seat's view.
 - The blind progression (formula-based increase every 6 hands) is not customizable.
 
 ---

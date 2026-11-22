@@ -54,8 +54,10 @@ const tableId = urlParams.get("tableId") || "";
 const STATE_ENDPOINT = "https://poker.tehes.deno.net/state";
 const ACTION_ENDPOINT = "https://poker.tehes.deno.net/action";
 const REFRESH_INTERVAL = 750;
+const HEARTBEAT_INTERVAL = 5000;
 const ACTION_STEP = 10;
 let lastVersion = 0;
+let nextHeartbeatAt = 0;
 let pollTimeoutId = null;
 let isPolling = false;
 let hasSyncedState = false;
@@ -223,10 +225,15 @@ async function pollState() {
 	}
 	isPolling = true;
 	try {
+		const now = Date.now();
+		const sendHeartbeat = now >= nextHeartbeatAt;
 		const url = `${STATE_ENDPOINT}?tableId=${
 			encodeURIComponent(tableId)
-		}&seatIndex=${seatIndexParam}&sinceVersion=${lastVersion}`;
+		}&seatIndex=${seatIndexParam}&sinceVersion=${lastVersion}${sendHeartbeat ? "&heartbeat=1" : ""}`;
 		const res = await fetch(url);
+		if (res.ok && sendHeartbeat) {
+			nextHeartbeatAt = now + HEARTBEAT_INTERVAL;
+		}
 		if (res.status === 204) {
 			setOnlineElementsVisible(hasSyncedState);
 			return;
@@ -263,6 +270,7 @@ function handleVisibilityChange() {
 	if (document.visibilityState !== "visible") {
 		return;
 	}
+	nextHeartbeatAt = 0;
 	if (!isPolling) {
 		pollState();
 	}
