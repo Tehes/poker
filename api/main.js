@@ -161,6 +161,14 @@ async function handlePostState(request, origin) {
 
 async function handleGetState(url, origin) {
 	const tableId = url.searchParams.get("tableId") || "default";
+	if (url.searchParams.get("view") === "presence") {
+		const lastSeen = {};
+		for await (const { key, value } of kv.list({ prefix: ["presence", tableId] })) {
+			lastSeen[key[2]] = value;
+		}
+		return jsonResponse({ lastSeen, now: Date.now() }, origin);
+	}
+
 	const seatIndex = parseInteger(url.searchParams.get("seatIndex"));
 	const sinceParam = url.searchParams.get("sinceVersion");
 	const sinceVersion = sinceParam ? Number.parseInt(sinceParam, 10) : 0;
@@ -179,6 +187,13 @@ async function handleGetState(url, origin) {
 	const payload = createSeatSyncPayload(record, seatIndex);
 	if (!payload) {
 		return textResponse("Seat not found", 404, origin);
+	}
+	if (url.searchParams.get("heartbeat") === "1") {
+		try {
+			await kv.set(["presence", tableId, seatIndex], Date.now(), { expireIn: STATE_TTL });
+		} catch (error) {
+			console.warn("Presence update failed", error);
+		}
 	}
 	if (!Number.isNaN(sinceVersion) && record.version <= sinceVersion) {
 		return emptyResponse(origin);
