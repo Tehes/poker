@@ -10,9 +10,18 @@ Version log writing guide:
 - Add optional contributor credits as dedicated metadata instead of release notes.
 */
 
-export const APP_VERSION = "1.7.0";
+export const APP_VERSION = "1.7.1";
 
 export const VERSION_LOG = [
+	{
+		version: "1.7.1",
+		date: "2026-11-23",
+		title: "More selective river calls",
+		notes: [
+			"In heads-up pots, bots are more likely to fold to a sizable first bet on the river when their pair or two pair comes from the board and their own cards add at most a kicker.",
+		],
+		estimated: false,
+	},
 	{
 		version: "1.7.0",
 		date: "2026-11-22",

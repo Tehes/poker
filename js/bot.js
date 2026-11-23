@@ -2836,8 +2836,12 @@ function getWeakPrivateShowdownPressurePenalty({
 
 	const streetPenalty = streetIndex === 3 ? 0.025 : 0.02;
 	const pricePenalty = potOdds >= 0.25 ? 0.015 : 0;
+	const riverBoardPairPenalty = streetIndex === 3 && raiseLevel === 1 && headsUp && !isAllIn &&
+			pairClass === "board-pair-only" && potOdds >= 0.20
+		? 0.05
+		: 0;
 
-	return streetPenalty + pricePenalty;
+	return streetPenalty + pricePenalty + riverBoardPairPenalty;
 }
 
 function classifyNoBetOpportunity({
