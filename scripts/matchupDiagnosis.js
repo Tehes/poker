@@ -282,6 +282,8 @@ async function writeDiagnosis({ runs, seed, minSpots, out }) {
 		"js/gameEngine.js",
 		"js/shared/actionModel.js",
 		"scripts/matchupPool.js",
+		"scripts/matchupPreflop.js",
+		"scripts/matchupPostflop.js",
 		"scripts/matchupBatch.js",
 		"scripts/matchupDiagnosis.js",
 		"scripts/speedmodeAnalysis.js",

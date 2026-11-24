@@ -512,10 +512,8 @@ blockieren das betroffene Experiment. Der Report weist die betroffenen Paare aus
 
 ### Gegnerpool
 
-Der feste Pool kombiniert enge oder weite Preflop-Ranges mit aggressivem oder passivem Spiel:
-TAG, LAG, Calling Station und Nit. Die Profile nutzen diese Merkmale auf mehreren Streets.
-Handschwellen, Pot Odds und Frequenzen sind Testparameter für unser Turnierformat. Ihre
-Ausprägung lässt sich im Batch über VPIP, PFR sowie Bets, Calls und Folds je Street prüfen.
+Der Gegnerpool enthält TAG, LAG, Calling Station und Nit. Die Profile unterscheiden sich darin,
+welche Hände sie spielen und wie aggressiv sie auf den einzelnen Streets vorgehen.
 [PokerStars zu den vier Spielstilen](https://www.pokerstars.com/poker/learn/lesson/other-poker-playing-styles/) ·
 [Jonathan Little zu den Merkmalen](https://pokercoaching.com/blog/different-poker-players/)
 
@@ -524,22 +522,45 @@ Value-Range und Betgröße. Für die Freigabe den festen Pool mit unveränderten
 verwenden. Auch die Referenz auf den regulären Bot im Gegnerfeld muss für Baseline und Kandidat
 dieselbe feste Version verwenden.
 
+#### Spielweise der Profile
+
+Preflop bestimmen Position, effektiver Stack, Betgröße und bisherige Aktionen die Ranges für
+Open-Raises, Limps, Calls und Reraises. TAG und LAG öffnen in später Position mehr Hände.
+Der LAG setzt häufiger leichte 3-Bets gegen späte Opens ein. Die Calling Station steigt mit
+vielen Händen per Limp oder Call ein. Der Nit spielt eine enge Range und verteidigt die Blinds
+selektiv. [Preflop-Ranges im Code](../matchupPreflop.js) ·
+[Harrington über Turnierspiel und Spielstile](https://forumserver.twoplustwo.com/33/books-publications/harringtons-new-tourney-book-1410913/index2.html) ·
+[Jonathan Little über Position und Stacktiefe](https://pokercoaching.com/blog/short-stack-vs-raise-how-to-adjust-your-preflop-strategy-in-mtts/) ·
+[PokerStars über Isolation Raises](https://www.pokerstars.com/poker/learn/strategies/taking-advantage-of-poker-players-that-limp-preflop/)
+
+Postflop bewerten die Profile die Hand relativ zum Board, etwa ein privates Paar auf einem
+gepaarten Board. Bei Combo Draws zählen gemeinsame Outs einmal. Calls berücksichtigen
+Betgröße, Gegnerzahl und wiederholten Druck. Der TAG setzt selektiv für Value und als
+Semi-Bluff. Der LAG barrelt häufiger mit Draws und blufft ausgewählte River-Runouts.
+Die Calling Station callt auch mit schwächeren Paaren und Draws. Der Nit gibt schwache
+Hände früher auf und raist starke Hände selektiv. [Postflop-Regeln im Code](../matchupPostflop.js) ·
+[PokerStars zu Continuation Bets](https://www.pokerstars.com/poker/learn/lesson/c-betting/) ·
+[Jonathan Little zu Straight Draws](https://pokercoaching.com/blog/open-ended-straight-draw-in-poker/) ·
+[Ed Miller zu situationsabhängiger Aggression](https://www.cardplayer.com/poker-news-23577-poker-strategy-with-ed-miller-misplaced-aggression)
+
 #### Profile prüfen und weiterentwickeln
 
-Der aktuelle Pool ist Version 1 und dient als Vergleichsbasis für spätere Profiländerungen.
-Prüfe für jeden Ziel-Leak, ob der Gegner die relevante Line oft genug spielt. Nutze bei Bedarf
-einen Kontrolllauf mit einer absichtlich geschwächten Bot-Variante. Das Profil sollte den
-eingebauten Fehler im Zielspot reproduzierbar in Chipgewinn umsetzen.
+Lege den Zielspot fest und prüfe im Batch, wie oft das Profil Gelegenheit für die relevante
+Line hat und wie oft es sie spielt. Untersuche Preflop Position, Stacktiefe und vorausgehende
+Aktion. Untersuche Postflop Street, Initiative, Handklasse und Betgröße. Nutze VPIP, PFR und
+Aktionsraten je Street als Übersicht. Für den Abgleich mit menschlichen Frequenzen brauchst du
+Handverläufe aus vergleichbaren Spots.
+
+Prüfe seltene Lines mit festen Testszenarien. Nutze Replays, um verschiedene Entscheidungen
+am selben Ausgangsspot zu vergleichen. Prüfe bei Bedarf mit einer absichtlich geschwächten
+Bot-Variante, ob das Profil den eingebauten Fehler im Zielspot reproduzierbar in Chipgewinn
+umsetzt. [Matchup-Tests](../matchupBatch.test.js) · [Replay](../matchupReplay.js)
 
 Vertiefe ein Profil, wenn es eine relevante Line trotz genügend Gelegenheiten zu selten oder
 zu einfach spielt oder der Kontrolllauf eine bekannte Schwäche kaum sichtbar macht.
-Beim LAG kann das zum Beispiel heißen, Flop-, Turn- und River-Bets zu einer zusammenhängenden
-Line auszubauen. Ergänze einen neuen Gegnertyp, wenn dem Pool eine für die Testfrage relevante
-Spielweise fehlt.
+Ergänze einen Gegnertyp, wenn dem Pool eine für die Testfrage relevante Spielweise fehlt.
 
-Halte bei jedem Ausbau fest, welches Verhalten im bisherigen Profil fehlte, welche Messung
-das zeigt und welche Profilversion den Befund abdeckt. Miss Baseline und Kandidat anschließend
-gegen dieselbe neue Version. Bewahre Version 1 für Vergleiche auf.
+Dokumentiere das Zielverhalten, die Messung und die verwendete Pool-Konfiguration.
 
 ### Runner und Auswertung
 
@@ -554,10 +575,13 @@ Die Pool-Konfiguration enthält Self-Play als Referenz, einen gemischten Tisch m
 unterschiedlichen Gegnern und eine Variante mit mehr aggressiven Gegnern. Die zweite
 Konfiguration enthält die gezielten River-Profile für die Diagnose.
 Für einen Kandidaten eine eigene Konfiguration unter `tmp/` mit festen Strategieversionen
-anlegen. `strategies` ordnet Namen Funktionen mit der Signatur `(player, state) => action` zu.
+anlegen. `strategies` ordnet Namen Funktionen mit der Signatur `(player, state, line) => action` zu.
+Batch und Replay leiten `line` aus den ausgeführten Aktionen ab. `flop` und `turn` enthalten
+die Sitznummer des letzten Aggressors der jeweiligen abgeschlossenen Street. Ohne Aggressor
+steht dort `null`.
 `lineups` weist diesen Strategien benannte Sitzrollen zu. Alle Aufstellungen verwenden dieselben
 Rollennamen. Die Profile entscheiden anhand öffentlich sichtbarer Informationen und eigener
-Karten. Eine optionale Funktion `classifySpot(state, player, role)` benennt den Zielspot vor der
+Karten. Eine optionale Funktion `classifySpot(state, player, role, line)` benennt den Zielspot vor der
 Aktion oder gibt `null` zurück.
 
 Der Bericht enthält je Lauf und Rolle gespielte Hände, Turniersiege, Netto-BB, VPIP und PFR.

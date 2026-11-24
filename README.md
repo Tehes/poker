@@ -260,6 +260,12 @@ Core principles:
 Set `DEBUG_FLOW` to `true` in `js/app.js` to print detailed, timestamped messages about the betting
 flow. Enable this flag when investigating hangs or unexpected behavior.
 
+### Automated Tests
+
+Run `deno test` from the repository root. The suite covers game rules, player profiles, bot
+decisions, and the matchup tools. It includes fixed Preflop and Postflop scenarios for the
+opponent profiles.
+
 ### Automated Batch Runs
 
 For repeatable bot-vs-bot runs with detailed decision logs and aggregate bot-behavior metrics, use
@@ -319,6 +325,30 @@ deno task engine:batch -- --equity-preflop --runs=10
 CHROME_BIN="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" deno task speedmode -- --runs=3
 deno task speedmode -- --out=tmp/poker-speedmode-latest
 ```
+
+### Opponent Matchups and Replays
+
+The browserless matchup tools use fixed seeds and rotate seat assignments. The opponent pool
+includes a self-play reference, a mixed table with TAG, LAG, Calling Station, and Nit profiles,
+and a table with an extra LAG. Choose a fresh output path for each run.
+
+| Task | When to use it |
+| --- | --- |
+| `engine:matchup` | Run full tournaments across lineups and compare action counts, chip results, and wins by seat role. |
+| `engine:diagnose` | Find spots where the test bot behaves differently in self-play and in the mixed field. This writes `summary.json` and a compressed decision log. |
+| `engine:experiment` | Compare baseline and candidate strategies in the same opponent field using paired tournaments. |
+| `engine:replay` | Branch from the same cards and table state to compare an alternative decision through the end of the hand. |
+
+```sh
+deno task engine:matchup scripts/matchupPool.js tmp/matchup-pool.json
+deno task engine:diagnose -- --runs=100 --out=tmp/matchup-diagnosis
+deno task engine:experiment scripts/matchupAudit.js tmp/matchup-audit.json
+deno task engine:replay scripts/matchupReplayAudit.js tmp/matchup-replay-audit.json
+```
+
+The experiment and replay examples run the same strategy on both sides to check reproducibility.
+For your own comparisons, see the [Bot Tuning Playbook](scripts/docs/bot-tuning-playbook.md)
+and [Matchup Experiment Guide](scripts/docs/matchup-experiments.md).
 
 ---
 

@@ -1,6 +1,12 @@
 import { runEngineHand } from "../js/gameEngine.js";
 import { createEngineBatchGameState } from "./engineBatch.js";
-import { chooseSeededAction, createRandom, runMatchupCommand, shuffleMatchupDeck } from "./matchupBatch.js";
+import {
+	chooseSeededAction,
+	createRandom,
+	getPostflopBettingLine,
+	runMatchupCommand,
+	shuffleMatchupDeck,
+} from "./matchupBatch.js";
 import { summarizePairedMeasurements } from "./matchupExperiment.js";
 
 function validateReplay(
@@ -35,9 +41,10 @@ function playReplayHand(state, config, seating, handId, handSeed, actionProvider
 	const deckRandom = createRandom(handSeed);
 	const seatRandoms = seating.map((_, seat) => createRandom(handSeed ^ Math.imul(seat + 1, 0x85ebca6b)));
 	let decisionIndex = 0;
-	return runEngineHand(state, (game, player) => {
+	return runEngineHand(state, (game, player, _step, { actions }) => {
+		const line = getPostflopBettingLine(actions, game.currentPhaseIndex);
 		const choose = (id) => {
-			const action = chooseSeededAction(config.strategies[id], player, game, seatRandoms[player.seatIndex]);
+			const action = chooseSeededAction(config.strategies[id], player, game, seatRandoms[player.seatIndex], line);
 			if (!action) {
 				throw new Error(`Replay strategy "${id}" returned an invalid action`);
 			}

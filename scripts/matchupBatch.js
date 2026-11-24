@@ -22,12 +22,32 @@ export function shuffleMatchupDeck(deck, random) {
 	return deck;
 }
 
-export function chooseSeededAction(strategy, player, state, random) {
+export function getPostflopBettingLine(actions, phaseIndex) {
+	const line = { flop: null, turn: null };
+	if (phaseIndex < 2) {
+		return line;
+	}
+	for (let i = actions.length - 1; i >= 0; i--) {
+		const { phase, player, resolvedAction } = actions[i];
+		if (phase === "preflop") {
+			break;
+		}
+		if (
+			(phase === "flop" || (phase === "turn" && phaseIndex === 3)) && line[phase] === null &&
+			resolvedAction.actionMeta.aggressive
+		) {
+			line[phase] = player.seatIndex;
+		}
+	}
+	return line;
+}
+
+export function chooseSeededAction(strategy, player, state, random, line) {
 	const original = Math.random;
 	// Existing bot modules draw from Math.random. Give each seat its own stream.
 	Math.random = random;
 	try {
-		return normalizeBotActionRequest(strategy(player, state));
+		return normalizeBotActionRequest(strategy(player, state, line));
 	} finally {
 		Math.random = original;
 	}
@@ -90,9 +110,10 @@ function runMatchup(config, lineup, roles, index, capture) {
 	let handSeats;
 	let bigBlind;
 
-	const result = runEngineTournament(game, (state, player) => {
+	const result = runEngineTournament(game, (state, player, _step, { actions }) => {
 		const role = seating[player.seatIndex];
-		const label = config.classifySpot?.(state, player, role);
+		const line = getPostflopBettingLine(actions, state.currentPhaseIndex);
+		const label = config.classifySpot?.(state, player, role, line);
 		if (label != null && (typeof label !== "string" || label.length === 0)) {
 			throw new Error("A spot label must be a nonempty string");
 		}
@@ -107,7 +128,7 @@ function runMatchup(config, lineup, roles, index, capture) {
 				context = capture.project(decision, state, player, seating, lineup);
 			});
 			try {
-				action = chooseSeededAction(strategy, player, state, random);
+				action = chooseSeededAction(strategy, player, state, random, line);
 			} finally {
 				setBotDecisionSink(null);
 			}
@@ -115,7 +136,7 @@ function runMatchup(config, lineup, roles, index, capture) {
 				throw new Error(`Strategy "${lineup[role]}" did not log a decision for "${role}"`);
 			}
 		} else {
-			action = chooseSeededAction(strategy, player, state, random);
+			action = chooseSeededAction(strategy, player, state, random, line);
 		}
 		if (!action) {
 			throw new Error(`Strategy "${lineup[role]}" returned an invalid action for "${role}"`);
