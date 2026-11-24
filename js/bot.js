@@ -4645,7 +4645,7 @@ export function chooseBotAction(player, gameState) {
 			mRatio,
 		});
 		const openRaiseThreshold = getUnopenedPreflopRaiseThreshold({
-			baseRaiseThreshold: raiseThreshold,
+			baseRaiseThreshold: player.smallBlind && players.length === 2 ? raiseThreshold - 1.35 : raiseThreshold,
 			player,
 			spotContext,
 			positionFactor,

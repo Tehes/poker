@@ -2,6 +2,16 @@
 
 Purpose: This document records accepted and rejected bot-tuning routes so future iterations do not repeat already falsified hypotheses without new evidence.
 
+## 2026-11-24: More Small Blind Opens at a Two-Player Table
+
+### Accepted After Reviewing the Guardrail Hit
+
+- Lowered the unopened Small Blind raise threshold by `1.35` at a two-player table in the green stack zone. The additional raises mainly replaced limps. The baseline was `4a84b2b` and the matchup tests used opponent pool v3.
+- Validation passed in the reference, Nit and Calling Station fields. The changes were `+0.069`, `+0.069` and `+0.073` BB per target opportunity. The direct Nit replay returned `+0.082` BB per opportunity over 11,831 spots. The LAG holdout passed with `+0.110` BB per opportunity on fresh seeds.
+- The final 1,000-tournament Core batch recorded one postflop all-in reraise below the required edge of `1.0`. The candidate shoved a straight over public trips with an edge of `0.9949` in run 653, hand 40, at a four-player table. The baseline flagged run 97, hand 6, at a six-player table. The replay reproduced the same shove with both strategy snapshots on each recorded state. Both opponents held full houses. From the decision, the candidate hand lost 3,350 chips by shoving and would have lost 1,170 by calling. The baseline hand lost 2,070 chips by shoving and would have lost 690 by calling.
+- The hand review found the shove defensible given the information available to the bot. This existing case was accepted as an exception for this candidate. The guardrail continues to report the hit.
+- Rollout passed across 3,000 paired tournaments. The fixed TAG opponent averaged `+0.00274` BB per hand against the five candidate bots and `+0.00353` against the five baseline bots. The measured opponent advantage against the baseline was `+0.00079` BB per hand, with a 95% interval from `−0.00037` to `+0.00194`. The Small Blind adjustment was restored locally. Reports and the exact replay are in `tmp/sb-matchup-4a84b2b/`.
+
 ## 2026-11-21: River Calls After the Same Bettor Opened Flop and Turn
 
 ### No Qualified Candidate
@@ -19,7 +29,7 @@ Purpose: This document records accepted and rejected bot-tuning routes so future
 - In the original 440-call cohort, 305 decisions flipped for sure and 65 more could flip on the tie-break. Expected net savings were 132,675 chips after giving up 35 calls with positive recorded outcomes in expectation. Both 300-tournament replicas supported the result. The replay left cheap calls, top pair or better, and strong draws stable.
 - The 100-, 500-, and 1,000-tournament batches improved realized chips per eligible spot. Across the full heads-up-at-decision scope, the 1,000-tournament call rate fell from 46.74% to 11.74% and value rose from −2.96 to −0.86 BB per spot. The final batch recorded one all-in low-edge reraise against the required count of zero.
 - The accepted MDF trade-off in the 1,000-tournament batch was 11.06 to 14.25 percentage points of overfold on heads-up turns. Outside the target spots, the gap moved from 10.31 to 9.19 percentage points. The chip gain was measured in six-bot self-play.
-- That flag came from a river flush over a public straight in the first hand of run 250. The structural upgrade scored `0.9952` against the `1.0` cutoff. Baseline and candidate both shoved 1,570 chips from the same state in replay, and a worse straight called. Tino accepted this candidate after reviewing the hand. The batch still records the single flag. Audit and batch details are in `tmp/turn-board-pair-audit-20261121/`.
+- That flag came from a river flush over a public straight in the first hand of run 250. The structural upgrade scored `0.9952` against the `1.0` cutoff. Baseline and candidate both shoved 1,570 chips from the same state in replay, and a worse straight called. The candidate was accepted after the hand review. The batch still records the single flag. Audit and batch details are in `tmp/turn-board-pair-audit-20261121/`.
 
 ## 2026-08-22: Paired-Board Private-Pair Calls
 
