@@ -44,10 +44,10 @@ Der Bot bleibt heuristisch. Equity, MDF und Batch-Metriken sind Diagnose- und Ka
 ## Iteration in Kurzform
 
 1. `scripts/docs/bot-tuning-learnings.md` lesen.
-2. Vergleichsbasis festlegen.
-3. Auffällige Metrik finden, aber nicht sofort tunen.
+2. Self-Play- und Mixed-Baseline für dieselbe Bot-Version festlegen.
+3. In beiden Baselines eigenständig nach auffälligen Mustern suchen und sie über die Gegnerfelder vergleichen.
 4. Ursache lokalisieren: Arrival, Spot Decision, Line, Sizing, Range, Stackdruck oder Artefakt.
-5. Bei Bedarf Equity-/MDF-/Backtrace-Diagnose nutzen.
+5. Plausible Alternativen im Replay prüfen. Bei Bedarf Equity-/MDF-/Backtrace-Diagnose nutzen.
 6. Eine konkrete Hypothese formulieren.
 7. Einen fokussierten Hebel in `js/bot.js` ändern.
 8. Staged Validation laufen lassen.
@@ -100,6 +100,33 @@ Notiere immer:
 - Guardrails
 - Early-Bust- und Tournament-Flow
 
+## Mustersuche vor der Hebelwahl
+
+Beginne die Diagnose mit der aktuellen Bot-Version im Self-Play und im Mixed-Batch. Suche in
+beiden Berichten eigenständig nach auffälligen Mustern. Das Mixed-Feld kann bereits vor der
+Kandidatenwahl zusätzliche Schwächen zeigen, die sich erst gegen andere Strategien ergeben.
+
+```bash
+deno task engine:diagnose -- --runs=1000 --out=tmp/matchup-discovery
+```
+
+Der Runner erzeugt beide Diagnosefelder in einem Lauf. Der gemeinsame Diagnosebericht stellt
+`reference` und `mixed` für denselben Testsitz und dieselben Seeds nebeneinander. Er enthält
+übergreifende Spots und Auswertungen nach Handklasse, Position, Line, Betgröße und Gegnerprofil.
+Für feinere Schnitte verwende das komprimierte Entscheidungslog mit derselben Definition
+in beiden Feldern. Die Core-Baseline ergänzt die Sicht auf den gesamten Tisch und die Guardrails.
+[Diagnosebericht und Logformat](./matchup-experiments.md#gemeinsame-mustersuche)
+
+Halte pro Muster fest, wie häufig der Spot entsteht, welche Hände dort ankommen, wie oft die
+auffällige Aktion gewählt wird und wie der beobachtete Chipwert pro Spot ausfällt. Berichte die
+Anzahl vergleichbarer Spots je Feld. Wenige Beobachtungen lassen die Übertragbarkeit offen.
+
+Ein Muster in beiden Feldern spricht für eine breitere Schwäche. Ein belastbares Muster in
+einem einzelnen Feld kann ebenfalls ein Ziel-Leak sein. Tausche bei einem vermuteten
+Gegnereffekt das relevante Profil gezielt gegen ein Kontrollprofil. Prüfe anschließend plausible
+Alternativen am selben Ausgangsspot im Replay. Wähle erst daraus einen Hebel für die vermutete
+Ursache.
+
 ## Diagnose-Menü
 
 Wähle die Diagnose nach dem Leak. Nicht jeder Leak braucht alle Werkzeuge.
@@ -110,13 +137,13 @@ Wähle die Diagnose nach dem Leak. Nicht jeder Leak braucht alle Werkzeuge.
 deno task engine:batch
 ```
 
-### Diagnose-Stabilität
+### Core-Stabilität
 
 ```bash
 deno task engine:batch:500
 ```
 
-### Diagnose-Acceptance
+### Core-Freigabelauf
 
 ```bash
 deno task engine:batch:1000
@@ -430,6 +457,118 @@ deno task engine:batch -- --runs=1000 --equity-preflop --equity-limit=3000
 Pro Goal gibt es höchstens einen finalen 1000er Equity-Batch. Ohne dokumentierten Equity-Trigger
 entfällt dieser Schritt.
 
+## Validierung strategischer Entscheidungen
+
+Der Core-Batch misst den gespielten Action-Mix, Turnierverlauf und Guardrails im Self-Play. Er
+gehört zu jeder Änderung am Spielverhalten. Ein Replay vergleicht die Entscheidungen im
+Zielcluster. Ein Matchup-Experiment prüft, ob der Vorteil einer Strategie gegen relevante
+Gegnerprofile trägt. Beide Verfahren gelten für Preflop-Ranges, Calls, Bluffs, Value-Bets,
+Sizing, Line-Fortsetzungen und Push/Fold.
+
+- Verwende ein Replay, wenn sich die Aktionswahl, Betgröße oder Range im Zielcluster ändert.
+- Verwende ein Matchup-Experiment, wenn unterschiedliche Gegnerreaktionen den Nutzen der
+  Änderung oder ihre Nebenwirkungen bestimmen können.
+- Prüfe einen klar abgegrenzten Regelfall oder eine harte Guardrail mit einem reproduzierbaren
+  Szenario und dem Core-Batch. Betrifft der Fix auch normale Strategie-Spots, prüfe diesen
+  Effekt mit den entsprechenden Vergleichen.
+
+Wähle die Kennzahl nach dem Ziel. Bei Value-Sizing kann der Chipwert bis Handende im Zielspot
+entscheidend sein. Bei Push/Fold im Winner-take-all zählt für die Turnierfreigabe die Siegquote.
+Wenn die Änderung beeinflusst, welche Hände einen Spot erreichen, prüfe zusätzlich seine
+Häufigkeit und den Chipwert je Hand.
+
+### Vergleich aufsetzen
+
+Die Wahl des Zielspots folgt aus der [Mustersuche](#mustersuche-vor-der-hebelwahl). Die folgenden
+Schritte verwenden diesen Befund für den Replay- und Kandidatenvergleich.
+
+1. Vor dem Kandidaten die Baseline, den Zielspot, das Zielprofil und ein Kontrollprofil festlegen.
+   Halte fest, ab welchem Gewinn der Effekt relevant ist und welchen Rückgang du im Kontrollprofil
+   tolerierst. Plane die Mindestzahl an Turnierpaaren und Zielspots je Variante. Friere außerdem
+   Gegnerpool, Vergleichsmetrik und die für die Freigabe reservierten Profile und Seeds ein.
+2. Im Replay dieselben Ausgangssituationen vergleichen. Beim Angriff ist der Check die Referenz für
+   eine zusätzliche Bet. Bei der Defense bleiben Betgröße und gegnerische Value- und Bluff-Range
+   vorgegeben. Bei einer Sizing-Änderung startet der Vergleich vor der Bet. Das Replay misst den
+   Chipwert bis zum Handende.
+3. Im Experiment je Gegnerfeld die bisherige Strategie und den Kandidaten zuweisen. Der Runner
+   baut daraus beide Tische, paart die Turniere und berichtet den Unterschied mit einem
+   95-%-Intervall. Die Reads entstehen im Spiel. Vergleiche bei Bedarf getrennt, wie sich frische
+   und aufgebaute Reads auswirken.
+4. Den Befund auf neuen Seeds und einem Gegnerprofil prüfen, das beim Tuning noch nicht verwendet
+   wurde. Bei gemeinsamer Freigabe im selben Feld die Baseline, Angriff, Defense und die Kombination
+   vergleichen. Zusätzlich den neuen Angriff gegen die neue Defense spielen lassen. Für den
+   Rollout fünf alte und fünf neue Bots jeweils gegen denselben Profil-Sitz vergleichen.
+
+Der Runner rotiert die Rollen und seedet Karten und Bot-Entscheidungen getrennt. Nach abweichenden
+Aktionen dürfen sich dieselben Turnierläufe unterschiedlich entwickeln. Replay-Vergleiche halten
+den Ausgangsspot direkt fest.
+
+Die Freigabe erfolgt stufenweise. Die Diagnose lokalisiert den Effekt. Die Validierung prüft ihn
+gegen Ziel- und Kontrollprofile. Der Holdout prüft die eingefrorene Änderung. Der Rollout prüft
+den Tisch in der geplanten Besetzung. Erst danach zählt das Ergebnis zusammen mit dem Core-Batch
+und seinen Guardrails als Freigabenachweis. Technische Unterbrechungen und Pot-Abweichungen
+blockieren das betroffene Experiment. Der Report weist die betroffenen Paare aus.
+[Konfiguration, Kennzahlen und Status](./matchup-experiments.md)
+
+### Gegnerpool
+
+Der feste Pool kombiniert enge oder weite Preflop-Ranges mit aggressivem oder passivem Spiel:
+TAG, LAG, Calling Station und Nit. Die Profile nutzen diese Merkmale auf mehreren Streets.
+Handschwellen, Pot Odds und Frequenzen sind Testparameter für unser Turnierformat. Ihre
+Ausprägung lässt sich im Batch über VPIP, PFR sowie Bets, Calls und Folds je Street prüfen.
+[PokerStars zu den vier Spielstilen](https://www.pokerstars.com/poker/learn/lesson/other-poker-playing-styles/) ·
+[Jonathan Little zu den Merkmalen](https://pokercoaching.com/blog/different-poker-players/)
+
+Für eine gezielte Diagnose variiere einen Parameter, etwa die Bluff-Frequenz bei gleicher
+Value-Range und Betgröße. Für die Freigabe den festen Pool mit unveränderten Strategien
+verwenden. Auch die Referenz auf den regulären Bot im Gegnerfeld muss für Baseline und Kandidat
+dieselbe feste Version verwenden.
+
+#### Profile prüfen und weiterentwickeln
+
+Der aktuelle Pool ist Version 1 und dient als Vergleichsbasis für spätere Profiländerungen.
+Prüfe für jeden Ziel-Leak, ob der Gegner die relevante Line oft genug spielt. Nutze bei Bedarf
+einen Kontrolllauf mit einer absichtlich geschwächten Bot-Variante. Das Profil sollte den
+eingebauten Fehler im Zielspot reproduzierbar in Chipgewinn umsetzen.
+
+Vertiefe ein Profil, wenn es eine relevante Line trotz genügend Gelegenheiten zu selten oder
+zu einfach spielt oder der Kontrolllauf eine bekannte Schwäche kaum sichtbar macht.
+Beim LAG kann das zum Beispiel heißen, Flop-, Turn- und River-Bets zu einer zusammenhängenden
+Line auszubauen. Ergänze einen neuen Gegnertyp, wenn dem Pool eine für die Testfrage relevante
+Spielweise fehlt.
+
+Halte bei jedem Ausbau fest, welches Verhalten im bisherigen Profil fehlte, welche Messung
+das zeigt und welche Profilversion den Befund abdeckt. Miss Baseline und Kandidat anschließend
+gegen dieselbe neue Version. Bewahre Version 1 für Vergleiche auf.
+
+### Runner und Auswertung
+
+```bash
+deno task engine:matchup scripts/matchupPool.js tmp/matchup-pool.json
+deno task engine:matchup scripts/matchupBaseline.js tmp/matchup-river-diagnosis.json
+deno task engine:experiment scripts/matchupAudit.js tmp/matchup-audit.json
+deno task engine:replay scripts/matchupReplayAudit.js tmp/matchup-replay-audit.json
+```
+
+Die Pool-Konfiguration enthält Self-Play als Referenz, einen gemischten Tisch mit fünf
+unterschiedlichen Gegnern und eine Variante mit mehr aggressiven Gegnern. Die zweite
+Konfiguration enthält die gezielten River-Profile für die Diagnose.
+Für einen Kandidaten eine eigene Konfiguration unter `tmp/` mit festen Strategieversionen
+anlegen. `strategies` ordnet Namen Funktionen mit der Signatur `(player, state) => action` zu.
+`lineups` weist diesen Strategien benannte Sitzrollen zu. Alle Aufstellungen verwenden dieselben
+Rollennamen. Die Profile entscheiden anhand öffentlich sichtbarer Informationen und eigener
+Karten. Eine optionale Funktion `classifySpot(state, player, role)` benennt den Zielspot vor der
+Aktion oder gibt `null` zurück.
+
+Der Bericht enthält je Lauf und Rolle gespielte Hände, Turniersiege, Netto-BB, VPIP und PFR.
+Für VPIP und PFR die jeweiligen Handzahlen durch die gespielten Hände teilen.
+Für markierte Spots enthält er je tatsächlich ausgeführter Aktion die Anzahl und die Netto-BB ab
+der Entscheidung. Teile die Summe durch die Anzahl der Spots. Bereits investierte Chips zählen
+zum Pot. Wenn sich die Häufigkeit der Spots ändert, zusätzlich die Netto-BB je gespielter Hand
+prüfen. Beim Angriff auch den Wert der zusätzlichen Bluffs gegenüber dem Check aus dem Replay
+berichten. MDF hilft bei der Diagnose der Frequenzen. Für die Freigabe zählen der vereinbarte
+Chipwert-Vergleich und die bestehenden Core-Guardrails.
+
 ## Hard Guardrails
 
 Diese Werte dürfen nicht brechen:
@@ -459,6 +598,7 @@ Akzeptiere einen Kandidaten nur, wenn:
 - Core Health stabil bleibt,
 - Guardrails sauber bleiben,
 - Equity/MDF/Backtrace nicht widersprechen,
+- die für den strategischen Eingriff vereinbarten Replay- und Matchup-Kriterien erfüllt sind,
 - keine Verbesserung durch Trash-Calls, Spew oder Problemverschiebung entsteht,
 - der Bot als Ganzes plausibler spielt.
 

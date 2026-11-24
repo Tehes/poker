@@ -514,7 +514,7 @@ function bucketRequiredFoldRate(requiredFoldRate) {
 	return ">67%";
 }
 
-function bucketBetToPotRatio(toCall, potBefore) {
+export function bucketBetToPotRatio(toCall, potBefore) {
 	if (!(toCall > 0) || !(potBefore > toCall)) {
 		return "n/a";
 	}
@@ -1332,7 +1332,7 @@ function classifyPreflopRoute(decision) {
 	return "unknown";
 }
 
-function classifyPreflopHandFamily(holeCards) {
+export function classifyPreflopHandFamily(holeCards) {
 	if (!Array.isArray(holeCards) || holeCards.length < 2) {
 		return "unknown";
 	}
@@ -1400,7 +1400,7 @@ function classifyPreflopHandFamily(holeCards) {
 	return "offsuitJunk";
 }
 
-function getPostflopPositionRole(decision) {
+export function getPostflopPositionRole(decision) {
 	return decision.actingSlotIndex === decision.actingSlotCount ? "IP" : "OOP";
 }
 
@@ -1890,7 +1890,7 @@ function isTurnOrRiverPressureSpot(decision) {
 		hasBadPrice(decision);
 }
 
-function classifyPostflopQuality(decision) {
+export function classifyPostflopQuality(decision) {
 	if (decision.phase !== "postflop") {
 		return { qualityClass: "n/a", qualityReason: "preflop" };
 	}
