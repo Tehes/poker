@@ -3067,6 +3067,80 @@ Deno.test("full engine flow removes a busted player after a three-player hand", 
 	});
 });
 
+Deno.test("a short big blind cannot force a fold from the last player who already covers the all-ins", () => {
+	const dealer = createPlayer({ name: "Dealer", seatIndex: 0 });
+	const smallBlind = createPlayer({ name: "Small Blind", seatIndex: 1 });
+	const bigBlind = createPlayer({ name: "Big Blind", seatIndex: 2, chips: 50 });
+	const early = createPlayer({ name: "Early", seatIndex: 3 });
+	const short = createPlayer({ name: "Short", seatIndex: 4, chips: 30 });
+	const players = [dealer, smallBlind, bigBlind, early, short];
+	const gameState = createFlowGameState({
+		players,
+		deck: INITIAL_DECK.slice(),
+		smallBlind: 70,
+		bigBlind: 140,
+	});
+	const result = runEngineHand(gameState, (_state, player) => ({
+		action: player === short ? "call" : "fold",
+	}), { shuffleFn: (deck) => deck });
+
+	assertEquals(result.type, "showdown");
+	assertEquals(result.actions.map(({ player }) => player.name), ["Early", "Short", "Dealer"]);
+	assertEquals(smallBlind.folded, false);
+	const showdown = result.showdownResult;
+	assertEquals(showdown.totalPot, 150);
+	assertEquals(showdown.transferQueue.reduce((sum, { amount }) => sum + amount, 0), 150);
+	assertEquals(showdown.potResults.find((pot) => pot.isRefundOnly)?.amount, 20);
+	assertEquals(players.reduce((sum, { chips }) => sum + chips, 0), 3080);
+});
+
+Deno.test("the last player calls only the posted amount of a short all-in big blind", () => {
+	const button = createPlayer({ name: "Button", seatIndex: 0 });
+	const short = createPlayer({ name: "Short", seatIndex: 1, chips: 90 });
+	const gameState = createFlowGameState({
+		players: [button, short],
+		deck: INITIAL_DECK.slice(),
+		smallBlind: 70,
+		bigBlind: 140,
+	});
+	const result = runEngineHand(gameState, () => ({ action: "call" }), { shuffleFn: (deck) => deck });
+
+	assertEquals(result.type, "showdown");
+	assertEquals(
+		result.actions.map(({ resolvedAction }) => [resolvedAction.action, resolvedAction.amount]),
+		[["call", 20]],
+	);
+	assertEquals(result.showdownResult.totalPot, 180);
+});
+
+Deno.test("a short all-in blind retains the full bring-in while two players can bet", () => {
+	const smallBlind = createPlayer({ roundBet: 70 });
+	const shortBlind = createPlayer({ seatIndex: 1, chips: 0, roundBet: 90, allIn: true });
+	const button = createPlayer({ seatIndex: 2 });
+	const { gameState } = createGameState({
+		player: smallBlind,
+		opponents: [shortBlind, button],
+		currentPhaseIndex: 0,
+		currentBet: 140,
+	});
+
+	assertEquals(resolveTurnAction(gameState, smallBlind, { action: "call" }).amount, 70);
+	button.folded = true;
+	assertEquals(resolveTurnAction(gameState, smallBlind, { action: "call" }).amount, 20);
+});
+
+Deno.test("showdown refunds the unmatched layer even if the sole contributor folded", () => {
+	const smallBlind = createPlayer({ totalBet: 70, folded: true });
+	const bigBlind = createPlayer({ seatIndex: 1, totalBet: 50, holeCards: ["AS", "AH"] });
+	const short = createPlayer({ seatIndex: 2, totalBet: 30, holeCards: ["KS", "KH"] });
+	const showdown = resolveShowdown([smallBlind, bigBlind, short], ["2C", "3D", "7H", "9C", "JS"]);
+
+	assertEquals(showdown.totalPot, 150);
+	assertEquals(showdown.totalPayoutByPlayer.get(smallBlind), 20);
+	assertEquals(showdown.totalPayoutByPlayer.get(bigBlind), 130);
+	assertEquals(showdown.winningPlayers.includes(smallBlind), false);
+});
+
 Deno.test("full engine flow runs out a preflop all-in", () => {
 	const button = createPlayer({ name: "Button", seatIndex: 0, chips: 1000 });
 	const shortStack = createPlayer({ name: "Short", seatIndex: 1, chips: 20 });
@@ -3201,7 +3275,6 @@ Deno.test("runEngineTournament plays a browserless mini tournament to champion",
 		handTypes: ["showdown", "game-over"],
 		events: [
 			"hand_start",
-			"decision",
 			"decision",
 			"hand_result",
 			"player_bust",

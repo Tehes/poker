@@ -3193,11 +3193,10 @@ export function chooseBotAction(player, gameState) {
 		communityCards,
 		handContext,
 	} = gameState;
-	// Determine amount needed to call the current bet
-	const needToCall = currentBet - player.roundBet;
+	const actionState = getPlayerActionState(gameState, player);
+	const needToCall = actionState.needToCall;
 	const needsToCall = needToCall > 0;
 	const minRaiseAmount = Math.max(lastRaise, needToCall + lastRaise);
-	const actionState = getPlayerActionState(gameState, player);
 
 	// Calculate pot odds to assess call viability
 	const potOdds = needToCall / (pot + needToCall);

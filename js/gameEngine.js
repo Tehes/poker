@@ -1,5 +1,5 @@
 import { Hand } from "./pokersolver.js";
-import { getEffectiveRaiseCap, getPlayerActionState } from "./shared/actionModel.js";
+import { getBetToMatch, getEffectiveRaiseCap, getPlayerActionState } from "./shared/actionModel.js";
 
 /* ==================================================================================================
 MODULE BOUNDARY: Pure Poker Engine
@@ -283,14 +283,14 @@ export function resolveShowdown(players, communityCards, chipUnit = 10) {
 
 	sidePots.forEach((sidePot, potIndex) => {
 		const eligiblePlayers = sidePot.eligible.filter((player) => !player.folded);
-		if (eligiblePlayers.length === 0) {
+		const isRefundOnly = sidePot.eligible.length === 1;
+		if (eligiblePlayers.length === 0 && !isRefundOnly) {
 			return;
 		}
 
-		if (eligiblePlayers.length === 1) {
-			const solePlayer = eligiblePlayers[0];
-			const isRefundOnly = sidePot.eligible.length === 1;
-			if (potIndex === 0) {
+		if (eligiblePlayers.length === 1 || isRefundOnly) {
+			const solePlayer = isRefundOnly ? sidePot.eligible[0] : eligiblePlayers[0];
+			if (potIndex === 0 && !isRefundOnly) {
 				mainPotWinners = [solePlayer];
 			}
 			transferQueue.push({ player: solePlayer, amount: sidePot.amount });
@@ -506,7 +506,7 @@ export function isAllInRunout(players, currentBet) {
 	if (actionablePlayers.length === 0) {
 		return true;
 	}
-	return actionablePlayers[0].roundBet === currentBet;
+	return actionablePlayers[0].roundBet >= getBetToMatch(players, currentBet);
 }
 
 function buildEmptyTurnActionResolution(action, amount, actionMeta = {}) {
@@ -2078,8 +2078,7 @@ export function getBettingRoundStartExit(gameState) {
 	}
 	if (
 		actionablePlayers.length === 1 &&
-		gameState.currentBet > 0 &&
-		actionablePlayers[0].roundBet < gameState.currentBet
+		actionablePlayers[0].roundBet < getBetToMatch(gameState.players, gameState.currentBet)
 	) {
 		return null;
 	}
@@ -2099,8 +2098,9 @@ export function hasPendingBettingRoundAction(gameState, cycles) {
 	if (gameState.currentBet === 0) {
 		return cycles < gameState.players.filter((player) => !player.folded && !player.allIn).length;
 	}
+	const betToMatch = getBetToMatch(gameState.players, gameState.currentBet);
 	return gameState.players.some((player) =>
-		!player.folded && !player.allIn && player.roundBet < gameState.currentBet
+		!player.folded && !player.allIn && player.roundBet < betToMatch
 	);
 }
 
@@ -2116,7 +2116,11 @@ function shouldMatchedPlayerActThisPass(gameState, cycles) {
 export function getNextBettingRoundStep(gameState, progressState) {
 	const activePlayers = gameState.players.filter((player) => !player.folded);
 	const actionablePlayers = activePlayers.filter((player) => !player.allIn);
-	if (activePlayers.length <= 1 || actionablePlayers.length === 0) {
+	const betToMatch = getBetToMatch(gameState.players, gameState.currentBet);
+	if (
+		activePlayers.length <= 1 || actionablePlayers.length === 0 ||
+		(actionablePlayers.length === 1 && actionablePlayers[0].roundBet >= betToMatch)
+	) {
 		return {
 			type: "advance",
 			reason: "nextPlayer",
@@ -2144,7 +2148,7 @@ export function getNextBettingRoundStep(gameState, progressState) {
 		};
 	}
 
-	if (player.roundBet >= gameState.currentBet) {
+	if (player.roundBet >= betToMatch) {
 		if (shouldMatchedPlayerActThisPass(gameState, nextProgressState.cycles)) {
 			return {
 				type: "act",

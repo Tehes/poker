@@ -10,8 +10,27 @@ MODULE BOUNDARY: Shared Action Model
 // state.
 // DO NOT PUT HERE: Action submission, DOM control handling, polling, or turn-flow ownership.
 
+export function getBetToMatch(players, currentBet) {
+	let actionableCount = 0;
+	let highestLiveBet = 0;
+	for (const player of players) {
+		if (player.folded) {
+			continue;
+		}
+		if (!player.allIn) {
+			actionableCount++;
+			if (actionableCount > 1) {
+				return currentBet;
+			}
+		}
+		highestLiveBet = Math.max(highestLiveBet, player.roundBet);
+	}
+	// Once nobody else can act, the nominal blind no longer requires an unmatched call.
+	return Math.min(currentBet, highestLiveBet);
+}
+
 export function getPlayerActionState(gameState, player) {
-	const needToCall = Math.max(0, gameState.currentBet - player.roundBet);
+	const needToCall = Math.max(0, getBetToMatch(gameState.players, gameState.currentBet) - player.roundBet);
 	const minAmount = gameState.currentPhaseIndex > 0 && gameState.currentBet === 0
 		? 0
 		: Math.min(needToCall, player.chips);

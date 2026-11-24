@@ -400,7 +400,7 @@ function getDecisionKey(handId, decisionId) {
 }
 
 function getDecisionCallPrice(gameState, player) {
-	const amount = Math.min(player.chips, Math.max(0, gameState.currentBet - player.roundBet));
+	const amount = Math.min(player.chips, getPlayerActionState(gameState, player).needToCall);
 	if (amount === 0) {
 		return null;
 	}
