@@ -29,6 +29,7 @@ import {
 	secureRandomInt,
 	shuffleArray,
 } from "./gameEngine.js";
+import { getActionRequestForAmount, getMaxSelectableAmount, getPlayerActionState } from "./shared/actionModel.js";
 
 function assertEquals(actual, expected, message = "") {
 	const actualJson = JSON.stringify(actual);
@@ -1540,6 +1541,65 @@ Deno.test("resolveTurnAction keeps an all-in below min-raise from incrementing r
 			currentBet: 150,
 		},
 	});
+});
+
+Deno.test("a short all-in after a turn bet leaves the bettor with a call or fold", () => {
+	const bettor = createPlayer({ chips: 1380 });
+	const caller = createPlayer({ seatIndex: 1, chips: 2030 });
+	const shortStack = createPlayer({ seatIndex: 2, chips: 890 });
+	const { gameState } = createGameState({
+		player: bettor,
+		opponents: [caller, shortStack],
+		currentPhaseIndex: 2,
+		lastRaise: 40,
+		pot: 2460,
+	});
+	applyActionForStatsTest(gameState, bettor, { action: "raise", amount: 670 });
+	applyActionForStatsTest(gameState, caller, { action: "call" });
+	applyActionForStatsTest(gameState, shortStack, { action: "allin" });
+	assertEquals([gameState.currentBet, gameState.lastRaise, gameState.raisesThisRound], [890, 670, 1]);
+
+	const actionState = getPlayerActionState(gameState, bettor);
+	assertEquals(actionState.raiseRightsOpen, false);
+	assertEquals(getMaxSelectableAmount(actionState), 220);
+	assertEquals(getActionRequestForAmount(710, actionState), { action: "call", amount: 220 });
+
+	const call = resolveTurnAction(gameState, bettor, { action: "call" });
+	assertEquals(resolveTurnAction(gameState, bettor, { action: "raise", amount: 890 }), call);
+	assertEquals(resolveTurnAction(gameState, bettor, { action: "allin" }), call);
+	assertEquals(resolveTurnAction(gameState, bettor, { action: "raise" }), null);
+
+	const shortCallState = structuredClone(gameState);
+	const shortCaller = shortCallState.players[0];
+	shortCaller.chips = 170;
+	const shortCall = resolveTurnAction(shortCallState, shortCaller, { action: "allin" });
+	assertEquals([shortCall.amount, shortCall.action, shortCall.actionMeta.aggressive], [170, "allin", false]);
+
+	applyActionForStatsTest(gameState, bettor, { action: "raise", amount: 890 });
+	const finalCall = applyActionForStatsTest(gameState, caller, { action: "call" });
+	assertEquals([bettor.chips, caller.chips, finalCall.amount, gameState.currentBet], [490, 1140, 220, 890]);
+});
+
+Deno.test("short all-ins reopen raising only after their combined increase reaches a full raise", () => {
+	const bettor = createPlayer({ chips: 1000 });
+	const firstShortStack = createPlayer({ seatIndex: 1, chips: 140 });
+	const secondShortStack = createPlayer({ seatIndex: 2, chips: 200 });
+	const unacted = createPlayer({ seatIndex: 3, chips: 1000 });
+	const { gameState } = createGameState({
+		player: bettor,
+		opponents: [firstShortStack, unacted, secondShortStack],
+	});
+	applyActionForStatsTest(gameState, bettor, { action: "raise", amount: 100 });
+	applyActionForStatsTest(gameState, firstShortStack, { action: "allin" });
+	assertEquals(getPlayerActionState(gameState, bettor).raiseRightsOpen, false);
+	assertEquals(resolveTurnAction(gameState, unacted, { action: "raise", amount: 240 }).action, "raise");
+	applyActionForStatsTest(gameState, unacted, { action: "call" });
+
+	applyActionForStatsTest(gameState, secondShortStack, { action: "allin" });
+	assertEquals([gameState.currentBet, gameState.lastRaise, gameState.raisesThisRound], [200, 100, 1]);
+	assertEquals(getPlayerActionState(gameState, unacted).raiseRightsOpen, false);
+	const raise = resolveTurnAction(gameState, bettor, { action: "raise", amount: 200 });
+	assertEquals([raise.action, raise.amount, raise.gameStatePatch.currentBet], ["raise", 200, 300]);
 });
 
 Deno.test("resolveTurnAction does not mutate inputs", () => {

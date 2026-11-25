@@ -18,6 +18,7 @@ import {
 	clampActionAmount,
 	getActionButtonLabel,
 	getActionRequestForAmount,
+	getMaxSelectableAmount,
 	isInvalidRaiseAmount,
 	normalizeActionAmount,
 } from "./actionModel.js";
@@ -151,7 +152,7 @@ export function createActionAmountControls({
 		}
 
 		amountSlider.min = currentActionState.minAmount;
-		amountSlider.max = currentActionState.maxAmount;
+		amountSlider.max = getMaxSelectableAmount(currentActionState);
 		amountSlider.step = actionStep;
 
 		if (resetAmount) {

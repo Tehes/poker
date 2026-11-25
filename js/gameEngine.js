@@ -1,5 +1,5 @@
 import { Hand } from "./pokersolver.js";
-import { getBetToMatch, getEffectiveRaiseCap, getPlayerActionState } from "./shared/actionModel.js";
+import { getBetToMatch, getEffectiveRaiseCap, getPlayerActionState, hasRaiseRights } from "./shared/actionModel.js";
 
 /* ==================================================================================================
 MODULE BOUNDARY: Pure Poker Engine
@@ -602,6 +602,9 @@ function buildRaiseActionResolution(gameState, player, actionRequest, currentAct
 	if (Number.isNaN(bet)) {
 		return null;
 	}
+	if (!currentActionState.raiseRightsOpen) {
+		return buildCallActionResolution(gameState, player, currentActionState);
+	}
 	if (bet >= player.chips && player.chips > 0) {
 		return buildAllInActionResolution(gameState, player, currentActionState);
 	}
@@ -675,7 +678,9 @@ export function resolveTurnAction(gameState, player, actionRequest) {
 		case "call":
 			return buildCallActionResolution(gameState, player, currentActionState);
 		case "allin":
-			return buildAllInActionResolution(gameState, player, currentActionState);
+			return currentActionState.raiseRightsOpen
+				? buildAllInActionResolution(gameState, player, currentActionState)
+				: buildCallActionResolution(gameState, player, currentActionState);
 		case "raise":
 			return buildRaiseActionResolution(gameState, player, actionRequest, currentActionState);
 		default:
@@ -757,7 +762,7 @@ export function getPlayerActionStatsContext(gameState, player) {
 	const handContext = gameState.handContext;
 	const spotState = player.spotState ?? createPlayerSpotState();
 	const canRaise = preflop && player.chips > needToCall &&
-		(!spotState.actedThisStreet || needToCall >= gameState.lastRaise) &&
+		hasRaiseRights(player, needToCall, gameState.lastRaise) &&
 		getEffectiveRaiseCap(gameState, player) > needToCall;
 	const raiseFirstInOpportunity = preflop && handContext?.preflopRaiseCount === 0 && canRaise &&
 		!spotState.actedThisStreet &&

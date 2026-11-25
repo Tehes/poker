@@ -3168,15 +3168,10 @@ export function chooseBotAction(player, gameState) {
 			activePlayerCount: active.length,
 		},
 	);
-	const hasCallableRaiseOpponent = hasOpponentWhoCanCallRaise(players, player, currentBet);
-	// A raise must create action for at least one opponent; otherwise the bot should only call/check.
-	const canRaise = raisesThisRound < MAX_RAISES_PER_ROUND &&
+	const canShove = actionState.raiseRightsOpen && raisesThisRound < MAX_RAISES_PER_ROUND &&
 		player.chips > needToCall &&
-		player.chips > blindLevel.big &&
-		hasCallableRaiseOpponent;
-	const canShove = raisesThisRound < MAX_RAISES_PER_ROUND &&
-		player.chips > needToCall &&
-		hasCallableRaiseOpponent;
+		hasOpponentWhoCanCallRaise(players, player, currentBet);
+	const canRaise = canShove && player.chips > blindLevel.big;
 	const liveOpponents = spotReadProfile.liveOpponents;
 	const activeSizingOpponents = liveOpponents.filter((currentPlayer) =>
 		!currentPlayer.allIn && currentPlayer.chips > 0

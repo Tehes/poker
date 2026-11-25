@@ -29,6 +29,10 @@ export function getBetToMatch(players, currentBet) {
 	return Math.min(currentBet, highestLiveBet);
 }
 
+export function hasRaiseRights(player, needToCall, lastRaise) {
+	return !player.spotState?.actedThisStreet || needToCall >= lastRaise;
+}
+
 export function getPlayerActionState(gameState, player) {
 	const needToCall = Math.max(0, getBetToMatch(gameState.players, gameState.currentBet) - player.roundBet);
 	const minAmount = gameState.currentPhaseIndex > 0 && gameState.currentBet === 0
@@ -44,6 +48,7 @@ export function getPlayerActionState(gameState, player) {
 		maxAmount,
 		minRaise,
 		maxRaiseAmount,
+		raiseRightsOpen: hasRaiseRights(player, needToCall, gameState.lastRaise),
 		canCheck: needToCall === 0,
 	};
 }
@@ -82,8 +87,12 @@ export function clampActionAmount(amount, actionState) {
 	const parsedAmount = Number.isNaN(amount) ? actionState.minAmount : amount;
 	return Math.max(
 		actionState.minAmount,
-		Math.min(parsedAmount, actionState.maxAmount),
+		Math.min(parsedAmount, getMaxSelectableAmount(actionState)),
 	);
+}
+
+export function getMaxSelectableAmount(actionState) {
+	return actionState.raiseRightsOpen === false ? actionState.minAmount : actionState.maxAmount;
 }
 
 export function isInvalidRaiseAmount(amount, actionState) {
