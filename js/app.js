@@ -131,6 +131,7 @@ const profileButton = document.querySelector("#profile-button");
 const logButton = document.querySelector("#log-button");
 const fastForwardButton = document.querySelector("#fast-forward-button");
 const potEl = document.getElementById("pot");
+const tableBlinds = document.getElementById("table-blinds");
 const communityCardSlots = document.querySelectorAll(
 	"#community-cards .cardslot",
 );
@@ -259,6 +260,7 @@ const FAST_FORWARD_CHIP_TRANSFER_DURATION = 160;
 const FAST_FORWARD_CHIP_TRANSFER_STEPS = 8;
 const DEFAULT_CHIP_TRANSFER_STEPS = 30;
 const WINNER_REACTION_DURATION = 2000;
+const BLIND_INCREASE_DURATION = 4000;
 const NEW_ROUND_COUNTDOWN_SECONDS = 20;
 const NEW_ROUND_COUNTDOWN_INTERVAL = 1000;
 const SAVED_GAME_SCHEMA_VERSION = 1;
@@ -294,6 +296,7 @@ let queuedStateSyncDelay = null;
 let stateSyncInFlight = false;
 let runoutPhaseTimer = null;
 let chipTransferFinishTimer = null;
+let blindIncreaseTimer = null;
 let newRoundCountdownTimer = null;
 let newRoundCountdownSeconds = 0;
 let summaryButtonsVisible = false;
@@ -889,6 +892,7 @@ function renderRestoredGameState() {
 	});
 
 	renderPot();
+	renderBlinds();
 	renderTableCommunityCards(communityCardSlots, gameState.communityCards);
 	renderPlayerChipStacks();
 	updateFastForwardButton();
@@ -1462,6 +1466,12 @@ Render And Overlay Helpers
 
 function renderPot() {
 	potEl.textContent = gameState.pot;
+}
+
+function renderBlinds() {
+	if (tableBlinds) {
+		tableBlinds.textContent = `${gameState.smallBlind}/${gameState.bigBlind}`;
+	}
 }
 
 function setCommunityCards(cardCodes) {
@@ -2672,6 +2682,14 @@ function updateBlindLevelForCurrentHand() {
 		enqueueNotification(
 			`Blinds are now ${gameState.smallBlind}/${gameState.bigBlind}.`,
 		);
+		if (tableBlinds) {
+			tableBlinds.classList.add("blind-increase");
+			clearTimeout(blindIncreaseTimer);
+			blindIncreaseTimer = setTimeout(() => {
+				tableBlinds.classList.remove("blind-increase");
+				blindIncreaseTimer = null;
+			}, BLIND_INCREASE_DURATION);
+		}
 	}
 }
 
@@ -2685,6 +2703,7 @@ function setBlinds() {
 		renderPlayerSeat(player);
 	});
 	renderPot();
+	renderBlinds();
 
 	enqueueNotification(
 		`${blindPlan.smallBlindPlayer.name} posted small blind of ${blindPlan.smallBlindAmount}.`,
@@ -3682,6 +3701,7 @@ function init() {
 	);
 	humanTurnController.init();
 	renderPot();
+	renderBlinds();
 	renderTableCommunityCards(communityCardSlots, gameState.communityCards);
 
 	for (const rotateIcon of rotateIcons) {
@@ -3735,7 +3755,7 @@ poker.init();
  * - AUTO_RELOAD_ON_SW_UPDATE: reload page once after an update
  -------------------------------------------------------------------------------------------------- */
 const USE_SERVICE_WORKER = true;
-const SERVICE_WORKER_VERSION = "2026-11-24-v2";
+const SERVICE_WORKER_VERSION = "2026-11-25-v8";
 const AUTO_RELOAD_ON_SW_UPDATE = true;
 
 initServiceWorker({

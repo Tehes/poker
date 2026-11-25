@@ -437,7 +437,7 @@ TABLE-MIDDLE
     width: 96vmin;
 }
 
-.infos div {
+.infos :where(#pot, #table-blinds, #notification) {
     padding: 5px 20px;
     background-color: var(--blue);
     box-shadow: inset var(--shadow-pressed);
@@ -446,6 +446,23 @@ TABLE-MIDDLE
     min-width: 85px;
     text-align: center;
     flex: 0 0 auto;
+}
+
+.infos:has(#table-blinds) {
+    flex-wrap: wrap;
+    row-gap: 0.25rem;
+    width: min(96vw, max(96vmin, 24rem));
+}
+
+#pot-and-blinds {
+    display: flex;
+    gap: 2vmin;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+#pot-and-blinds > div {
+    padding-inline: 0.75rem;
 }
 
 #notification {
@@ -458,6 +475,20 @@ TABLE-MIDDLE
     overflow-x: hidden;
     white-space: nowrap;
     transition: background-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.infos:has(#table-blinds) #notification {
+    flex-basis: 9rem;
+}
+
+@media (max-width: 600px) {
+    #table-blinds:not(.blind-increase) {
+        display: none;
+    }
+
+    .infos:has(#table-blinds) #notification {
+        flex-basis: 0;
+    }
 }
 
 #notification:has(span) {
