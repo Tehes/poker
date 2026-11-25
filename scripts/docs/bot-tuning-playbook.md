@@ -2,7 +2,9 @@
 
 ## Zweck
 
-Dieses Dokument führt größere Bot-Tuning-Iterationen. Es ist kein zweiter North Star. Die strategischen Leitplanken stehen in `js/bot.js`; dieses Playbook soll helfen, bei einer Iteration schnell die richtige Diagnose, den kleinsten sinnvollen Hebel und eine belastbare Validierung zu waehlen.
+Dieses Dokument führt größere Bot-Tuning-Iterationen. Die strategischen Leitplanken stehen für den
+Standard-Bot in `js/bot.js` und für die Gegnerprofile in `scripts/matchupPool.js`. Das Playbook hilft
+bei der Wahl der Diagnose, des kleinsten sinnvollen Hebels und einer belastbaren Validierung.
 
 Lies vor jeder Bot-Tuning-Iteration auch `scripts/docs/bot-tuning-learnings.md`. Dort stehen akzeptierte und verworfene Routen, die nicht ohne neue Evidenz wiederholt werden sollen.
 
@@ -24,7 +26,9 @@ Der Bot bleibt heuristisch. Equity, MDF und Batch-Metriken sind Diagnose- und Ka
 
 ### Normaler Tuning-Zielort
 
-- `js/bot.js`
+- Standard-Bot in `js/bot.js`
+- Gegnerprofile in `scripts/matchupPreflop.js` und `scripts/matchupPostflop.js`
+  ([Profil-Tuning](#profile-prüfen-und-weiterentwickeln))
 
 ### Erlaubt, wenn es zur Iteration gehört
 
@@ -42,6 +46,8 @@ Der Bot bleibt heuristisch. Equity, MDF und Batch-Metriken sind Diagnose- und Ka
 - UI-/Copy-Änderungen
 
 ## Iteration in Kurzform
+
+Für den Standard-Bot gilt dieser Ablauf.
 
 1. `scripts/docs/bot-tuning-learnings.md` lesen.
 2. Self-Play- und Mixed-Baseline für dieselbe Bot-Version festlegen.
@@ -474,8 +480,10 @@ entfällt dieser Schritt.
 
 ## Validierung strategischer Entscheidungen
 
-Der Core-Batch misst den gespielten Action-Mix, Turnierverlauf und Guardrails im Self-Play. Er
-gehört zu jeder Änderung am Spielverhalten. Ein Replay vergleicht die Entscheidungen im
+Der Core-Batch misst den gespielten Action-Mix, Turnierverlauf und Guardrails im Self-Play des
+Standard-Bots. Er gehört zu Änderungen am Spielverhalten des Standard-Bots, einschließlich Änderungen
+an gemeinsam genutzter Logik. Für das Spielverhalten eines Gegnerprofils verwende den
+[Profil-Vergleich](#profile-prüfen-und-weiterentwickeln). Ein Replay vergleicht die Entscheidungen im
 Zielcluster. Ein Matchup-Experiment prüft, ob der Vorteil einer Strategie gegen relevante
 Gegnerprofile trägt. Beide Verfahren gelten für Preflop-Ranges, Calls, Bluffs, Value-Bets,
 Sizing, Line-Fortsetzungen und Push/Fold.
@@ -484,8 +492,8 @@ Sizing, Line-Fortsetzungen und Push/Fold.
 - Verwende ein Matchup-Experiment, wenn unterschiedliche Gegnerreaktionen den Nutzen der
   Änderung oder ihre Nebenwirkungen bestimmen können.
 - Prüfe einen klar abgegrenzten Regelfall oder eine harte Guardrail mit einem reproduzierbaren
-  Szenario und dem Core-Batch. Betrifft der Fix auch normale Strategie-Spots, prüfe diesen
-  Effekt mit den entsprechenden Vergleichen.
+  Szenario und dem passenden Batch für die geänderte Strategie. Betrifft der Fix auch normale
+  Strategie-Spots, prüfe diesen Effekt mit den entsprechenden Vergleichen.
 
 Wähle die Kennzahl nach dem Ziel. Bei Value-Sizing kann der Chipwert bis Handende im Zielspot
 entscheidend sein. Bei Push/Fold im Winner-take-all zählt für die Turnierfreigabe die Siegquote.
@@ -520,8 +528,8 @@ den Ausgangsspot direkt fest.
 
 Die Freigabe erfolgt stufenweise. Die Diagnose lokalisiert den Effekt. Die Validierung prüft ihn
 gegen Ziel- und Kontrollprofile. Der Holdout prüft die eingefrorene Änderung. Der Rollout prüft
-den Tisch in der geplanten Besetzung. Erst danach zählt das Ergebnis zusammen mit dem Core-Batch
-und seinen Guardrails als Freigabenachweis. Technische Unterbrechungen und Pot-Abweichungen
+den Tisch in der geplanten Besetzung. Zum Freigabenachweis gehören die jeweils passenden
+Guardrails und beim Standard-Bot der Core-Batch. Technische Unterbrechungen und Pot-Abweichungen
 blockieren das betroffene Experiment. Der Report weist die betroffenen Paare aus.
 [Konfiguration, Kennzahlen und Status](./matchup-experiments.md)
 
@@ -560,11 +568,38 @@ Hände früher auf und raist starke Hände selektiv. [Postflop-Regeln im Code](.
 
 #### Profile prüfen und weiterentwickeln
 
-Lege den Zielspot fest und prüfe im Batch, wie oft das Profil Gelegenheit für die relevante
-Line hat und wie oft es sie spielt. Untersuche Preflop Position, Stacktiefe und vorausgehende
-Aktion. Untersuche Postflop Street, Initiative, Handklasse und Betgröße. Nutze VPIP, PFR und
-Aktionsraten je Street als Übersicht. Für den Abgleich mit menschlichen Frequenzen brauchst du
-Handverläufe aus vergleichbaren Spots.
+Die gemeinsame Tuning-Regel und die beabsichtigten Spielstile stehen bei den
+[Profilstrategien](../matchupPool.js). Der Erhalt des Spielstils hat Vorrang vor besseren
+Turnierergebnissen.
+
+1. **Zielspot und Kriterien festlegen.** Beschreibe den vermuteten Fehler, die erwartete Verbesserung
+   und die betroffenen Stilmerkmale. Lege vor dem Test die nötige Stichprobe und die tolerierte
+   Abweichung für jeden relevanten Stilvergleich fest.
+2. **Die Entscheidung im Replay prüfen.** Vergleiche die bisherige Aktion und die Alternative aus
+   denselben Ausgangssituationen. Zähle auch, wie oft der Spot im Turnier vorkommt.
+3. **Einen Hebel im Profil ändern und gepaart testen.** Vergleiche die bisherige und die neue Version
+   des Profils mit `engine:experiment` auf demselben rotierenden Testsitz. Beide Arme verwenden
+   dieselben eingefrorenen Gegnerstrategien und Seeds. Prüfe den Zielspot und Nebenwirkungen im
+   Turnier. Bei Push/Fold im Winner-take-all gehört die Turniersiegquote zur Freigabe.
+4. **Den Stil in vergleichbaren Spots prüfen.** Verwende dieselben Hände, Positionen, effektiven
+   Stacks und Setzfolgen. Vergleiche mit einer festen, akzeptierten Stilreferenz des Profils und
+   den relevanten anderen Profilen. Nutze feste Testszenarien oder Replays mit identischen Seeds.
+   Die Stilreferenz bleibt über mehrere Tuning-Pässe fest, damit sich schleichende Angleichungen erkennen lassen.
+5. **Vor der Freigabe den Befund bestätigen.** Prüfe die eingefrorene Änderung mit frischen Seeds
+   in einem weiteren relevanten Gegnerfeld und am Tisch in der geplanten Besetzung. Die Freigabe
+   setzt die vereinbarte Verbesserung und bestandene Stilprüfungen voraus.
+
+| Profil | Typische Stilprüfung |
+| --- | --- |
+| TAG | Prüfe, ob die Open-Range von früher zu später Position breiter wird. Prüfe Value-Bets, selektive Semi-Bluffs und die geringere Aggression gegenüber dem LAG in vergleichbaren Postflop-Spots. |
+| LAG | Prüfe gegenüber dem TAG breitere Opens, häufigere leichte 3-Bets gegen späte Opens und häufiger fortgesetzte Semi-Bluffs mit geeigneten Draws. |
+| Calling Station | Prüfe bei gleichem Preis und gleicher Handklasse häufigere Calls mit mittleren Paaren und Draws als beim TAG. Prüfe separat, ob Raises überwiegend mit klaren Value-Händen erfolgen. |
+| Nit | Prüfe am vollen Tisch engere frühe Opens als beim TAG und eine selektive Defense gegen Druck. Prüfe Shortstack-Steals und Calls in den Spots, in denen der Nit gezielt breiter spielen darf. |
+
+Dokumentiere je Feld die Zahl der Gelegenheiten und die Häufigkeit der Aktion. Untersuche Preflop
+Position, Stacktiefe und vorausgehende Aktion. Untersuche Postflop Street, Initiative, Handklasse
+und Betgröße. Nutze VPIP, PFR und Aktionsraten je Street als Übersicht. Für den Abgleich mit
+menschlichen Frequenzen brauchst du Handverläufe aus vergleichbaren Spots.
 
 Prüfe seltene Lines mit festen Testszenarien. Nutze Replays, um verschiedene Entscheidungen
 am selben Ausgangsspot zu vergleichen. Prüfe bei Bedarf mit einer absichtlich geschwächten
@@ -606,7 +641,7 @@ der Entscheidung. Teile die Summe durch die Anzahl der Spots. Bereits investiert
 zum Pot. Wenn sich die Häufigkeit der Spots ändert, zusätzlich die Netto-BB je gespielter Hand
 prüfen. Beim Angriff auch den Wert der zusätzlichen Bluffs gegenüber dem Check aus dem Replay
 berichten. MDF hilft bei der Diagnose der Frequenzen. Für die Freigabe zählen der vereinbarte
-Chipwert-Vergleich und die bestehenden Core-Guardrails.
+Chipwert-Vergleich und die jeweils zutreffenden Guardrails.
 
 ## Hard Guardrails
 
@@ -634,16 +669,18 @@ Akzeptiere einen Kandidaten nur, wenn:
 
 - die Zielursache plausibel verbessert wurde,
 - die Zielmetrik gegen die Vergleichsbasis besser ist,
-- Core Health stabil bleibt,
+- Core Health bei Änderungen am Standard-Bot stabil bleibt,
 - Guardrails sauber bleiben,
 - Equity/MDF/Backtrace nicht widersprechen,
 - die für den strategischen Eingriff vereinbarten Replay- und Matchup-Kriterien erfüllt sind,
+- bei Gegnerprofilen die vereinbarten Stilprüfungen bestanden sind,
 - keine Verbesserung durch Trash-Calls, Spew oder Problemverschiebung entsteht,
 - der Bot als Ganzes plausibler spielt.
 
-Ein Core-Batch validiert Core Health, aber noch keine Range Acceptance. Wenn ein dokumentierter
+Der Core-Batch prüft die Stabilität des Standard-Bots im Self-Play. Die strategische Freigabe
+setzt zusätzlich die für den Kandidaten vereinbarten Nachweise voraus. Wenn ein dokumentierter
 Equity-Trigger vorliegt, darf der Status `accepted` erst nach der erforderlichen Equity-Prüfung
-vergeben werden. Ohne Equity-Trigger reichen Core Acceptance und die übrigen passenden Nachweise.
+vergeben werden.
 
 Verwerfe oder überarbeite, wenn:
 

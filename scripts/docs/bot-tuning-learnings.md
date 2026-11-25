@@ -2,6 +2,15 @@
 
 Purpose: This document records accepted and rejected bot-tuning routes so future iterations do not repeat already falsified hypotheses without new evidence.
 
+## 2026-11-25: Nit Flop Value and Short Big Blind Calls
+
+### Accepted
+
+- Raised flop value betting from 30% to 55% with an overpair or top pair and a jack-or-better kicker after the sole opponent checks. The spot requires an unpaired, non-monotone flop and room to bet. Replays at the existing size gained `+0.65` BB per eligible check in the pressure field and `+0.59` in the passive field.
+- Added Big Blind calls with `A6o–AJo` against a single late effective shove at three- and four-handed tables, up to 13 effective BB and 40% pot odds, with the action closing. Replays gained `+0.82` BB per spot in the reference field and `+1.65` in the passive field. The reference interval included zero.
+- Independent holdout on seed `94102629` used 1,500 paired tournaments per field across four fields. The baseline `d6604cd` won 173 of 6,000, the flop candidate won 176, and the Big Blind candidate won 184. The Big Blind comparison gained `+0.18` percentage points in win rate with a 95% interval of `[+0.05, +0.33]`. The interval for the flop candidate included zero.
+- Combined holdout on seed `51878591` saw wins rise from 32 to 35 in the mixed field and from 25 to 28 in the pressure field, each over 1,000 pairs. Chip value per hand improved in both fields. In the style check, early opens at five- and six-handed tables matched the prior Nit and stayed tighter than the TAG across all three tested stack depths.
+
 ## 2026-11-25: River Defense After Checked-Through Flop and Turn
 
 ### No Qualified Candidate

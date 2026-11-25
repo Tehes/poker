@@ -236,11 +236,15 @@ export function chooseMatchupPostflopAction(name, player, state, line = {}) {
 			? (dangerous ? 0.22 : 0) + (multiway ? 0.17 : 0) + (weakKicker && river ? 0.22 : 0)
 			: 0;
 		const checkedToBonus = tier >= 3 && checkedTo ? 0.06 : 0;
+		const nitFlopValue = name === "nit" && street === 0 && tier === 3 && opponents.length === 1 &&
+			checkedTo && foldEquity && !info.paired && !dangerous &&
+			player.chips > state.bigBlind && raiseCap >= state.bigBlind &&
+			(rankOf(player.holeCards[0]) === rankOf(player.holeCards[1]) ||
+				player.holeCards.some((card) => rankOf(card) >= 11 && rankOf(card) !== info.highest));
+		const valueFrequency = profile.value[tier] + checkedToBonus - valueDiscount - leadDiscount +
+			(nitFlopValue ? 0.25 : 0);
 		const mayLeadValue = tier >= 3 || (!multiway && checkedTo && !dangerous);
-		if (
-			mayLeadValue && profile.value[tier] > 0 &&
-			Math.random() < profile.value[tier] + checkedToBonus - valueDiscount - leadDiscount
-		) {
+		if (mayLeadValue && profile.value[tier] > 0 && Math.random() < valueFrequency) {
 			return bet();
 		}
 

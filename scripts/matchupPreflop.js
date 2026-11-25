@@ -148,6 +148,7 @@ const profiles = {
 		shortHandedSteal: range("22+ A2s+ A8o+ KQs"),
 		shortHeadsUp: range("22+ A2s+ A5o+ KTs+ KQo QJs"),
 		shortCall: range("99+ AJs+ AQo+"),
+		shortBlindCall: range("A6o A7o A8o A9o ATo AJo"),
 		headsUpCall: range("77+ ATs+ AJo+ KQs"),
 		callOdds: 0.39,
 		shortCallOdds: 0.45,
@@ -240,7 +241,11 @@ export function chooseMatchupPreflopAction(name, player, state) {
 		const shortRange = players.length === 2 ? profile.headsUpCall : lateOpen ? profile.shortCall : profile.stackOff;
 		const cheapHeadsUp = players.length === 2 && position === "bigBlind" && odds <= 0.34 &&
 			(profile.bigBlindFlat.has(hand) || profile.cheapBlindFlat.has(hand));
-		const shortCall = versusShort && odds <= profile.shortCallOdds && (shortRange.has(hand) || cheapHeadsUp);
+		const pricedBlindCall = name === "nit" && preflopRaiseCount === 1 && lateOpen &&
+			players.length > 2 && players.length <= 4 && position === "bigBlind" && odds <= 0.40 &&
+			profile.shortBlindCall.has(hand) && players.filter((seat) => !seat.folded).length === 2;
+		const shortCall = versusShort && odds <= profile.shortCallOdds &&
+			(shortRange.has(hand) || cheapHeadsUp || pricedBlindCall);
 		return { action: stackOff.has(hand) || shortCall ? "call" : "fold" };
 	}
 

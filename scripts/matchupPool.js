@@ -3,6 +3,21 @@ import { getCurrentPhase } from "../js/gameEngine.js";
 import { chooseMatchupPostflopAction } from "./matchupPostflop.js";
 import { chooseMatchupPreflopAction } from "./matchupPreflop.js";
 
+// Accept a tuning change only if it fits the profile's intended play style.
+// Preserving that style takes precedence over improving tournament results.
+//
+// Nit: Enter pots selectively and get paid with strong hands.
+// Keep early-position opening ranges tighter than the TAG's at full tables.
+// Take clear steals and priced calls when short-handed blinds make waiting costly.
+//
+// TAG: Build pots with strong ranges and positional advantage.
+// Use selective semi-bluffs and widen late-position opens.
+//
+// LAG: Win chips by putting wider ranges under pressure.
+// Choose light reraises and barrels where position, draws, or runouts support them.
+//
+// Calling Station: Win chips by calling wider when the price is favorable.
+// Catch more bluffs with medium-strength hands and bet strong hands for value.
 export const opponentStrategies = Object.fromEntries(
 	["tag", "lag", "callingStation", "nit"].map((name) => [
 		name,

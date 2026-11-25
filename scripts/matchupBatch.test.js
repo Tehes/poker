@@ -220,6 +220,29 @@ Deno.test("the Nit takes selected short-handed opening spots while staying selec
 	assertEquals(opponentStrategies.nit(deeper.players[0], deeper).action, "fold");
 });
 
+Deno.test("the Nit calls selected short late shoves when the big blind closes the action", () => {
+	const spots = [
+		[80, true, ["As", "9h"], "call"],
+		[80, true, ["As", "5h"], "fold"],
+		[80, true, ["As", "9s"], "fold"],
+		[160, true, ["As", "9h"], "fold"],
+		[80, false, ["As", "9h"], "fold"],
+	];
+	for (const [shove, smallBlindFolds, hand, expected] of spots) {
+		const state = createPreflopSpot(3, 160);
+		const [button, smallBlind, bigBlind] = state.players;
+		button.chips = shove;
+		playAction(state, button, "allin");
+		if (smallBlindFolds) {
+			playAction(state, smallBlind, "fold");
+		} else {
+			playAction(state, smallBlind, "call");
+		}
+		bigBlind.holeCards = hand;
+		assertEquals(opponentStrategies.nit(bigBlind, state).action, expected);
+	}
+});
+
 function createPostflopSpot(board, cards, playerCount = 2) {
 	const state = createEngineBatchGameState({ playerCount, startingChips: 2000 });
 	const [player, opponent] = state.players;
@@ -234,6 +257,23 @@ function createPostflopSpot(board, cards, playerCount = 2) {
 function chooseProfile(name, player, state, randomValue = 0.5, line) {
 	return chooseSeededAction(opponentStrategies[name], player, state, () => randomValue, line);
 }
+
+Deno.test("the Nit value bets strong flop pairs more after the sole opponent checks", () => {
+	const { state, player, opponent } = createPostflopSpot(["Jh", "7d", "2c"], ["As", "Jc"]);
+	assertEquals(chooseProfile("nit", player, state, 0.4).action, "check");
+	playAction(state, opponent, "check");
+	assertEquals(chooseProfile("nit", player, state, 0.4), { action: "raise", amount: 50 });
+	assertEquals(chooseProfile("nit", player, state, 0.6).action, "check");
+
+	player.holeCards = ["Qs", "Qd"];
+	assertEquals(chooseProfile("nit", player, state, 0.4), { action: "raise", amount: 50 });
+	player.holeCards = ["Ts", "Jc"];
+	assertEquals(chooseProfile("nit", player, state, 0.4).action, "check");
+
+	player.holeCards = ["As", "Jc"];
+	state.communityCards = ["Jh", "7d", "7c"];
+	assertEquals(chooseProfile("nit", player, state, 0.4).action, "check");
+});
 
 Deno.test("postflop history records the last resolved aggressor on each preceding street", () => {
 	const state = createEngineBatchGameState({ playerCount: 2, startingChips: 2000 });
