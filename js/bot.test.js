@@ -1,4 +1,5 @@
 import {
+	analyzeDrawPotential,
 	buildAggregateRead,
 	chooseBotAction,
 	getOpponentRead,
@@ -17,6 +18,48 @@ function assertEquals(actual, expected, message = "") {
 		);
 	}
 }
+
+Deno.test("straight draws count the low ace and the Broadway gutshot correctly", () => {
+	assertEquals(analyzeDrawPotential(["AS", "2D"], ["3C", "4H", "KS"]), {
+		flushDraw: false,
+		straightDraw: true,
+		outs: 4,
+	});
+	assertEquals(analyzeDrawPotential(["AS", "KD"], ["QC", "JH", "3S"]), {
+		flushDraw: false,
+		straightDraw: true,
+		outs: 4,
+	});
+});
+
+Deno.test("combo draws count cards that complete both draws only once", () => {
+	assertEquals(analyzeDrawPotential(["8H", "7H"], ["6H", "9C", "2H"]), {
+		flushDraw: true,
+		straightDraw: true,
+		outs: 15,
+	});
+});
+
+Deno.test("ace and six both complete an open-ended straight draw on the turn", () => {
+	assertEquals(analyzeDrawPotential(["2C", "3D"], ["4C", "5H", "KS", "JH"]), {
+		flushDraw: false,
+		straightDraw: true,
+		outs: 8,
+	});
+});
+
+Deno.test("made straights suppress straight outs while preserving flush outs", () => {
+	assertEquals(analyzeDrawPotential(["AS", "2D"], ["3C", "4H", "5S", "KD"]), {
+		flushDraw: false,
+		straightDraw: false,
+		outs: 0,
+	});
+	assertEquals(analyzeDrawPotential(["8H", "7H"], ["6H", "9C", "5S", "2H"]), {
+		flushDraw: true,
+		straightDraw: false,
+		outs: 9,
+	});
+});
 
 Deno.test("normalizeBotActionRequest returns null for missing decisions", () => {
 	assertEquals(normalizeBotActionRequest(null), null);

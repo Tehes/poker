@@ -62,6 +62,7 @@ MODULE BOUNDARY: Bot Decision Engine
 // A change is good only if it creates more plausible poker without breaking the core guardrails.
 
 import { Card, Hand } from "./pokersolver.js";
+import { INITIAL_DECK } from "./gameEngine.js";
 import { getPlayerActionState } from "./shared/actionModel.js";
 
 /* ===========================
@@ -740,69 +741,37 @@ function analyzeHandContext(hole, board) {
 	return { isTopPair, isOverPair, pairClass, pairedBoardPrivatePairTier };
 }
 
-// Detect draw potential after the flop. Straight draws should not trigger when
-// a made straight already exists.
-function analyzeDrawPotential(hole, board) {
-	const allCards = [...hole, ...board];
-
-	const draws = {
-		flushDraw: false,
-		straightDraw: false,
-		outs: 0,
-	};
-
-	// Count suits for flush draws
-	const suits = {};
-	allCards.forEach((c) => {
-		const suit = c[1];
-		suits[suit] = (suits[suit] || 0) + 1;
-	});
-	const suitCounts = Object.values(suits);
-	const hasFlush = suitCounts.some((c) => c >= 5);
-	if (!hasFlush) {
-		draws.flushDraw = suitCounts.some((c) => c === 4);
+export function analyzeDrawPotential(hole, board) {
+	const knownCards = new Set([...hole, ...board]);
+	const ranks = new Set();
+	const suitCounts = {};
+	for (const [rank, suit] of knownCards) {
+		ranks.add(rank);
+		suitCounts[suit] = (suitCounts[suit] ?? 0) + 1;
 	}
-	const flushOuts = draws.flushDraw ? 9 : 0;
+	const flushSuit = Object.keys(suitCounts).find((suit) => suitCounts[suit] === 4);
 
-	// Straight draw check
-	const ranks = allCards.map((c) => new Card(c).rank);
-	if (ranks.includes(14)) ranks.push(1); // allow A-2-3-4-5
-	const unique = [...new Set(ranks)].sort((a, b) => a - b);
-
-	const straights = [];
-	for (let start = 1; start <= 10; start++) {
-		straights.push([start, start + 1, start + 2, start + 3, start + 4]);
-	}
-	let straightOuts = 0;
-	let hasStraight = false;
+	const straightRankOrder = `A${RANK_ORDER}`;
 	const missingRanks = new Set();
-	for (const seq of straights) {
-		const missing = seq.filter((r) => !unique.includes(r));
+	for (let start = 0; start <= straightRankOrder.length - 5; start++) {
+		const window = straightRankOrder.slice(start, start + 5);
+		const missing = [...window].filter((rank) => !ranks.has(rank));
 		if (missing.length === 0) {
-			// Already a straight; no draw
-			hasStraight = true;
+			missingRanks.clear();
 			break;
 		}
 		if (missing.length === 1) {
-			draws.straightDraw = true;
-			const missingRank = missing[0];
-			missingRanks.add(missingRank);
-			if (missingRank === seq[0] || missingRank === seq[4]) {
-				straightOuts = 8;
-			}
+			missingRanks.add(missing[0]);
 		}
 	}
 
-	if (hasStraight) {
-		draws.straightDraw = false;
-		straightOuts = 0;
-	} else if (draws.straightDraw && straightOuts === 0) {
-		straightOuts = missingRanks.size >= 2 ? 8 : 4;
-	}
-
-	draws.outs = flushOuts + straightOuts;
-
-	return draws;
+	const flushDraw = flushSuit !== undefined;
+	const straightDraw = missingRanks.size > 0;
+	const outs = flushDraw || straightDraw
+		? INITIAL_DECK.filter((card) => !knownCards.has(card) && (card[1] === flushSuit || missingRanks.has(card[0])))
+			.length
+		: 0;
+	return { flushDraw, straightDraw, outs };
 }
 
 // Evaluate board "texture" based on connectedness, suitedness and pairing.
