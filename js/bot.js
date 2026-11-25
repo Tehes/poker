@@ -134,6 +134,8 @@ const MIN_HANDS_FOR_WEIGHT = 10;
 // Controls how quickly stat influence grows as more hands are played
 const WEIGHT_GROWTH = 10;
 const READ_STATS_KEYS = ["hands", "vpip", "pfr", "folds", "aggressiveActs", "calls", "showdowns", "showdownsWon"];
+const MIN_SITUATIONAL_READ_OPPORTUNITIES = 10;
+const BIG_BLIND_STEAL_FOLD_BASELINE = 0.60;
 // Detect opponents that shove frequently
 const ALLIN_HAND_PREFLOP = 0.85;
 const ALLIN_HAND_POSTFLOP = 0.38;
@@ -454,6 +456,18 @@ export function getOpponentRead(opponent) {
 			? 0
 			: 1 - Math.exp(-(stats.hands - MIN_HANDS_FOR_WEIGHT) / WEIGHT_GROWTH),
 	};
+}
+
+function getSituationalReadDelta(opponent, outcomeKey, opportunityKey, baseline) {
+	const opportunities = (opponent.stats[opportunityKey] ?? 0) + (opponent.readHistory?.[opportunityKey] ?? 0);
+	if (opportunities <= MIN_SITUATIONAL_READ_OPPORTUNITIES) {
+		return 0;
+	}
+	const outcomes = (opponent.stats[outcomeKey] ?? 0) + (opponent.readHistory?.[outcomeKey] ?? 0);
+	const priorSamples = MIN_SITUATIONAL_READ_OPPORTUNITIES;
+	const rate = (outcomes + baseline * priorSamples) / (opportunities + priorSamples);
+	const weight = 1 - Math.exp(-(opportunities - MIN_SITUATIONAL_READ_OPPORTUNITIES) / priorSamples);
+	return (rate - baseline) * weight;
 }
 
 export function buildAggregateRead(opponents) {
@@ -4527,7 +4541,7 @@ export function chooseBotAction(player, gameState) {
 			activePlayerCount: active.length,
 			mRatio,
 		});
-		const openRaiseThreshold = getUnopenedPreflopRaiseThreshold({
+		let openRaiseThreshold = getUnopenedPreflopRaiseThreshold({
 			baseRaiseThreshold: player.smallBlind && players.length === 2 ? raiseThreshold - 1.35 : raiseThreshold,
 			player,
 			spotContext,
@@ -4535,6 +4549,15 @@ export function chooseBotAction(player, gameState) {
 			preflopSeatClass,
 			activePlayerCount: active.length,
 		});
+		if (players.length === 2 && player.smallBlind && canRaise && liveOpponents[0]?.bigBlind) {
+			const foldDelta = getSituationalReadDelta(
+				liveOpponents[0],
+				"foldsBigBlindToSteal",
+				"bigBlindStealOpportunities",
+				BIG_BLIND_STEAL_FOLD_BASELINE,
+			);
+			openRaiseThreshold -= Math.max(-0.25, foldDelta * 0.5);
+		}
 		const openLimpThreshold = getUnopenedPreflopLimpThreshold({
 			player,
 			spotContext,
