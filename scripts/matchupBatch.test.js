@@ -194,6 +194,32 @@ Deno.test("short stacks change opening ranges, sizing and calls against a shove"
 	assertEquals(opponentStrategies.callingStation(deepHeadsUp.players[1], deepHeadsUp).action, "fold");
 });
 
+Deno.test("the Nit takes selected short-handed opening spots while staying selective", () => {
+	const threeHanded = createPreflopSpot(3, 260);
+	const [button, smallBlind] = threeHanded.players;
+	button.holeCards = ["4s", "4h"];
+	assertEquals(opponentStrategies.nit(button, threeHanded), { action: "allin", amount: 260 });
+	playAction(threeHanded, button, "call");
+	smallBlind.holeCards = ["As", "5s"];
+	assertEquals(opponentStrategies.nit(smallBlind, threeHanded).action, "fold");
+
+	const fourHanded = createPreflopSpot(4, 160);
+	playAction(fourHanded, fourHanded.players[3], "fold");
+	playAction(fourHanded, fourHanded.players[0], "fold");
+	fourHanded.players[1].holeCards = ["As", "8h"];
+	assertEquals(opponentStrategies.nit(fourHanded.players[1], fourHanded), { action: "allin", amount: 150 });
+
+	const headsUp = createPreflopSpot(2, 160);
+	headsUp.players[0].holeCards = ["As", "5h"];
+	assertEquals(opponentStrategies.nit(headsUp.players[0], headsUp), { action: "allin", amount: 150 });
+	headsUp.players[0].holeCards = ["Ks", "7h"];
+	assertEquals(opponentStrategies.nit(headsUp.players[0], headsUp).action, "fold");
+
+	const deeper = createPreflopSpot(3, 280);
+	deeper.players[0].holeCards = button.holeCards;
+	assertEquals(opponentStrategies.nit(deeper.players[0], deeper).action, "fold");
+});
+
 function createPostflopSpot(board, cards, playerCount = 2) {
 	const state = createEngineBatchGameState({ playerCount, startingChips: 2000 });
 	const [player, opponent] = state.players;

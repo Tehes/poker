@@ -145,7 +145,8 @@ const profiles = {
 		stackOff: range("KK+ AKs"),
 		shortOpen: range("99+ AQs+ AKo"),
 		shortSteal: range("77+ ATs+ AJo+ KQs"),
-		shortHeadsUp: range("55+ A8s+ ATo+ KTs+ KQo QJs"),
+		shortHandedSteal: range("22+ A2s+ A8o+ KQs"),
+		shortHeadsUp: range("22+ A2s+ A5o+ KTs+ KQo QJs"),
 		shortCall: range("99+ AJs+ AQo+"),
 		headsUpCall: range("77+ ATs+ AJo+ KQs"),
 		callOdds: 0.39,
@@ -198,7 +199,11 @@ export function chooseMatchupPreflopAction(name, player, state) {
 			return { action: "check" };
 		}
 		const open = profile.open[openPosition];
-		const shortRange = headsUp ? profile.shortHeadsUp : isLate(position) ? profile.shortSteal : profile.shortOpen;
+		const shortSteal = name === "nit" && players.length <= 4 && limpers === 0 &&
+				(position === "button" || position === "smallBlind")
+			? profile.shortHandedSteal
+			: profile.shortSteal;
+		const shortRange = headsUp ? profile.shortHeadsUp : isLate(position) ? shortSteal : profile.shortOpen;
 		const raiseHand = limpers > 0
 			? profile.isolate.has(hand) && (position === "bigBlind" || open.has(hand))
 			: position !== "bigBlind" && open.has(hand);
