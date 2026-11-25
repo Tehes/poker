@@ -6,6 +6,7 @@ import {
 	normalizeBotActionRequest,
 	setBotDecisionSink,
 } from "./bot.js";
+import { runEngineHand } from "./gameEngine.js";
 import { createStatsSnapshot } from "./playerProfile.js";
 import { createEngineBatchGameState } from "../scripts/engineBatch.js";
 
@@ -202,4 +203,90 @@ Deno.test("folded-player history cannot change a decision against the remaining 
 	assertEquals(warm, cold);
 	assertEquals(warm.opponentReads.some((read) => read.seatIndex === 4), false);
 	assertEquals(warm.opponentReads.every((read) => read.weight === 0), true);
+});
+
+function captureBotDecision(state, player) {
+	let diagnostic;
+	setBotDecisionSink((decision) => diagnostic = decision);
+	try {
+		chooseBotAction(player, state);
+		return diagnostic;
+	} finally {
+		setBotDecisionSink(null);
+	}
+}
+
+Deno.test("preflop seats stay fixed and pending opponents can wrap past the big blind", () => {
+	const state = createEngineBatchGameState({ playerCount: 6, startingChips: 2000 });
+	let opening;
+	let blindResponse;
+	let secondDecision;
+	runEngineHand(state, (game, player) => {
+		if (game.currentPhaseIndex !== 0) {
+			return { action: "check" };
+		}
+		const position = player.spotState.position;
+		if (position === "middle" && game.handContext.preflopRaiseCount === 0) {
+			opening = captureBotDecision(game, player);
+			return { action: "call" };
+		}
+		if (position === "cutoff") {
+			return { action: "raise", amount: 60 };
+		}
+		if (position === "bigBlind") {
+			blindResponse = captureBotDecision(game, player);
+			return { action: "call" };
+		}
+		if (position === "middle") {
+			// Exercise the same decision with a save that predates position metadata.
+			player.spotState.position = null;
+			secondDecision = captureBotDecision(game, player);
+		}
+		return { action: "fold" };
+	}, { handId: 1 });
+
+	assertEquals([opening.preflopSeat, opening.preflopTableSize, opening.activePlayers], ["middle", 6, 5]);
+	assertEquals(opening.preflopPlayersBehind, 4);
+	assertEquals([blindResponse.preflopAggressorSeat, blindResponse.preflopPlayersBehind], ["cutoff", 1]);
+	assertEquals([secondDecision.preflopSeat, secondDecision.activePlayers], ["middle", 3]);
+	assertEquals([secondDecision.preflopAggressorSeat, secondDecision.preflopPlayersBehind], ["cutoff", 0]);
+});
+
+Deno.test("blind-versus-blind three-bet sizing follows flop position at both table sizes", () => {
+	for (
+		const [playerCount, raiser, inPosition, raiseTo] of [
+			[2, "smallBlind", false, 210],
+			[2, "bigBlind", true, 180],
+			[6, "smallBlind", true, 180],
+			[6, "bigBlind", false, 210],
+		]
+	) {
+		const state = createEngineBatchGameState({ playerCount, startingChips: 2000 });
+		let response;
+		runEngineHand(state, (game, player) => {
+			if (!player.smallBlind && !player.bigBlind) {
+				return { action: "fold" };
+			}
+			if (game.handContext.preflopRaiseCount === 0) {
+				return player.spotState.position === raiser
+					? { action: "raise", amount: 60 - player.roundBet }
+					: { action: "call" };
+			}
+			const dealtCards = player.holeCards;
+			player.holeCards = ["AS", "AH"];
+			try {
+				const decision = captureBotDecision(game, player);
+				response = [
+					decision.activePlayers,
+					decision.preflopInPositionToAggressor,
+					decision.sizingKind,
+					decision.amount + player.roundBet,
+				];
+			} finally {
+				player.holeCards = dealtCards;
+			}
+			return { action: "fold" };
+		}, { handId: 1 });
+		assertEquals(response, [2, inPosition, "preflop-3bet", raiseTo], `${playerCount} dealt, ${raiser} raises`);
+	}
 });

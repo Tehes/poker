@@ -1141,7 +1141,7 @@ export function getBlindSeatIndexes(playerCount) {
 	};
 }
 
-function getHandPosition(index, playerCount) {
+export function getHandPosition(index, playerCount) {
 	const { smallBlindIndex, bigBlindIndex } = getBlindSeatIndexes(playerCount);
 	if (index === smallBlindIndex) {
 		return "smallBlind";

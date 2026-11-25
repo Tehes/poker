@@ -62,7 +62,7 @@ MODULE BOUNDARY: Bot Decision Engine
 // A change is good only if it creates more plausible poker without breaking the core guardrails.
 
 import { Card, Hand } from "./pokersolver.js";
-import { INITIAL_DECK } from "./gameEngine.js";
+import { getHandPosition, INITIAL_DECK } from "./gameEngine.js";
 import { getPlayerActionState } from "./shared/actionModel.js";
 
 /* ===========================
@@ -303,55 +303,8 @@ function getSolvedHandScore(handObj) {
 }
 
 function getPreflopSeatClass(players, player) {
-	const active = players.filter((currentPlayer) => !currentPlayer.folded);
-	if (player.smallBlind) {
-		return "smallBlind";
-	}
-	if (player.bigBlind) {
-		return "bigBlind";
-	}
-	if (player.dealer) {
-		return "button";
-	}
-
-	const activeIndex = active.indexOf(player);
-	const betweenBlindAndButton = Math.max(0, active.length - 3);
-	if (betweenBlindAndButton <= 1) {
-		return "cutoff";
-	}
-
-	const relativeIndex = Math.max(0, activeIndex - 3);
-	if (betweenBlindAndButton === 2) {
-		return relativeIndex === 0 ? "early" : "cutoff";
-	}
-	return relativeIndex === 0 ? "early" : relativeIndex === betweenBlindAndButton - 1 ? "cutoff" : "middle";
-}
-
-function getPreflopActionOrderSeatClass(players, player) {
-	if (player.smallBlind) {
-		return "smallBlind";
-	}
-	if (player.bigBlind) {
-		return "bigBlind";
-	}
-	if (player.dealer) {
-		return "button";
-	}
-
-	const actionOrder = getPreflopActionOrder(players);
-	const playerIndex = actionOrder.indexOf(player);
-	if (playerIndex === -1) {
-		return "unknown";
-	}
-
-	const nonBlindSlots = Math.max(0, actionOrder.length - 3);
-	if (nonBlindSlots <= 1) {
-		return "cutoff";
-	}
-	if (nonBlindSlots === 2) {
-		return playerIndex === 0 ? "early" : "cutoff";
-	}
-	return playerIndex === 0 ? "early" : playerIndex === nonBlindSlots - 1 ? "cutoff" : "middle";
+	// Older saves may lack position metadata, but still store the full hand in dealer order.
+	return player.spotState?.position ?? getHandPosition(players.indexOf(player), players.length);
 }
 
 function getPreflopLogSeatTag(seatClass, activePlayers) {
@@ -379,10 +332,6 @@ function getActionOrder(players, currentPhaseIndex) {
 	return startIdx === -1 ? active : active.slice(startIdx).concat(active.slice(0, startIdx));
 }
 
-function getPreflopActionOrder(players) {
-	return getActionOrder(players, 0);
-}
-
 function getLastPreflopAggressor(players, handContext) {
 	const aggressorSeatIndex = handContext?.preflopAggressorSeatIndex;
 	if (aggressorSeatIndex === null || aggressorSeatIndex === undefined) {
@@ -392,61 +341,13 @@ function getLastPreflopAggressor(players, handContext) {
 		null;
 }
 
-function isIndexInCircularForwardSegment(startIndex, endExclusiveIndex, targetIndex, length) {
-	let index = (startIndex + 1 + length) % length;
-	while (index !== endExclusiveIndex) {
-		if (index === targetIndex) {
-			return true;
-		}
-		index = (index + 1) % length;
-	}
-	return false;
-}
-
-function isPreflopInPositionToAggressor(players, player, handContext) {
-	const actionOrder = getPreflopActionOrder(players);
-	if (actionOrder.length <= 1) {
-		return false;
-	}
-
-	const aggressor = getLastPreflopAggressor(players, handContext);
-	if (!aggressor) {
-		return false;
-	}
-
-	const aggressorIndex = actionOrder.indexOf(aggressor);
-	const playerIndex = actionOrder.indexOf(player);
-	if (
-		aggressorIndex === -1 ||
-		playerIndex === -1 ||
-		playerIndex === aggressorIndex
-	) {
-		return false;
-	}
-
-	const blindBoundaryIndex = actionOrder.findIndex((currentPlayer) =>
-		currentPlayer.smallBlind || currentPlayer.bigBlind
-	);
-	if (blindBoundaryIndex === -1) {
-		return playerIndex > aggressorIndex;
-	}
-
-	// In the preflop action ring, players between the aggressor and the blind-closing segment
-	// retain position to the aggression. The blind segment itself and wrapped early positions do not.
-	return isIndexInCircularForwardSegment(
-		aggressorIndex,
-		blindBoundaryIndex,
-		playerIndex,
-		actionOrder.length,
-	);
-}
-
 function buildLegacyLogSpotContext({
 	players,
 	player,
 	currentPhaseIndex,
 	preflop,
 	facingRaise,
+	currentBet,
 	raisesThisRound,
 	handContext,
 }) {
@@ -454,6 +355,15 @@ function buildLegacyLogSpotContext({
 	const actionOrder = getActionOrder(players, currentPhaseIndex);
 	const actionableOrder = actionOrder.filter((currentPlayer) => !currentPlayer.allIn);
 	const actingSlotIndex = actionableOrder.indexOf(player);
+	let preflopPlayersBehind = 0;
+	if (preflop) {
+		// After a raise, earlier seats can still owe a response when action wraps.
+		preflopPlayersBehind = facingRaise
+			? actionableOrder.filter((opponent) =>
+				opponent !== player && (!opponent.spotState?.actedThisStreet || opponent.roundBet < currentBet)
+			).length
+			: actionableOrder.length - actingSlotIndex - 1;
+	}
 	const voluntaryOpponents = liveOpponents.filter((currentPlayer) => {
 		const spotState = currentPlayer.spotState || {};
 		return preflop ? spotState.enteredPreflop : spotState.voluntaryThisStreet || spotState.enteredPreflop;
@@ -476,6 +386,7 @@ function buildLegacyLogSpotContext({
 		facingAggression: facingRaise,
 		actingSlotIndex: actingSlotIndex === -1 ? 0 : actingSlotIndex,
 		actingSlotCount: Math.max(1, actionableOrder.length),
+		preflopPlayersBehind,
 		voluntaryOpponentCount: voluntaryOpponents.length,
 	};
 }
@@ -1521,11 +1432,12 @@ function getContextualPreflopOpenLimpScore(
 
 function getContextualPreflopFlatScore(
 	profile,
-	{ player, spotContext, potOdds, positionFactor, preflopRaiseCount },
+	{ player, spotContext, potOdds, positionFactor, preflopRaiseCount, inPositionToPreflopAggressor },
 ) {
 	const context = spotContext || {};
 	const blindDefense = Boolean(player?.bigBlind || player?.smallBlind);
-	const outOfPosition = context.actingSlotIndex < context.actingSlotCount - 1;
+	const hasActionBehind = context.preflopPlayersBehind > 0;
+	const outOfPositionToAggressor = inPositionToPreflopAggressor === false;
 	const passiveReentry = Boolean(
 		player?.spotState?.enteredPreflop && !player.spotState.aggressiveThisStreet,
 	);
@@ -1540,7 +1452,7 @@ function getContextualPreflopFlatScore(
 
 	if (targetFamily) {
 		if (context.unopened && !context.headsUp) {
-			flatScore -= outOfPosition ? 1.35 : 1.10;
+			flatScore -= hasActionBehind ? 1.35 : 1.10;
 		}
 		if (context.unopened && context.headsUp) {
 			flatScore -= blindDefense ? 0.70 : 0.45;
@@ -1557,7 +1469,7 @@ function getContextualPreflopFlatScore(
 		if (!context.headsUp && context.facingAggression) {
 			flatScore -= 0.35;
 		}
-		if (outOfPosition && !blindDefense) {
+		if ((hasActionBehind || outOfPositionToAggressor) && !blindDefense) {
 			flatScore -= 0.30;
 		}
 		if (context.multiRaised || preflopRaiseCount > 1) {
@@ -1610,7 +1522,7 @@ function getContextualPreflopDefendScore(
 ) {
 	const context = spotContext || {};
 	const blindDefense = Boolean(player?.bigBlind || player?.smallBlind);
-	const outOfPosition = context.actingSlotIndex < context.actingSlotCount - 1;
+	const hasActionBehind = context.preflopPlayersBehind > 0;
 	const passiveReentry = Boolean(
 		player?.spotState?.enteredPreflop && !player.spotState.aggressiveThisStreet,
 	);
@@ -1628,7 +1540,7 @@ function getContextualPreflopDefendScore(
 	if (positionFactor >= 0.75) {
 		defendScore += 0.15;
 	}
-	if (!outOfPosition) {
+	if (!hasActionBehind) {
 		defendScore += 0.15;
 	} else if (!blindDefense && !context.headsUp) {
 		defendScore -= 0.15;
@@ -1882,10 +1794,8 @@ function getUnopenedPreflopRangePolicy({
 		preflopSeatClass,
 		activePlayerCount,
 	});
-	const earlyFullTable = !spotContext.headsUp && activePlayerCount >= 6 &&
-		positionFactor < 0.45;
-	const earlyFiveHanded = !spotContext.headsUp && activePlayerCount === 5 &&
-		positionFactor < 0.60;
+	const fivePlayersBehind = spotContext.preflopPlayersBehind >= 5;
+	const fourPlayersBehind = spotContext.preflopPlayersBehind === 4;
 	const lateFourHandedCutoff = !spotContext.headsUp &&
 		activePlayerCount === 4 &&
 		preflopSeatClass === "cutoff";
@@ -1903,9 +1813,9 @@ function getUnopenedPreflopRangePolicy({
 	if (lateFourHandedCutoff) {
 		openness += 0.20;
 	}
-	if (earlyFullTable) {
+	if (fivePlayersBehind) {
 		openness -= 0.13;
-	} else if (earlyFiveHanded) {
+	} else if (fourPlayersBehind) {
 		openness -= 0.08;
 	}
 	if (mRatio <= M_RATIO_ORANGE_MAX) {
@@ -1914,9 +1824,9 @@ function getUnopenedPreflopRangePolicy({
 	openness = clampUnit(openness);
 
 	limpPermission = 0.40 + openness * 0.55;
-	if (earlyFullTable) {
+	if (fivePlayersBehind) {
 		limpPermission -= 0.18;
-	} else if (earlyFiveHanded) {
+	} else if (fourPlayersBehind) {
 		limpPermission -= 0.10;
 	}
 	if (lateFourHandedCutoff) {
@@ -1931,9 +1841,9 @@ function getUnopenedPreflopRangePolicy({
 	limpPermission = clampUnit(limpPermission);
 
 	realizationDemand = 0.02 + (1 - openness) * 0.08;
-	if (earlyFullTable) {
+	if (fivePlayersBehind) {
 		realizationDemand += 0.07;
-	} else if (earlyFiveHanded) {
+	} else if (fourPlayersBehind) {
 		realizationDemand += 0.04;
 	}
 	if (lateFourHandedCutoff) {
@@ -1948,9 +1858,9 @@ function getUnopenedPreflopRangePolicy({
 	realizationDemand = Math.max(0, Math.min(0.22, realizationDemand));
 
 	dominationDemand = 0.03 + (1 - openness) * 0.07;
-	if (earlyFullTable) {
+	if (fivePlayersBehind) {
 		dominationDemand += 0.03;
-	} else if (earlyFiveHanded) {
+	} else if (fourPlayersBehind) {
 		dominationDemand += 0.02;
 	}
 	if (lateFourHandedCutoff) {
@@ -1985,8 +1895,8 @@ function getUnopenedPreflopRangePolicy({
 		realizationDemand,
 		dominationDemand,
 		impliedOddsCredit,
-		earlyFullTable,
-		earlyFiveHanded,
+		fivePlayersBehind,
+		fourPlayersBehind,
 		lateFourHandedCutoff,
 		protectedActionSpot,
 	};
@@ -2001,9 +1911,9 @@ function getOpenLimpRequiredMargin({
 
 	if (preflopScores.smallPair) {
 		let margin = rangePolicy.realizationDemand + 0.14 - rangePolicy.impliedOddsCredit;
-		if (rangePolicy.earlyFullTable && preflopSeatClass === "early") {
+		if (rangePolicy.fivePlayersBehind && preflopSeatClass === "early") {
 			margin += 0.08;
-		} else if (rangePolicy.earlyFiveHanded && preflopSeatClass === "early") {
+		} else if (rangePolicy.fourPlayersBehind && preflopSeatClass === "early") {
 			margin += 0.04;
 		}
 		if (rangePolicy.lateFourHandedCutoff) {
@@ -2055,7 +1965,7 @@ function getPremiumBroadwayOpenLimpMixFrequency({
 		Math.max(0, openLimpMargin - requiredMargin) * 1.20,
 	);
 	let frequency = 0.15 + rangePolicy.limpPermission * 0.65 + marginBonus;
-	if (rangePolicy.earlyFullTable) {
+	if (rangePolicy.fivePlayersBehind) {
 		frequency -= 0.10;
 	}
 	if (rangePolicy.lateFourHandedCutoff) {
@@ -3208,6 +3118,7 @@ export function chooseBotAction(player, gameState) {
 		currentPhaseIndex,
 		preflop,
 		facingRaise,
+		currentBet,
 		raisesThisRound,
 		handContext,
 	});
@@ -3220,11 +3131,13 @@ export function chooseBotAction(player, gameState) {
 	const tableOpponents = players.filter((currentPlayer) => currentPlayer !== player && !currentPlayer.folded);
 	const tableReadProfile = buildAggregateRead(tableOpponents);
 	const preflopSeatClass = preflop ? getPreflopSeatClass(players, player) : null;
-	const preflopActionOrderSeatClass = preflop ? getPreflopActionOrderSeatClass(players, player) : null;
 	const preflopAggressor = preflop ? getLastPreflopAggressor(players, handContext) : null;
-	const preflopAggressorSeatClass = preflopAggressor
-		? getPreflopSeatClass(players, preflopAggressor)
-		: null;
+	const preflopAggressorSeatClass = preflopAggressor ? getPreflopSeatClass(players, preflopAggressor) : null;
+	let inPositionToPreflopAggressor = null;
+	if (preflopAggressor && preflopAggressor !== player) {
+		const flopOrder = getActionOrder(players, 1);
+		inPositionToPreflopAggressor = flopOrder.indexOf(player) > flopOrder.indexOf(preflopAggressor);
+	}
 	const preflopScores = getLegacyPreflopLogScores(
 		player.holeCards[0],
 		player.holeCards[1],
@@ -3237,6 +3150,7 @@ export function chooseBotAction(player, gameState) {
 			preflopRaiseCount,
 			preflopSeatClass,
 			preflopAggressorSeatClass,
+			inPositionToPreflopAggressor,
 			activePlayerCount: active.length,
 		},
 	);
@@ -3795,7 +3709,7 @@ export function chooseBotAction(player, gameState) {
 		const coldCallerCount = countMatchedPreflopCallers(
 			lastPreflopAggressor ? [lastPreflopAggressor.seatIndex] : [],
 		);
-		const baseMultiplier = isPreflopInPositionToAggressor(players, player, handContext) ? 3.0 : 3.5;
+		const baseMultiplier = inPositionToPreflopAggressor ? 3.0 : 3.5;
 		return currentBet * (baseMultiplier + coldCallerCount * 0.5);
 	}
 
@@ -3858,7 +3772,7 @@ export function chooseBotAction(player, gameState) {
 		const coldCallerCount = countMatchedPreflopCallers(
 			lastPreflopAggressor ? [lastPreflopAggressor.seatIndex] : [],
 		);
-		const baseMultiplier = isPreflopInPositionToAggressor(players, player, handContext) ? 3.0 : 3.5;
+		const baseMultiplier = inPositionToPreflopAggressor ? 3.0 : 3.5;
 		return `${(baseMultiplier + coldCallerCount * 0.5).toFixed(1)}x`;
 	}
 
@@ -5409,8 +5323,10 @@ export function chooseBotAction(player, gameState) {
 		premium: premiumHand,
 		preflopSeat,
 		preflopSeatContext,
-		preflopActionOrderSeat: preflopActionOrderSeatClass ?? "-",
-		preflopSeatMismatch: preflop && preflopSeatClass !== preflopActionOrderSeatClass,
+		preflopTableSize: preflop ? players.length : null,
+		preflopPlayersBehind: preflop ? spotContext.preflopPlayersBehind : null,
+		preflopAggressorSeat: preflopAggressorSeatClass ?? "-",
+		preflopInPositionToAggressor: inPositionToPreflopAggressor,
 		preflopProtectedActionSpot,
 		preflopEarlyMultiway,
 		decisionBranch,
