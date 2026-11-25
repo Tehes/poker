@@ -321,6 +321,21 @@ Nebenwirkung seltener gespielt werden. Der Vergleich muss mindestens enthalten:
 - guter und schlechter Preis
 - HU/MW sowie IP/OOP, soweit für die Route relevant
 
+Prüfe bei jedem Tightening, welche Calls und Raises im Zielspot und in späteren Lines
+wegfallen. Ziel ist, die Botmetriken zu verbessern und die Range gegen plausible Bluffs
+menschlicher Gegner verteidigungsfähig zu halten.
+
+- Kann das Tightening die Defense in einer für Gegner erkennbaren Line schwächen, validiere
+  gegen ein aggressives Kontrollprofil, das in dieser Line ausreichend oft Druck macht.
+- Fallen dort plausible Bluffcatcher oder starke Hände aus einer Check-Range, prüfe zusätzlich
+  eine erhöhte Bluff-Frequenz bei gleicher Value-Range und Betgröße.
+- Lege den tolerierbaren Rückgang im Chipwert des Kontrollfelds vor dem Lauf fest
+  ([Vergleich aufsetzen](#vergleich-aufsetzen)).
+
+Nutze MDF, um mögliche Lücken zu finden. Bewerte die Fortsetzungen anhand von Preis,
+Betfolge und Chipwert gegen die getesteten Value- und Bluff-Ranges. Kommen zu wenige
+verteidigungsfähige Hände an, prüfe das Arrival und die Zusammensetzung der Check-Range.
+
 Core Health und eine verbesserte Zielmetrik reichen nicht als Freigabe. Der Kandidat ist nicht
 qualifiziert, wenn geschützte priced/playable Hände deutlich austrocknen, ohne dass Equity,
 Backtrace und Range Composition den Verlust stützen.
