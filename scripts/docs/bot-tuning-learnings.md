@@ -2,6 +2,15 @@
 
 Purpose: This document records accepted and rejected bot-tuning routes so future iterations do not repeat already falsified hypotheses without new evidence.
 
+## 2026-11-25: River Defense After Checked-Through Flop and Turn
+
+### No Qualified Candidate
+
+- The heads-up out-of-position check range contained little strong value. In the 1,000-tournament Core baseline, only one of 24 folded weak private pairs or underpairs was ahead against the actual river bet at 30% to 55% pot. One tied.
+- At half pot, relief of up to `0.04` on the call barrier gained `0.03–0.04` BB per 100 opponent hands in two LAG replays with 25% of eligible extra bluff bets enabled. Relief of `0.06` reached the `+0.05` target but exceeded the `0.025` BB/100 loss tolerance against regular LAG bets in both samples. The replays held value bet selection and sizing fixed.
+- At the existing 30% check frequency, replacing value bets with checks for Two Pair+ was worth an estimated `+0.015` and `+0.007` BB per 100 opponent hands in the two LAG samples. The audit stopped at the candidate gate.
+- Reopen if new evidence identifies a repeatable subset of profitable calls against plausible betting ranges, or a value-check mix that earns materially more than leading. Baselines and replays are in `tmp/river-defense-playbook-20261125/`.
+
 ## 2026-11-24: More Small Blind Opens at a Two-Player Table
 
 ### Accepted After Reviewing the Guardrail Hit
