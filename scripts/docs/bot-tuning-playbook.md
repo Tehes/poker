@@ -1,175 +1,178 @@
-﻿# Bot Tuning Playbook
+# Bot Tuning Playbook
 
-## Zweck
+## Purpose
 
-Dieses Dokument führt größere Bot-Tuning-Iterationen. Die strategischen Leitplanken stehen für den
-Standard-Bot in `js/bot.js` und für die Gegnerprofile in `scripts/matchupPool.js`. Das Playbook hilft
-bei der Wahl der Diagnose, des kleinsten sinnvollen Hebels und einer belastbaren Validierung.
+This document guides larger bot tuning iterations. The strategic guardrails apply to the standard bot
+in `js/bot.js` and the opponent profiles in `scripts/matchupPool.js`. The playbook helps choose the
+appropriate diagnosis, the smallest useful lever and reliable validation.
 
-Lies vor jeder Bot-Tuning-Iteration auch `scripts/docs/bot-tuning-learnings.md`. Dort stehen akzeptierte und verworfene Routen, die nicht ohne neue Evidenz wiederholt werden sollen.
+Before every bot tuning iteration, also read `scripts/docs/bot-tuning-learnings.md`. It records accepted
+and rejected routes that must not be repeated without new evidence.
 
-## Grundsatz
+The [Bot Tuning Backlog](./bot-tuning-backlog.md) collects provisionally prioritized open hypotheses
+for future investigation. It is not a binding task list.
 
-Tune nicht die Metrik. Tune die Ursache.
+## Principle
 
-Der Bot bleibt heuristisch. Equity, MDF und Batch-Metriken sind Diagnose- und Kalibrierungsschichten, keine Runtime-Entscheidungsmodelle.
+Do not tune the metric. Tune the cause.
 
-### Direkt verboten
+The bot remains heuristic. Equity, MDF and batch metrics are diagnosis and calibration layers, not
+runtime decision models.
 
-- `equityPct` oder `equityRank` in `js/bot.js` als Entscheidungskriterium nutzen.
-- Logs, Analyse oder Metrikdefinitionen ändern, nur damit ein Kandidat besser aussieht.
-- MDF oder Overfold durch offensichtliche Trash-Calls reparieren.
-- Globale Tightness oder globale Loose-ness ohne Root-Cause-Beleg einführen.
-- Mehrere unabhängige Leaks in einem Pass lösen.
+### Strictly Prohibited
 
-## Arbeitsbereich
+- Use `equityPct` or `equityRank` as a decision criterion in `js/bot.js`.
+- Change logs, analysis or metric definitions just to make a candidate look better.
+- Fix MDF or overfolding with obvious trash calls.
+- Introduce global tightness or looseness without root-cause evidence.
+- Solve multiple independent leaks in one pass.
 
-### Normaler Tuning-Zielort
+## Scope
 
-- Standard-Bot in `js/bot.js`
-- Gegnerprofile in `scripts/matchupPreflop.js` und `scripts/matchupPostflop.js`
-  ([Profil-Tuning](#profile-prüfen-und-weiterentwickeln))
+### Normal Tuning Targets
 
-### Erlaubt, wenn es zur Iteration gehört
+- Standard bot in `js/bot.js`
+- Opponent profiles in `scripts/matchupPreflop.js` and `scripts/matchupPostflop.js`
+  ([profile tuning](#reviewing-and-developing-profiles))
 
-- temporäre Analysen und Reports in `tmp/`
-- Batch-Ausgaben in `tmp/`
-- `js/version.js` und Service-Worker-Version, wenn ein akzeptierter Kandidat live gehen soll
-- Analyse-Erweiterungen nur mit ausdrücklicher Zustimmung und nur minimal
+### Allowed When Part of the Iteration
 
-### Nicht ohne ausdrückliche Zustimmung
+- Temporary analyses and reports in `tmp/`
+- Batch output in `tmp/`
+- `js/version.js` and service worker version when an accepted candidate is to go live
+- Analysis extensions only with explicit approval and only minimally
 
-- Engine-Logik
-- Testlogik
-- Logging-Formate
-- bestehende Metrikdefinitionen
-- UI-/Copy-Änderungen
+### Not Without Explicit Approval
 
-## Iteration in Kurzform
+- Engine logic
+- Test logic
+- Logging formats
+- Existing metric definitions
+- UI or copy changes
 
-Für den Standard-Bot gilt dieser Ablauf.
+## Iteration at a Glance
 
-1. `scripts/docs/bot-tuning-learnings.md` lesen.
-2. Self-Play- und Mixed-Baseline für dieselbe Bot-Version festlegen.
-3. In beiden Baselines eigenständig nach auffälligen Mustern suchen und sie über die Gegnerfelder vergleichen.
-4. Ursache lokalisieren: Arrival, Spot Decision, Line, Sizing, Range, Stackdruck oder Artefakt.
-5. Plausible Alternativen im Replay prüfen. Bei Bedarf Equity-/MDF-/Backtrace-Diagnose nutzen.
-6. Eine konkrete Hypothese formulieren.
-7. Einen fokussierten Hebel in `js/bot.js` ändern.
-8. Staged Validation laufen lassen.
-9. Akzeptieren, verwerfen oder Diagnose aktualisieren.
+For the standard bot, follow this process:
 
-## Goal-Loop-Vertrag
+1. Read `scripts/docs/bot-tuning-learnings.md`.
+2. Establish self-play and mixed baselines for the same bot version.
+3. Independently search both baselines for noteworthy patterns and compare them across opponent fields.
+4. Locate the cause: arrival, spot decision, line, sizing, range, stack pressure or artifact.
+5. Examine plausible alternatives in replay. Use equity, MDF or backtrace diagnosis as needed.
+6. Formulate a specific hypothesis.
+7. Change one focused lever in `js/bot.js`.
+8. Run staged validation.
+9. Accept, reject or update the diagnosis.
 
-Ein Goal bearbeitet genau ein Leak und eine Root-Cause. Es darf nicht verlangen, um jeden Preis
-eine Verbesserung zu produzieren, und beginnt keine angrenzende Tuning-Frage.
+## Goal Loop Contract
 
-- Diagnose und Counterfactual zählen noch nicht als Kandidaten-Pass.
-- Es gibt höchstens zwei Kandidaten-Pässe mit jeweils einer Hypothese und einem fokussierten Hebel.
-- Ein dritter Pass ist nur erlaubt, wenn neue Evidenz die Hypothese materiell verändert und der
-  Kandidat vor der nächsten Code-Änderung neu qualifiziert wird.
-- Ohne neue Evidenz endet das Goal nach zwei verworfenen Kandidaten.
-- Ein fehlgeschlagener 1000er Acceptance-Batch beendet das Goal; danach folgt kein weiterer Pass.
-- Derselbe Batch wird ohne materielle Code- oder Hypothesenänderung nicht wiederholt.
-- Nach jedem Pass wird nur kurz Hypothese, Änderung, Evidenz und nächstes Gate festgehalten.
+A goal addresses exactly one leak and one root cause. It must not demand an improvement at any cost or
+start an adjacent tuning question.
 
-Terminalzustände sind `accepted` oder `no-qualified-candidate`. Ein echter externer Blocker darf das
-Goal blockieren; schwierige oder uneindeutige Tuning-Ergebnisse sind kein Blocker.
+- Diagnosis and counterfactuals do not count as candidate passes.
+- At most two candidate passes are allowed, each with one hypothesis and one focused lever.
+- A third pass is allowed only if new evidence materially changes the hypothesis and the candidate is
+  requalified before the next code change.
+- Without new evidence the goal ends after two rejected candidates.
+- A failed 1000-run acceptance batch ends the goal; no further pass follows.
+- Do not repeat the same batch without a material change to code or hypothesis.
+- After each pass, briefly record only the hypothesis, change, evidence and next gate.
+
+Terminal states are `accepted` or `no-qualified-candidate`. A genuine external blocker may block the
+goal; difficult or inconclusive tuning results are not a blocker.
 
 ## Baseline Policy
 
-Nutze die letzte akzeptierte 1000er Baseline, solange sie noch zur Bot-Version und zur Fragestellung passt.
+Use the last accepted 1000-run baseline as long as it still fits the bot version and question.
 
-Erzeuge eine frische 1000er Core-Baseline, wenn:
+Generate a fresh 1000-run core baseline when:
 
-- eine neue größere Tuning-Kampagne beginnt,
-- der letzte akzeptierte Stand unklar ist,
-- seit der letzten Baseline mehrere Bot-Änderungen passiert sind,
-- die Vergleichsfrage ohne frische Baseline nicht fair beantwortet werden kann.
+- A new major tuning campaign begins.
+- The last accepted state is unclear.
+- Several bot changes have occurred since the last baseline.
+- The comparison cannot be answered fairly without a fresh baseline.
 
-### Core-Baseline
+### Core Baseline
 
 ```bash
 deno task engine:batch:1000
 ```
 
-Notiere immer:
+Always record:
 
-- Pfad
-- Run Count
-- Hand Count
-- Decision Coverage
-- Showdown / Uncontested
-- Preflop Fold / Call / Raise
-- Postflop Fold / Call / Raise
-- SB-HU und BTN-3 Open/Defend-Dynamik
+- Path
+- Run count
+- Hand count
+- Decision coverage
+- Showdown / uncontested
+- Preflop fold / call / raise
+- Postflop fold / call / raise
+- SB-HU and BTN-3 open/defend dynamics
 - Guardrails
-- Early-Bust- und Tournament-Flow
+- Early-bust and tournament flow
 
-## Mustersuche vor der Hebelwahl
+## Pattern Discovery Before Choosing a Lever
 
-Beginne die Diagnose mit der aktuellen Bot-Version im Self-Play und im Mixed-Batch. Suche in
-beiden Berichten eigenständig nach auffälligen Mustern. Das Mixed-Feld kann bereits vor der
-Kandidatenwahl zusätzliche Schwächen zeigen, die sich erst gegen andere Strategien ergeben.
+Start diagnosis with the current bot version in self-play and the mixed batch. Independently look for
+noteworthy patterns in both reports. The mixed field can reveal additional weaknesses against other
+strategies even before candidate selection.
 
 ```bash
 deno task engine:diagnose -- --runs=1000 --out=tmp/matchup-discovery
 ```
 
-Der Runner erzeugt beide Diagnosefelder in einem Lauf. Der gemeinsame Diagnosebericht stellt
-`reference` und `mixed` für denselben Testsitz und dieselben Seeds nebeneinander. Er enthält
-übergreifende Spots und Auswertungen nach Handklasse, Position, Line, Betgröße und Gegnerprofil.
-Für feinere Schnitte verwende das komprimierte Entscheidungslog mit derselben Definition
-in beiden Feldern. Die Core-Baseline ergänzt die Sicht auf den gesamten Tisch und die Guardrails.
-[Diagnosebericht und Logformat](./matchup-experiments.md#gemeinsame-mustersuche)
+The runner generates both diagnostic fields in one run. The combined diagnostic report compares
+`reference` and `mixed` for the same test seat and seeds. It contains shared spots and breakdowns by hand
+class, position, line, bet size and opponent profile. For finer cuts, use the compressed decision log with
+the same definition in both fields. The core baseline adds a view of the entire table and guardrails.
+[Diagnostic report and log format](./matchup-experiments.md#combined-pattern-discovery)
 
-Halte pro Muster fest, wie häufig der Spot entsteht, welche Hände dort ankommen, wie oft die
-auffällige Aktion gewählt wird und wie der beobachtete Chipwert pro Spot ausfällt. Berichte die
-Anzahl vergleichbarer Spots je Feld. Wenige Beobachtungen lassen die Übertragbarkeit offen.
+For each pattern, record how often the spot occurs, which hands arrive there, how often the notable action
+is selected and observed chip value per spot. Report the number of comparable spots per field. Few
+observations leave transferability open.
 
-Ein Muster in beiden Feldern spricht für eine breitere Schwäche. Ein belastbares Muster in
-einem einzelnen Feld kann ebenfalls ein Ziel-Leak sein. Tausche bei einem vermuteten
-Gegnereffekt das relevante Profil gezielt gegen ein Kontrollprofil. Prüfe anschließend plausible
-Alternativen am selben Ausgangsspot im Replay. Wähle erst daraus einen Hebel für die vermutete
-Ursache.
+A pattern in both fields suggests a broader weakness. A robust pattern in one field can also be a target
+leak. If an opponent effect is suspected, specifically swap the relevant profile for a control profile.
+Then examine plausible alternatives at the same starting spot in replay. Only then select a lever for
+the suspected cause.
 
-## Diagnose-Menü
+## Diagnosis Menu
 
-Wähle die Diagnose nach dem Leak. Nicht jeder Leak braucht alle Werkzeuge.
+Choose the diagnosis according to the leak. Not every leak needs every tool.
 
-### Core-Struktur
+### Core Structure
 
 ```bash
 deno task engine:batch
 ```
 
-### Core-Stabilität
+### Core Stability
 
 ```bash
 deno task engine:batch:500
 ```
 
-### Core-Freigabelauf
+### Core Acceptance Run
 
 ```bash
 deno task engine:batch:1000
 ```
 
-### Postflop-Equity-Diagnose
+### Postflop Equity Diagnosis
 
 ```bash
 deno task engine:batch -- --runs=300 --equity --equity-limit=1000
 ```
 
-### Preflop-/Arrival-/Blind-Defense-Equity-Diagnose
+### Preflop / Arrival / Blind Defense Equity Diagnosis
 
 ```bash
 deno task engine:batch -- --runs=300 --equity-preflop --equity-limit=3000
 ```
 
-### Größerer Equity-Check
+### Larger Equity Check
 
-Bei wichtigen oder ambivalenten Kandidaten:
+For important or ambiguous candidates:
 
 ```bash
 deno task engine:batch -- --runs=1000 --equity-preflop --equity-limit=3000
@@ -177,54 +180,54 @@ deno task engine:batch -- --runs=1000 --equity-preflop --equity-limit=3000
 
 ### Speedmode
 
-- Wenn lokale Browser-Automation verfügbar ist, nach Bot-Logik-Änderungen staged Speedmode nutzen.
-- Wenn Speedmode blockiert ist, den Blocker klar nennen und Engine-Batches verwenden.
+- If local browser automation is available, use staged Speedmode after bot logic changes.
+- If Speedmode is blocked, state the blocker clearly and use engine batches.
 
-## Root-Cause-Fragen
+## Root-Cause Questions
 
-Bevor Code geändert wird, beantworte kurz:
+Before changing code, briefly answer:
 
-### 1. Was ist sichtbar schlecht?
+### 1. What Is Visibly Wrong?
 
-- Welche Metrik?
-- Wie groß ist die Sample Size?
-- Auf welcher Street, Route, Position oder Handklasse?
+- Which metric?
+- How large is the sample?
+- Which street, route, position or hand class?
 
-### 2. Wo entsteht es wahrscheinlich?
+### 2. Where Does It Likely Originate?
 
-- **Arrival Quality:** Kommt die Range schon schlecht im Spot an?
-- **Spot Decision:** Ist die konkrete Entscheidung falsch?
-- **Line / Sequence:** Führt eine frühere Line in schlechte Spätspots?
-- **Sizing / Pot Geometry:** Erzeugen Bets oder Calls schlechte SPR/Pot-Odds?
-- **Range Composition:** Ist die Range zu trash-heavy, capped oder value-arm?
-- **Table Dynamics:** HU/MW, Position, Blind-Kontext, Stackdruck, Gegnerread?
-- **Artifact / Noise:** Ist die Metrik erklärbar oder zu klein?
+- **Arrival Quality:** Does the range already arrive at the spot in poor shape?
+- **Spot Decision:** Is the specific decision wrong?
+- **Line / Sequence:** Does an earlier line lead to bad later spots?
+- **Sizing / Pot Geometry:** Do bets or calls produce poor SPR or pot odds?
+- **Range Composition:** Is the range too trash-heavy, capped or light on value?
+- **Table Dynamics:** HU/MW, position, blind context, stack pressure, opponent read?
+- **Artifact / Noise:** Is the metric explainable or too small?
 
-### 3. Was wäre der kleinste Runtime-Proxy?
+### 3. What Would Be the Smallest Runtime Proxy?
 
 - Route / spotKey
-- Handfamilie / Handklasse
-- Position / Blind-Kontext
+- Hand family / hand class
+- Position / blind context
 - HU/MW
-- Pot-Odds-Bucket
+- Pot-odds bucket
 - `flatScore` / `defendScore` / playability / domination
 - `preflopRaiseCount` / `raiseLevel`
 - PairClass / DrawFlag / LiftType / Texture
 
-## Equity richtig verwenden
+## Using Equity Correctly
 
-Equity ist besonders nützlich bei:
+Equity is especially useful for:
 
-- Call-Qualität
-- High-Equity-Folds
-- Low-Equity-Calls
-- Low-Equity-Raises
-- Preflop-Arrival
-- Blind-Defense
-- MDF-/Overfold-Widersprüchen
-- trash-heavy späteren Ranges
+- Call quality
+- High-equity folds
+- Low-equity calls
+- Low-equity raises
+- Preflop arrival
+- Blind defense
+- MDF / overfold contradictions
+- Trash-heavy later ranges
 
-Auswerten nach:
+Break down by:
 
 - phase / action
 - signal
@@ -238,381 +241,373 @@ Auswerten nach:
 - handClass
 - position / blind context
 - HU/MW
-- spätere Arrival-Klasse
+- later arrival class
 
-Wichtig:
+Important:
 
-- Einzelbeispiele sind Hinweise, keine Wahrheit.
-- `equity_enriched/candidates` misst nur die Abdeckung der vorselektierten Kandidaten. Bei einer
-  gezielten Diagnose zusätzlich prüfen, ob alle Entscheidungen des untersuchten Pfads ein
-  `equityDiagnostic` haben. Fehlende Abdeckung am Mechanismus oder an der Route ergänzen, nicht über
-  einzelne bekannte Handfamilien.
-- Negative Equity-Margin ist kein automatischer Fold.
-- Positive Equity-Margin ist kein automatischer Call.
-- Position, Realisierung, Stackdruck, Handklasse und Exploitability bleiben entscheidend.
+- Individual examples are clues, not truth.
+- `equity_enriched/candidates` measures coverage only for preselected candidates. For a targeted
+  diagnosis, also check whether every decision on the examined path has an `equityDiagnostic`. Add
+  missing coverage at the mechanism or route, not through individual known hand families.
+- Negative equity margin is not an automatic fold.
+- Positive equity margin is not an automatic call.
+- Position, realization, stack pressure, hand class and exploitability remain decisive.
 
 ## MDF / Overfold / Range Defense
 
-Bei MDF- oder Overfold-Leaks zuerst klären:
+For MDF or overfold leaks first distinguish:
 
-### 1. Gute Range, falsche Entscheidung
+### 1. Good Range, Wrong Decision
 
-- Genügend defendable Hände vorhanden.
-- Diese folden trotz Preis, Position oder Handqualität zu oft.
-- Hebel: konkrete Postflop-Defendability oder Call-Barriere.
+- Enough defendable hands are present.
+- They fold too often despite price, position or hand quality.
+- Lever: specific postflop defendability or call barrier.
 
-### 2. Schlechte Range, schlechtes Arrival
+### 2. Poor Range, Poor Arrival
 
-- Viele schlechte passive Preflop-Routen oder trash-heavy Ankunft.
-- Späteres Lockern würde nur Trash-Calls erzeugen.
-- Hebel: upstream Entry, Call, Limp oder Defense.
+- Many poor passive preflop routes or trash-heavy arrival.
+- Loosening later would only create trash calls.
+- Lever: upstream entry, call, limp or defense.
 
-### 3. Gute Hände, schlechte Line
+### 3. Good Hands, Poor Line
 
-- Plausible Hände kommen an, werden aber durch Check/Call/Barrel-Abbruch/Sizing schlecht geführt.
-- Hebel: Line-Fortsetzung oder Pot-Geometrie.
+- Plausible hands arrive but are poorly handled through checks, calls, abandoned barrels or sizing.
+- Lever: line continuation or pot geometry.
 
-Preflop-Tightening ist kein gültiger MDF-Fix, wenn der Backtrace zeigt, dass der Overfold breit über viele Familien verteilt ist und vor allem aus Air, weak draws, Overcards oder Blocker-Klassifikation entsteht.
+Preflop tightening is not a valid MDF fix if the backtrace shows overfolding spread broadly across hand
+families and arising mainly from air, weak draws, overcards or blocker classification.
 
-## Early Busts und kurze Turniere
+## Early Busts and Short Tournaments
 
-Kurze Turniere sind in Winner-take-all nicht automatisch schlecht.
+Short winner-take-all tournaments are not automatically bad.
 
-Early Busts sind nur ein Leak-Kandidat, wenn mehrere Signale zusammenkommen:
+Early busts are leak candidates only when several signals occur together:
 
-- schwache oder dominierte Handklasse
-- schlechte Equity/Pot-Odds-Marge
-- schlechte Position oder zweiter Blind
-- falsche Zone oder unnötiger Stackdruck
-- wiederholtes Muster in ausreichend Sample
+- Weak or dominated hand class
+- Poor equity/pot-odds margin
+- Bad position or second blind
+- Wrong zone or unnecessary stack pressure
+- Repeated pattern in an adequate sample
 
-Starke Hände, Push-Fold-Druck und echte Cooler sind keine Failures.
+Strong hands, push-fold pressure and genuine coolers are not failures.
 
 ## Short-Handed Action
 
-SB-HU und BTN-3 sind Action-Engines. Sie sollen Druck erzeugen.
+SB-HU and BTN-3 are action engines. They should create pressure.
 
-Bewerte sie als System:
+Evaluate them as a system:
 
-- Open-Frequenz
-- Blind-Defense
-- beide Blinds defend
-- Flop-seen
+- Open frequency
+- Blind defense
+- Both blinds defend
+- Flop seen
 - Uncontested
-- Showdown-Struktur
-- Early-Bust-Effekt
+- Showdown structure
+- Early-bust effect
 
-Hohe BTN-3 combined Blind-Defense ist nicht automatisch schlecht, weil zwei Blinds verteidigen können. SB-Defense und zweite Blind-Entries brauchen aber mehr Disziplin als BB-Closes mit gutem Preis.
+High combined BTN-3 blind defense is not automatically bad because two blinds can defend. SB defense
+and second-blind entries need more discipline than BB closes at a good price.
 
 ## Candidate Gate
 
-Ein Kandidat ist qualifiziert, wenn:
+A candidate qualifies when:
 
-- die Sample Size reicht,
-- die Ursache strategisch plausibel ist,
-- der Hebel in `js/bot.js` durch Runtime-Signale abbildbar ist,
-- Equity/MDF/Backtrace die Hypothese stützt oder nicht widerspricht,
-- priced/playable Hände im selben Cluster geschützt bleiben,
-- Core-Action-Engines nicht austrocknen,
-- keine harte Guardrail gefährdet wird.
+- The sample size is sufficient.
+- The cause is strategically plausible.
+- The lever in `js/bot.js` can be represented by runtime signals.
+- Equity/MDF/backtrace supports or does not contradict the hypothesis.
+- Priced/playable hands in the same cluster remain protected.
+- Core action engines do not dry up.
+- No hard guardrail is endangered.
 
-### Range-Preservation-Gate
+### Range Preservation Gate
 
-Bei jedem Tightening muss vor der Bewertung gezeigt werden, welche plausiblen Hände als
-Nebenwirkung seltener gespielt werden. Der Vergleich muss mindestens enthalten:
+For every tightening, show before evaluation which plausible hands will be played less often as a side
+effect. The comparison must include at least:
 
-- Zielcluster und bewusst entfernte schwache Hände
-- geschützte benachbarte Handfamilien
-- starke Kontrollgruppe
-- guter und schlechter Preis
-- HU/MW sowie IP/OOP, soweit für die Route relevant
+- Target cluster and weak hands deliberately removed
+- Protected neighboring hand families
+- Strong control group
+- Good and bad prices
+- HU/MW and IP/OOP where relevant to the route
 
-Prüfe bei jedem Tightening, welche Calls und Raises im Zielspot und in späteren Lines
-wegfallen. Ziel ist, die Botmetriken zu verbessern und die Range gegen plausible Bluffs
-menschlicher Gegner verteidigungsfähig zu halten.
+For every tightening, check which calls and raises disappear in the target spot and later lines. The goal
+is to improve bot metrics while keeping the range defensible against plausible human bluffs.
 
-- Kann das Tightening die Defense in einer für Gegner erkennbaren Line schwächen, validiere
-  gegen ein aggressives Kontrollprofil, das in dieser Line ausreichend oft Druck macht.
-- Fallen dort plausible Bluffcatcher oder starke Hände aus einer Check-Range, prüfe zusätzlich
-  eine erhöhte Bluff-Frequenz bei gleicher Value-Range und Betgröße.
-- Lege den tolerierbaren Rückgang im Chipwert des Kontrollfelds vor dem Lauf fest
-  ([Vergleich aufsetzen](#vergleich-aufsetzen)).
+- If tightening can weaken defense in a line recognizable to opponents, validate against an aggressive
+  control profile that applies pressure in that line often enough.
+- If plausible bluffcatchers or strong hands leave a check range, also test increased bluff frequency
+  with the same value range and bet size.
+- Set the tolerable reduction in the control field's chip value before the run
+  ([setting up a comparison](#setting-up-a-comparison)).
 
-Nutze MDF, um mögliche Lücken zu finden. Bewerte die Fortsetzungen anhand von Preis,
-Betfolge und Chipwert gegen die getesteten Value- und Bluff-Ranges. Kommen zu wenige
-verteidigungsfähige Hände an, prüfe das Arrival und die Zusammensetzung der Check-Range.
+Use MDF to find possible gaps. Evaluate continuations by price, betting sequence and chip value against
+the tested value and bluff ranges. If too few defendable hands arrive, examine arrival and check-range
+composition.
 
-Core Health und eine verbesserte Zielmetrik reichen nicht als Freigabe. Der Kandidat ist nicht
-qualifiziert, wenn geschützte priced/playable Hände deutlich austrocknen, ohne dass Equity,
-Backtrace und Range Composition den Verlust stützen.
+Core health and an improved target metric are not enough for acceptance. The candidate does not qualify
+if protected priced/playable hands dry up substantially without equity, backtrace and range composition
+supporting the loss.
 
-Bei jedem Loosening gilt die Gegenprobe: Zuerst zeigen, welcher zusätzliche Trash in die Range
-gelangt, bevor die gewünschte Mehraktivität bewertet wird.
+For every loosening, apply the opposite check: first show which additional trash enters the range before
+evaluating the desired increase in activity.
 
-Ein Kandidat ist nicht qualifiziert, wenn:
+A candidate does not qualify if:
 
-- er nur eine auffällige Zahl optimiert,
-- der Effekt wahrscheinlich Noise ist,
-- er direkt Equity in Runtime-Logik braucht,
-- er breite neue Hard Guards erfordert,
-- er eine Zielmetrik durch Problemverschiebung verbessert,
-- er gute Calls oder Value-Aggression überproportional entfernt.
+- It optimizes only one conspicuous number.
+- The effect is probably noise.
+- It needs direct equity in runtime logic.
+- It requires broad new hard guards.
+- It improves a target metric by moving the problem elsewhere.
+- It disproportionately removes good calls or value aggression.
 
-## Stop-Kriterien
+## Stop Criteria
 
-Starte keinen neuen Tuning-Pass, wenn:
+Do not start another tuning pass when:
 
-- nur eine einzelne Metrik auffällt und keine Beispielanalyse denselben Leak bestätigt,
-- der Leak nicht in mindestens zwei unabhängigen Dimensionen clusterbar ist, z. B. Handklasse + Street, Seat + Route oder Preis + Boardstruktur,
-- der Fix mehr neue Bedingungen erzeugt als strategische Klarheit bringt,
-- ein lokaler Sonderhebel nur einen sehr kleinen Anteil aller Hände betrifft, außer er behebt einen harten Guardrail-Fehler,
-- derselbe Leak bereits zwei verworfene Kandidaten erzeugt hat. Verbessere dann zuerst Diagnose, Backtrace, Equity- oder MDF-Auswertung statt weiter an Schwellen zu drehen,
-- Core Health stabil ist und die auffälligen Beispiele pokerlogisch erklärbar sind. Dann akzeptiere den Zustand und perfektioniere nicht weiter.
+- Only one metric stands out and no example analysis confirms the same leak.
+- The leak cannot be clustered along at least two independent dimensions, e.g. hand class + street,
+  seat + route or price + board structure.
+- The fix adds more conditions than strategic clarity.
+- A local special lever affects only a very small share of hands, unless it fixes a hard guardrail error.
+- The same leak has already produced two rejected candidates. First improve diagnosis, backtrace, equity
+  or MDF analysis instead of adjusting thresholds further.
+- Core health is stable and the notable examples are explainable in poker terms. Accept the state and
+  stop perfecting it.
 
-Wenn ein Leak nur durch mehrere lokale Ausnahmen lösbar scheint, baue keinen weiteren Patch. Markiere ihn als Modell-Lücke und plane einen zentraleren Hebel.
+If a leak seems solvable only through several local exceptions, do not add another patch. Mark it as a
+model gap and plan a more central lever.
 
-Diese Stop-Kriterien sollen kleinteilige Symptom-Patches verhindern, nicht saubere größere Modellhebel. Wenn die Diagnose eine strukturelle Modell-Lücke zeigt, formuliere den größeren Hebel explizit und validiere ihn breiter statt ihn aus Vorsicht zu vermeiden.
+These stop criteria prevent small symptom patches, not clean larger model levers. If diagnosis shows a
+structural model gap, explicitly formulate the larger lever and validate it more broadly instead of
+avoiding it out of caution.
 
-## Hypothese vor Code
+## Hypothesis Before Code
 
-Vor jeder Code-Änderung kurz festhalten:
+Before each code change, briefly record:
 
-- Ziel-Leak
-- vermutete Ursache
-- betroffene Route / Handklasse / Position / Street
-- Runtime-Proxy
-- geplanter Hebel
-- erwarteter Effekt
-- wichtigste Nebenwirkungen
-- Falsifikationskriterien
+- Target leak
+- Suspected cause
+- Affected route / hand class / position / street
+- Runtime proxy
+- Planned lever
+- Expected effect
+- Main side effects
+- Falsification criteria
 
-Bei Range-, Call- oder Defense-Tuning zusätzlich als Kandidatenvertrag festhalten:
+For range, call or defense tuning, also record in the candidate contract:
 
-- welche Hände oder Cluster bewusst häufiger oder seltener gespielt werden sollen
-- welche benachbarten Handfamilien geschützt bleiben müssen
-- welche Preis-, Positions- und Struktur-Spots geschützt bleiben müssen
-- welche Verschiebung den Kandidaten unabhängig von der Zielmetrik falsifiziert
+- Which hands or clusters should deliberately be played more or less often
+- Which neighboring hand families must remain protected
+- Which price, position and structure spots must remain protected
+- Which shift falsifies the candidate regardless of the target metric
 
-Ein Pass = eine Ursache, ein fokussierter Hebel.
+One pass = one cause, one focused lever.
 
-## Gute Hebel
+## Good Levers
 
-- bestehende Schwelle leicht verschieben
-- Ratio oder Cap kontextsensitiv justieren
-- kleine Score-Gewichtung ändern
-- bestehende Bewertung um einen kontinuierlichen Term ergänzen
-- Handklasse sauberer unterscheiden
-- vorhandene Barriere nach Route, Position, Street oder Struktur kalibrieren
+- Move an existing threshold slightly
+- Adjust a ratio or cap based on context
+- Change a small score weight
+- Add a continuous term to an existing evaluation
+- Distinguish hand classes more clearly
+- Calibrate an existing barrier by route, position, street or structure
 
-## Schlechte Hebel
+## Bad Levers
 
-- globale OOP-Mali
-- globale suited-Mali
-- globale Blind-Defense-Mali
-- globale Air-Call-Freigaben
-- breite neue Hard Guards
-- direkte Equity-Checks
-- mehrere Call-/Raise-/Sizing-Änderungen gleichzeitig
+- Global OOP penalties
+- Global suited penalties
+- Global blind defense penalties
+- Global permission to call with air
+- Broad new hard guards
+- Direct equity checks
+- Multiple call, raise and sizing changes at once
 
 ## Validation Ladder
 
-Nach Bot-Code-Änderung:
+After a bot code change:
 
 ```bash
 deno check js/bot.js
 ```
 
-Bei Range-, Call- oder Defense-Tuning vor den großen Batches zusätzlich einen Counterfactual-Audit
-auf der Vergleichsbasis durchführen: Welche geloggten Entscheidungen würden durch den neuen Hebel
-kippen, und aus welchen Handfamilien, Preis-, Positions- und Struktur-Spots kommen diese Flips?
+For range, call or defense tuning, before large batches also run a counterfactual audit on the comparison
+baseline: which logged decisions would flip under the new lever, and from which hand families, price,
+position and structure spots do those flips come?
 
-Vor dem Batch außerdem die minimale, typische und maximale Wirkung des Hebels auf den betroffenen
-Score oder die Barriere ausrechnen. Ein großer möglicher Ausschlag ist als Range-Schnitt zu
-validieren, nicht als kleines Feintuning.
+Before the batch, also calculate the minimum, typical and maximum effect of the lever on the affected
+score or barrier. Validate a large potential shift as a range cut, not as small fine-tuning.
 
-Dann staged validieren:
+Then validate in stages:
 
-Die Ladder wird pro Kandidat nur so weit durchlaufen, wie das vorherige Gate bestanden ist. Ein
-Kandidat erhält jede Stufe höchstens einmal. Nur der final qualifizierte Kandidat erhält den 1000er
-Acceptance-Batch.
+For each candidate, advance through the ladder only when the preceding gate passes. A candidate receives
+each stage at most once. Only the final qualified candidate receives the 1000-run acceptance batch.
 
-### 1. Strukturcheck
+### 1. Structure Check
 
 ```bash
 deno task engine:batch
 ```
 
-### 2. Validation-Stabilität
+### 2. Validation Stability
 
-Wenn der Strukturcheck plausibel ist:
+If the structure check is plausible:
 
 ```bash
 deno task engine:batch:500
 ```
 
-### 3. Validation-Acceptance
+### 3. Validation Acceptance
 
-Wenn der 500er stabil ist:
+If the 500-run batch is stable:
 
 ```bash
 deno task engine:batch:1000
 ```
 
-### 4. Equity bei Bedarf
+### 4. Equity When Needed
 
-Equity ist kein automatischer Schritt. Ein Equity-Trigger liegt vor, wenn mindestens eines gilt:
+Equity is not an automatic step. An equity trigger exists if at least one of these applies:
 
-- Call- oder Range-Qualität bleibt nach Core-, MDF- und Backtrace-Auswertung ambivalent.
-- priced/playable Hände oder andere geschützte Kontrollgruppen verschwinden deutlich.
-- High-Equity-Folds oder Low-Equity-Calls sind ein plausibler Teil der Diagnose.
-- Die vorhandenen Metriken erzählen widersprüchliche Geschichten über denselben Zielcluster.
+- Call or range quality remains ambiguous after core, MDF and backtrace analysis.
+- Priced/playable hands or other protected control groups decline substantially.
+- High-equity folds or low-equity calls are a plausible part of the diagnosis.
+- Existing metrics tell contradictory stories about the same target cluster.
 
-Dann zuerst einen kleinen passenden Diagnosebatch aus dem Diagnose-Menü nutzen. Nur wenn der
-Kandidat danach weiter qualifiziert, die Frage aber für den Live-Kandidaten materiell offen bleibt,
-einen finalen 1000er Equity-Batch ausführen:
+First use a small suitable diagnostic batch from the diagnosis menu. Run a final 1000-run equity batch
+only if the candidate still qualifies afterward but the question remains materially open for the live
+candidate:
 
 ```bash
 deno task engine:batch -- --runs=1000 --equity-preflop --equity-limit=3000
 ```
 
-Pro Goal gibt es höchstens einen finalen 1000er Equity-Batch. Ohne dokumentierten Equity-Trigger
-entfällt dieser Schritt.
+There is at most one final 1000-run equity batch per goal. Without a documented equity trigger, skip it.
 
-## Validierung strategischer Entscheidungen
+## Validating Strategic Decisions
 
-Der Core-Batch misst den gespielten Action-Mix, Turnierverlauf und Guardrails im Self-Play des
-Standard-Bots. Er gehört zu Änderungen am Spielverhalten des Standard-Bots, einschließlich Änderungen
-an gemeinsam genutzter Logik. Für das Spielverhalten eines Gegnerprofils verwende den
-[Profil-Vergleich](#profile-prüfen-und-weiterentwickeln). Ein Replay vergleicht die Entscheidungen im
-Zielcluster. Ein Matchup-Experiment prüft, ob der Vorteil einer Strategie gegen relevante
-Gegnerprofile trägt. Beide Verfahren gelten für Preflop-Ranges, Calls, Bluffs, Value-Bets,
-Sizing, Line-Fortsetzungen und Push/Fold.
+The core batch measures action mix, tournament flow and guardrails in standard-bot self-play. It is
+required for changes to standard-bot behavior, including changes to shared logic. For opponent-profile
+behavior, use the [profile comparison](#reviewing-and-developing-profiles). Replay compares decisions
+in the target cluster. A matchup experiment tests whether a strategy's advantage holds against relevant
+opponent profiles. Both methods apply to preflop ranges, calls, bluffs, value bets, sizing, line
+continuations and push/fold.
 
-- Verwende ein Replay, wenn sich die Aktionswahl, Betgröße oder Range im Zielcluster ändert.
-- Verwende ein Matchup-Experiment, wenn unterschiedliche Gegnerreaktionen den Nutzen der
-  Änderung oder ihre Nebenwirkungen bestimmen können.
-- Prüfe einen klar abgegrenzten Regelfall oder eine harte Guardrail mit einem reproduzierbaren
-  Szenario und dem passenden Batch für die geänderte Strategie. Betrifft der Fix auch normale
-  Strategie-Spots, prüfe diesen Effekt mit den entsprechenden Vergleichen.
+- Use replay when action choice, bet size or range changes in the target cluster.
+- Use a matchup experiment when different opponent responses can determine the benefit or side effects.
+- Test a clearly bounded rule case or hard guardrail with a reproducible scenario and an appropriate
+  batch for the changed strategy. If the fix also affects normal strategic spots, examine that effect
+  with the appropriate comparisons.
 
-Wähle die Kennzahl nach dem Ziel. Bei Value-Sizing kann der Chipwert bis Handende im Zielspot
-entscheidend sein. Bei Push/Fold im Winner-take-all zählt für die Turnierfreigabe die Siegquote.
-Wenn die Änderung beeinflusst, welche Hände einen Spot erreichen, prüfe zusätzlich seine
-Häufigkeit und den Chipwert je Hand.
+Choose the metric according to the goal. For value sizing, chip value through the end of the hand in the
+target spot may be decisive. For winner-take-all push/fold, win rate counts for tournament acceptance.
+If the change affects which hands reach a spot, also examine its frequency and chip value per hand.
 
-### Vergleich aufsetzen
+### Setting Up a Comparison
 
-Die Wahl des Zielspots folgt aus der [Mustersuche](#mustersuche-vor-der-hebelwahl). Die folgenden
-Schritte verwenden diesen Befund für den Replay- und Kandidatenvergleich.
+Select the target spot from [pattern discovery](#pattern-discovery-before-choosing-a-lever). The following
+steps use that finding for replay and candidate comparison.
 
-1. Vor dem Kandidaten die Baseline, den Zielspot, das Zielprofil und ein Kontrollprofil festlegen.
-   Halte fest, ab welchem Gewinn der Effekt relevant ist und welchen Rückgang du im Kontrollprofil
-   tolerierst. Plane die Mindestzahl an Turnierpaaren und Zielspots je Variante. Friere außerdem
-   Gegnerpool, Vergleichsmetrik und die für die Freigabe reservierten Profile und Seeds ein.
-2. Im Replay dieselben Ausgangssituationen vergleichen. Beim Angriff ist der Check die Referenz für
-   eine zusätzliche Bet. Bei der Defense bleiben Betgröße und gegnerische Value- und Bluff-Range
-   vorgegeben. Bei einer Sizing-Änderung startet der Vergleich vor der Bet. Das Replay misst den
-   Chipwert bis zum Handende.
-3. Im Experiment je Gegnerfeld die bisherige Strategie und den Kandidaten zuweisen. Der Runner
-   baut daraus beide Tische, paart die Turniere und berichtet den Unterschied mit einem
-   95-%-Intervall. Die Reads entstehen im Spiel. Vergleiche bei Bedarf getrennt, wie sich frische
-   und aufgebaute Reads auswirken.
-4. Den Befund auf neuen Seeds und einem Gegnerprofil prüfen, das beim Tuning noch nicht verwendet
-   wurde. Bei gemeinsamer Freigabe im selben Feld die Baseline, Angriff, Defense und die Kombination
-   vergleichen. Zusätzlich den neuen Angriff gegen die neue Defense spielen lassen. Für den
-   Rollout fünf alte und fünf neue Bots jeweils gegen denselben Profil-Sitz vergleichen.
+1. Before the candidate, establish the baseline, target spot, target profile and control profile. Record
+   the gain at which the effect is relevant and the loss tolerated in the control profile. Plan the
+   minimum number of tournament pairs and target spots per variant. Also freeze the opponent pool,
+   comparison metric, and profiles and seeds reserved for acceptance.
+2. Compare the same starting situations in replay. For attack, checking is the reference for an added bet.
+   For defense, bet size and the opponent's value and bluff ranges remain fixed. For a sizing change,
+   comparison starts before the bet. Replay measures chip value through the end of the hand.
+3. In each opponent field, assign the existing strategy and the candidate in the experiment. The runner
+   constructs both tables, pairs tournaments and reports the difference with a 95% interval. Reads develop
+   during play. If needed, separately compare the effects of fresh and accumulated reads.
+4. Check the finding on new seeds and an opponent profile not used in tuning. For joint acceptance,
+   compare baseline, attack, defense and the combination in the same field. Also play the new attack
+   against the new defense. For rollout, compare five old and five new bots each against the same profile
+   seat.
 
-Der Runner rotiert die Rollen und seedet Karten und Bot-Entscheidungen getrennt. Nach abweichenden
-Aktionen dürfen sich dieselben Turnierläufe unterschiedlich entwickeln. Replay-Vergleiche halten
-den Ausgangsspot direkt fest.
+The runner rotates roles and seeds cards and bot decisions separately. After different actions, the same
+tournament runs may develop differently. Replay comparisons hold the starting spot directly fixed.
 
-Die Freigabe erfolgt stufenweise. Die Diagnose lokalisiert den Effekt. Die Validierung prüft ihn
-gegen Ziel- und Kontrollprofile. Der Holdout prüft die eingefrorene Änderung. Der Rollout prüft
-den Tisch in der geplanten Besetzung. Zum Freigabenachweis gehören die jeweils passenden
-Guardrails und beim Standard-Bot der Core-Batch. Technische Unterbrechungen und Pot-Abweichungen
-blockieren das betroffene Experiment. Der Report weist die betroffenen Paare aus.
-[Konfiguration, Kennzahlen und Status](./matchup-experiments.md)
+Acceptance proceeds in stages. Diagnosis locates the effect. Validation checks it against target and
+control profiles. Holdout checks the frozen change. Rollout checks the table in its planned composition.
+Acceptance evidence includes applicable guardrails and, for the standard bot, the core batch. Technical
+interruptions and pot discrepancies block the affected experiment. The report identifies affected pairs.
+[Configuration, metrics and status](./matchup-experiments.md)
 
-### Gegnerpool
+### Opponent Pool
 
-Der Gegnerpool enthält TAG, LAG, Calling Station und Nit. Die Profile unterscheiden sich darin,
-welche Hände sie spielen und wie aggressiv sie auf den einzelnen Streets vorgehen.
-[PokerStars zu den vier Spielstilen](https://www.pokerstars.com/poker/learn/lesson/other-poker-playing-styles/) ·
-[Jonathan Little zu den Merkmalen](https://pokercoaching.com/blog/different-poker-players/)
+The opponent pool contains TAG, LAG, Calling Station and Nit. Profiles differ in the hands they play and
+how aggressively they act on each street.
+[PokerStars on the four playing styles](https://www.pokerstars.com/poker/learn/lesson/other-poker-playing-styles/) ·
+[Jonathan Little on their characteristics](https://pokercoaching.com/blog/different-poker-players/)
 
-Für eine gezielte Diagnose variiere einen Parameter, etwa die Bluff-Frequenz bei gleicher
-Value-Range und Betgröße. Für die Freigabe den festen Pool mit unveränderten Strategien
-verwenden. Auch die Referenz auf den regulären Bot im Gegnerfeld muss für Baseline und Kandidat
-dieselbe feste Version verwenden.
+For targeted diagnosis, vary one parameter, such as bluff frequency with the same value range and bet size.
+For acceptance use the fixed pool with unchanged strategies. The reference to the regular bot in the
+opponent field must also use the same fixed version for baseline and candidate.
 
-#### Spielweise der Profile
+#### Profile Playing Styles
 
-Preflop bestimmen Position, effektiver Stack, Betgröße und bisherige Aktionen die Ranges für
-Open-Raises, Limps, Calls und Reraises. TAG und LAG öffnen in später Position mehr Hände.
-Der LAG setzt häufiger leichte 3-Bets gegen späte Opens ein. Die Calling Station steigt mit
-vielen Händen per Limp oder Call ein. Der Nit spielt eine enge Range und verteidigt die Blinds
-selektiv. [Preflop-Ranges im Code](../matchupPreflop.js) ·
-[Harrington über Turnierspiel und Spielstile](https://forumserver.twoplustwo.com/33/books-publications/harringtons-new-tourney-book-1410913/index2.html) ·
-[Jonathan Little über Position und Stacktiefe](https://pokercoaching.com/blog/short-stack-vs-raise-how-to-adjust-your-preflop-strategy-in-mtts/) ·
-[PokerStars über Isolation Raises](https://www.pokerstars.com/poker/learn/strategies/taking-advantage-of-poker-players-that-limp-preflop/)
+Preflop, position, effective stack, bet size and prior actions determine ranges for open raises, limps,
+calls and reraises. TAG and LAG open more hands in late position. LAG makes light 3-bets against late
+opens more often. Calling Station enters many hands by limp or call. Nit plays a narrow range and defends
+blinds selectively. [Preflop ranges in code](../matchupPreflop.js) ·
+[Harrington on tournament play and styles](https://forumserver.twoplustwo.com/33/books-publications/harringtons-new-tourney-book-1410913/index2.html) ·
+[Jonathan Little on position and stack depth](https://pokercoaching.com/blog/short-stack-vs-raise-how-to-adjust-your-preflop-strategy-in-mtts/) ·
+[PokerStars on isolation raises](https://www.pokerstars.com/poker/learn/strategies/taking-advantage-of-poker-players-that-limp-preflop/)
 
-Postflop bewerten die Profile die Hand relativ zum Board, etwa ein privates Paar auf einem
-gepaarten Board. Bei Combo Draws zählen gemeinsame Outs einmal. Calls berücksichtigen
-Betgröße, Gegnerzahl und wiederholten Druck. Der TAG setzt selektiv für Value und als
-Semi-Bluff. Der LAG barrelt häufiger mit Draws und blufft ausgewählte River-Runouts.
-Die Calling Station callt auch mit schwächeren Paaren und Draws. Der Nit gibt schwache
-Hände früher auf und raist starke Hände selektiv. [Postflop-Regeln im Code](../matchupPostflop.js) ·
-[PokerStars zu Continuation Bets](https://www.pokerstars.com/poker/learn/lesson/c-betting/) ·
-[Jonathan Little zu Straight Draws](https://pokercoaching.com/blog/open-ended-straight-draw-in-poker/) ·
-[Ed Miller zu situationsabhängiger Aggression](https://www.cardplayer.com/poker-news-23577-poker-strategy-with-ed-miller-misplaced-aggression)
+Postflop, profiles evaluate the hand relative to the board, such as a private pair on a paired board.
+Combo draws count shared outs once. Calls account for bet size, number of opponents and repeated pressure.
+TAG bets selectively for value and as a semi-bluff. LAG barrels draws more often and bluffs selected river
+runouts. Calling Station also calls with weaker pairs and draws. Nit gives up weak hands earlier and raises
+strong hands selectively. [Postflop rules in code](../matchupPostflop.js) ·
+[PokerStars on continuation bets](https://www.pokerstars.com/poker/learn/lesson/c-betting/) ·
+[Jonathan Little on straight draws](https://pokercoaching.com/blog/open-ended-straight-draw-in-poker/) ·
+[Ed Miller on situational aggression](https://www.cardplayer.com/poker-news-23577-poker-strategy-with-ed-miller-misplaced-aggression)
 
-#### Profile prüfen und weiterentwickeln
+#### Reviewing and Developing Profiles
 
-Die gemeinsame Tuning-Regel und die beabsichtigten Spielstile stehen bei den
-[Profilstrategien](../matchupPool.js). Der Erhalt des Spielstils hat Vorrang vor besseren
-Turnierergebnissen.
+The shared tuning rule and intended styles are in the [profile strategies](../matchupPool.js). Preserving
+the playing style takes precedence over better tournament results.
 
-1. **Zielspot und Kriterien festlegen.** Beschreibe den vermuteten Fehler, die erwartete Verbesserung
-   und die betroffenen Stilmerkmale. Lege vor dem Test die nötige Stichprobe und die tolerierte
-   Abweichung für jeden relevanten Stilvergleich fest.
-2. **Die Entscheidung im Replay prüfen.** Vergleiche die bisherige Aktion und die Alternative aus
-   denselben Ausgangssituationen. Zähle auch, wie oft der Spot im Turnier vorkommt.
-3. **Einen Hebel im Profil ändern und gepaart testen.** Vergleiche die bisherige und die neue Version
-   des Profils mit `engine:experiment` auf demselben rotierenden Testsitz. Beide Arme verwenden
-   dieselben eingefrorenen Gegnerstrategien und Seeds. Prüfe den Zielspot und Nebenwirkungen im
-   Turnier. Bei Push/Fold im Winner-take-all gehört die Turniersiegquote zur Freigabe.
-4. **Den Stil in vergleichbaren Spots prüfen.** Verwende dieselben Hände, Positionen, effektiven
-   Stacks und Setzfolgen. Vergleiche mit einer festen, akzeptierten Stilreferenz des Profils und
-   den relevanten anderen Profilen. Nutze feste Testszenarien oder Replays mit identischen Seeds.
-   Die Stilreferenz bleibt über mehrere Tuning-Pässe fest, damit sich schleichende Angleichungen erkennen lassen.
-5. **Vor der Freigabe den Befund bestätigen.** Prüfe die eingefrorene Änderung mit frischen Seeds
-   in einem weiteren relevanten Gegnerfeld und am Tisch in der geplanten Besetzung. Die Freigabe
-   setzt die vereinbarte Verbesserung und bestandene Stilprüfungen voraus.
+1. **Set the target spot and criteria.** Describe the suspected error, expected improvement and affected
+   style characteristics. Before testing, set the required sample and tolerated deviation for each
+   relevant style comparison.
+2. **Check the decision in replay.** Compare the existing action and alternative from the same starting
+   situations. Also count how often the spot occurs in tournaments.
+3. **Change one lever in the profile and test it paired.** Compare the old and new profile versions with
+   `engine:experiment` on the same rotating test seat. Both arms use the same frozen opponent strategies
+   and seeds. Check the target spot and tournament side effects. For winner-take-all push/fold, tournament
+   win rate is part of acceptance.
+4. **Check style in comparable spots.** Use the same hands, positions, effective stacks and betting
+   sequences. Compare with a fixed, accepted style reference for the profile and relevant other profiles.
+   Use fixed test scenarios or replays with identical seeds. Keep the style reference fixed across
+   multiple tuning passes to detect gradual convergence.
+5. **Confirm the finding before acceptance.** Test the frozen change with fresh seeds in another relevant
+   opponent field and at the table in its planned composition. Acceptance requires the agreed improvement
+   and passed style checks.
 
-| Profil | Typische Stilprüfung |
+| Profile | Typical style check |
 | --- | --- |
-| TAG | Prüfe, ob die Open-Range von früher zu später Position breiter wird. Prüfe Value-Bets, selektive Semi-Bluffs und die geringere Aggression gegenüber dem LAG in vergleichbaren Postflop-Spots. |
-| LAG | Prüfe gegenüber dem TAG breitere Opens, häufigere leichte 3-Bets gegen späte Opens und häufiger fortgesetzte Semi-Bluffs mit geeigneten Draws. |
-| Calling Station | Prüfe bei gleichem Preis und gleicher Handklasse häufigere Calls mit mittleren Paaren und Draws als beim TAG. Prüfe separat, ob Raises überwiegend mit klaren Value-Händen erfolgen. |
-| Nit | Prüfe am vollen Tisch engere frühe Opens als beim TAG und eine selektive Defense gegen Druck. Prüfe Shortstack-Steals und Calls in den Spots, in denen der Nit gezielt breiter spielen darf. |
+| TAG | Check whether the opening range widens from early to late position. Check value bets, selective semi-bluffs and lower aggression than LAG in comparable postflop spots. |
+| LAG | Against TAG, check wider opens, more frequent light 3-bets against late opens, and more frequent semi-bluff continuations with suitable draws. |
+| Calling Station | At the same price and hand class, check for more calls with middle pairs and draws than TAG. Separately check that raises are predominantly clear value hands. |
+| Nit | At a full table, check tighter early opens than TAG and selective defense against pressure. Check short-stack steals and calls in spots where Nit is deliberately allowed to play wider. |
 
-Dokumentiere je Feld die Zahl der Gelegenheiten und die Häufigkeit der Aktion. Untersuche Preflop
-Position, Stacktiefe und vorausgehende Aktion. Untersuche Postflop Street, Initiative, Handklasse
-und Betgröße. Nutze VPIP, PFR und Aktionsraten je Street als Übersicht. Für den Abgleich mit
-menschlichen Frequenzen brauchst du Handverläufe aus vergleichbaren Spots.
+For each field, document opportunity counts and action frequency. Examine preflop position, stack depth
+and preceding action. Examine postflop street, initiative, hand class and bet size. Use VPIP, PFR and
+action rates by street as an overview. Comparing with human frequencies requires hand histories from
+comparable spots.
 
-Prüfe seltene Lines mit festen Testszenarien. Nutze Replays, um verschiedene Entscheidungen
-am selben Ausgangsspot zu vergleichen. Prüfe bei Bedarf mit einer absichtlich geschwächten
-Bot-Variante, ob das Profil den eingebauten Fehler im Zielspot reproduzierbar in Chipgewinn
-umsetzt. [Matchup-Tests](../matchupBatch.test.js) · [Replay](../matchupReplay.js)
+Check rare lines with fixed test scenarios. Use replays to compare different decisions at the same
+starting spot. If needed, use a deliberately weakened bot variant to test whether the profile reproducibly
+converts the built-in error in the target spot into chip gain.
+[Matchup tests](../matchupBatch.test.js) · [Replay](../matchupReplay.js)
 
-Vertiefe ein Profil, wenn es eine relevante Line trotz genügend Gelegenheiten zu selten oder
-zu einfach spielt oder der Kontrolllauf eine bekannte Schwäche kaum sichtbar macht.
-Ergänze einen Gegnertyp, wenn dem Pool eine für die Testfrage relevante Spielweise fehlt.
+Develop a profile further if it plays a relevant line too rarely or too simply despite sufficient
+opportunities, or if the control run barely exposes a known weakness. Add an opponent type if the pool
+lacks a playing style relevant to the test question.
 
-Dokumentiere das Zielverhalten, die Messung und die verwendete Pool-Konfiguration.
+Document the target behavior, measurement and pool configuration used.
 
-### Runner und Auswertung
+### Runner and Evaluation
 
 ```bash
 deno task engine:matchup scripts/matchupPool.js tmp/matchup-pool.json
@@ -621,120 +616,115 @@ deno task engine:experiment scripts/matchupAudit.js tmp/matchup-audit.json
 deno task engine:replay scripts/matchupReplayAudit.js tmp/matchup-replay-audit.json
 ```
 
-Die Pool-Konfiguration enthält Self-Play als Referenz, einen gemischten Tisch mit fünf
-unterschiedlichen Gegnern und eine Variante mit mehr aggressiven Gegnern. Die zweite
-Konfiguration enthält die gezielten River-Profile für die Diagnose.
-Für einen Kandidaten eine eigene Konfiguration unter `tmp/` mit festen Strategieversionen
-anlegen. `strategies` ordnet Namen Funktionen mit der Signatur `(player, state, line) => action` zu.
-Batch und Replay leiten `line` aus den ausgeführten Aktionen ab. `flop` und `turn` enthalten
-die Sitznummer des letzten Aggressors der jeweiligen abgeschlossenen Street. Ohne Aggressor
-steht dort `null`.
-`lineups` weist diesen Strategien benannte Sitzrollen zu. Alle Aufstellungen verwenden dieselben
-Rollennamen. Die Profile entscheiden anhand öffentlich sichtbarer Informationen und eigener
-Karten. Eine optionale Funktion `classifySpot(state, player, role, line)` benennt den Zielspot vor der
-Aktion oder gibt `null` zurück.
+The pool configuration includes self-play as reference, a mixed table with five different opponents and
+a variant with more aggressive opponents. The second configuration contains targeted river profiles for
+diagnosis. For a candidate, create a separate configuration under `tmp/` with fixed strategy versions.
+`strategies` maps names to functions with signature `(player, state, line) => action`. Batch and replay
+derive `line` from executed actions. `flop` and `turn` contain the seat number of the last aggressor on
+the respective completed street, or `null` without an aggressor. `lineups` assigns named seat roles to
+these strategies. All lineups use the same role names. Profiles decide using publicly visible information
+and their own cards. An optional `classifySpot(state, player, role, line)` function names the target spot
+before the action or returns `null`.
 
-Der Bericht enthält je Lauf und Rolle gespielte Hände, Turniersiege, Netto-BB, VPIP und PFR.
-Für VPIP und PFR die jeweiligen Handzahlen durch die gespielten Hände teilen.
-Für markierte Spots enthält er je tatsächlich ausgeführter Aktion die Anzahl und die Netto-BB ab
-der Entscheidung. Teile die Summe durch die Anzahl der Spots. Bereits investierte Chips zählen
-zum Pot. Wenn sich die Häufigkeit der Spots ändert, zusätzlich die Netto-BB je gespielter Hand
-prüfen. Beim Angriff auch den Wert der zusätzlichen Bluffs gegenüber dem Check aus dem Replay
-berichten. MDF hilft bei der Diagnose der Frequenzen. Für die Freigabe zählen der vereinbarte
-Chipwert-Vergleich und die jeweils zutreffenden Guardrails.
+For each run and role, the report contains hands played, tournament wins, net BB, VPIP and PFR. For VPIP
+and PFR, divide the respective hand counts by hands played. For marked spots, it contains the count and
+net BB from the decision for each action actually taken. Divide the sum by the spot count. Chips already
+invested count toward the pot. If spot frequency changes, also check net BB per hand played. For attack,
+also report the value of added bluffs versus checking from replay. MDF helps diagnose frequencies. For
+acceptance, the agreed chip-value comparison and applicable guardrails count.
 
 ## Hard Guardrails
 
-Diese Werte dürfen nicht brechen:
+These values must not break:
 
 - premium preflop folds = 0
 - bluff raises with made hand = 0
 - postflop all-in low-edge reraises = 0
 
-Diese Bereiche dürfen nicht klar regressieren:
+These areas must not clearly regress:
 
 - low-edge reraises
-- early large pots und Early-Bust-Cluster
-- Showdown / Uncontested-Struktur
-- Preflop und Postflop Action-Mix
-- SB-HU Action Engine
-- BTN-3 Action Engine
-- BB-Defense gegen guten Preis
-- Value Betting und Value Raising
-- priced/playable Calls im Zielcluster
+- early large pots and early-bust clusters
+- showdown / uncontested structure
+- preflop and postflop action mix
+- SB-HU action engine
+- BTN-3 action engine
+- BB defense at a good price
+- value betting and value raising
+- priced/playable calls in the target cluster
 
 ## Acceptance
 
-Akzeptiere einen Kandidaten nur, wenn:
+Accept a candidate only when:
 
-- die Zielursache plausibel verbessert wurde,
-- die Zielmetrik gegen die Vergleichsbasis besser ist,
-- Core Health bei Änderungen am Standard-Bot stabil bleibt,
-- Guardrails sauber bleiben,
-- Equity/MDF/Backtrace nicht widersprechen,
-- die für den strategischen Eingriff vereinbarten Replay- und Matchup-Kriterien erfüllt sind,
-- bei Gegnerprofilen die vereinbarten Stilprüfungen bestanden sind,
-- keine Verbesserung durch Trash-Calls, Spew oder Problemverschiebung entsteht,
-- der Bot als Ganzes plausibler spielt.
+- The target cause was plausibly improved.
+- The target metric improved against the comparison baseline.
+- Core health stays stable for standard-bot changes.
+- Guardrails remain clean.
+- Equity/MDF/backtrace does not contradict the result.
+- Agreed replay and matchup criteria for the strategic intervention are met.
+- For opponent profiles, agreed style checks pass.
+- Improvement does not come from trash calls, spew or shifting the problem.
+- The bot plays more plausibly as a whole.
 
-Der Core-Batch prüft die Stabilität des Standard-Bots im Self-Play. Die strategische Freigabe
-setzt zusätzlich die für den Kandidaten vereinbarten Nachweise voraus. Wenn ein dokumentierter
-Equity-Trigger vorliegt, darf der Status `accepted` erst nach der erforderlichen Equity-Prüfung
-vergeben werden.
+The core batch checks standard-bot stability in self-play. Strategic acceptance additionally requires
+the evidence agreed for the candidate. If an equity trigger is documented, `accepted` may only be
+assigned after the required equity check.
 
-Verwerfe oder überarbeite, wenn:
+Reject or revise when:
 
-- die Verbesserung nur lokal und nicht strategisch plausibel ist,
-- verwandte Metriken klar schlechter werden,
-- gute/priced/playable Hände überproportional verschwinden,
-- der Schaden auf eine andere Street, Line oder Handklasse wandert,
-- der Hebel nur eine Messzahl sauberer macht.
+- The improvement is only local and not strategically plausible.
+- Related metrics clearly worsen.
+- Good/priced/playable hands disappear disproportionately.
+- Damage moves to another street, line or hand class.
+- The lever only makes a metric look cleaner.
 
-## Abschlussbericht
+## Final Report
 
-Kurz berichten:
+Report briefly:
 
-- Vergleichsbasis und Pfad
-- Diagnose und Ziel-Leak
-- Hypothese
-- geänderter Hebel
-- wichtige Metriken vorher/nachher
-- Zielcluster sowie geschützte Kontrollgruppen vorher/nachher
-- Counterfactual-Flips nach Handfamilie, Preis, Position und Struktur, soweit relevant
-- Equity-Ergebnis, falls genutzt
-- Guardrail-Status
-- Kandidatenentscheidung: `accepted` oder `rejected`, falls ein Kandidat getestet wurde
-- Goal-Abschluss: `accepted` oder `no-qualified-candidate`
+- Comparison baseline and path
+- Diagnosis and target leak
+- Hypothesis
+- Changed lever
+- Important metrics before/after
+- Target cluster and protected controls before/after
+- Counterfactual flips by hand family, price, position and structure where relevant
+- Equity result if used
+- Guardrail status
+- Candidate decision: `accepted` or `rejected` if a candidate was tested
+- Goal completion: `accepted` or `no-qualified-candidate`
 
-Wenn `accepted`:
+If `accepted`:
 
-- nur akzeptierte Änderungen behalten
-- fehlgeschlagene Experimente entfernen
-- relevante tmp-Batches für Nachvollziehbarkeit stehen lassen
-- bei Livegang Versionseintrag und Service-Worker-Version aktualisieren
+- Keep only accepted changes.
+- Remove failed experiments.
+- Retain relevant tmp batches for traceability.
+- When going live, update the version entry and service worker version.
 
-Wenn `rejected`:
+If `rejected`:
 
-- Kandidaten-Code entfernen
-- Fehlschlag kurz erklären
-- nächste Diagnosefrage benennen
-- bei einer verworfenen qualifizierten Iteration einen kurzen Learning Report in `scripts/docs/bot-tuning-learnings.md` ergänzen
+- Remove candidate code.
+- Briefly explain the failure.
+- Name the next diagnosis question.
+- For a rejected qualified iteration, add a short learning report in `scripts/docs/bot-tuning-learnings.md`.
 
 ## Learning Reports
 
-Ein Learning Report ist ein Anti-Wiederholungslog für Codex, kein langer Bericht. Schreibe ihn nach jeder verworfenen qualifizierten Iteration, also wenn eine plausible Hypothese mit Staged Validation getestet und danach verworfen wurde.
+A learning report is an anti-repetition log for Codex, not a long report. Write one after every rejected
+qualified iteration: a plausible hypothesis tested with staged validation and subsequently rejected.
 
-Halte ihn kurz:
+Keep it short:
 
-- Datum und Kandidat
-- Hypothese
-- getesteter Hebel
-- wichtigste Validierung
-- warum verworfen
-- wann diese Route wieder erlaubt ist
+- Date and candidate
+- Hypothesis
+- Lever tested
+- Main validation
+- Why rejected
+- When the route may be tried again
 
-Nicht eintragen:
+Do not record:
 
-- reine Noise-Sichtungen
-- abgebrochene unqualifizierte Ideen
-- offensichtliche Syntax-/Implementierungsfehler ohne strategisches Learning
+- Pure noise observations
+- Abandoned unqualified ideas
+- Obvious syntax or implementation errors without strategic learning

@@ -1,142 +1,129 @@
-# Matchup-Experimente
+# Matchup Experiments
 
-Der Experiment-Runner vergleicht Strategieversionen gegen dieselben Gegner. Er übernimmt
-Sitzrotation, Seed-Paarung, Auswertung und Mindestanforderungen an die Stichprobe. Der
-[Bot Tuning Playbook](./bot-tuning-playbook.md) beschreibt, wann das Ergebnis in die Freigabe eingeht.
+The experiment runner compares strategy versions against the same opponents. It handles seat rotation,
+seed pairing, evaluation and minimum sample requirements. The [Bot Tuning Playbook](./bot-tuning-playbook.md)
+describes when the result contributes to acceptance.
 
-## Gemeinsame Mustersuche
+## Combined Pattern Discovery
 
 ```powershell
 deno task engine:diagnose -- --runs=1000 --out=tmp/matchup-discovery
 ```
 
-Der Runner verwendet das Referenzfeld und den gemischten Tisch aus dem Gegnerpool. Er rotiert
-den Testsitz und paart die Felder nach Seed. Wähle pro Lauf einen neuen Ausgabeordner.
+The runner uses the reference field and mixed table from the opponent pool. It rotates the test seat and
+pairs fields by seed. Choose a new output directory for each run.
 
-- `summary.json` stellt beide Felder pro Spot nebeneinander. Abschnitte gliedern nach Street und
-  Entscheidungssituation sowie nach Handklasse, Position, Line, Betgröße oder Gegnerprofil.
-  Je Feld stehen dort Spot-Anzahl, Spots pro 100 gespielten Händen, Aktionshäufigkeiten und
-  beobachtete Netto-BB ab der Entscheidung. All-in-Calls und All-in-Raises haben eigene
-  Aktionszahlen. `mixedMinusReferenceBb` ist die beobachtete Differenz je Spot.
-- `decisions.jsonl.gz` enthält die Entscheidungen des Testsitzes. Die erste JSONL-Zeile benennt
-  die Spalten der folgenden Arrays. Karten sind aneinandergehängte Zwei-Zeichen-Codes.
-  `field`, `run`, `seed`, `handId` und `decisionId` identifizieren die Beobachtung.
-  `netChipsFromDecision` enthält den Chipwert ab der Entscheidung. Teile ihn für BB durch
-  `bigBlind`. Das Archiv wird beim Schreiben pro Turnierpaar komprimiert.
+- `summary.json` compares both fields for each spot. Sections group by street and decision situation,
+  and by hand class, position, line, bet size or opponent profile. Each field includes spot count, spots
+  per 100 hands played, action frequencies and observed net BB from the decision. All-in calls and
+  all-in raises have separate action counts. `mixedMinusReferenceBb` is the observed difference per spot.
+- `decisions.jsonl.gz` contains decisions from the test seat. The first JSONL line names the columns of
+  the arrays that follow. Cards are concatenated two-character codes. `field`, `run`, `seed`, `handId`
+  and `decisionId` identify the observation. `netChipsFromDecision` contains chip value from the decision;
+  divide it by `bigBlind` for BB. The archive is compressed per tournament pair as it is written.
 
-`line` enthält den Preflop-Pottyp, die Rolle des Bots als Preflop-Aggressor und die Zahl der
-durchgecheckten Streets. `betSize` nutzt die Betgrößenklassen des Core-Berichts. Pot, Call-Betrag
-und ausgeführte Betgröße stehen zusätzlich als Chipbeträge im Archiv.
+`line` includes the preflop pot type, the bot's role as preflop aggressor and the number of streets
+checked through. `betSize` uses the core report's bet size buckets. The archive also contains the pot,
+call amount and executed bet size in chips.
 
-Standardmäßig erscheint eine Gruppe im Bericht ab 20 Entscheidungen in mindestens einem Feld.
-`--min-spots` setzt diese Grenze für die Übersicht. Die Archivzeilen bleiben einzeln auswertbar.
-Die Abschnitte gruppieren dieselben Entscheidungen aus verschiedenen Blickwinkeln.
-Falls ein Turnier abbricht oder einen Pot falsch abrechnet, markiert der Runner die Zeilen
-beider Partner mit `included: false` und führt das Paar unter `excludedPairs` auf. Die Übersicht
-zählt die gültigen Paare. Der beobachtete Chipwert ist ein Hinweis für die Mustersuche. Im
-Replay lässt sich anschließend der Wert einer alternativen Aktion aus demselben Spot prüfen.
+By default, a group appears in the report at 20 decisions in at least one field. `--min-spots` sets this
+threshold for the summary. Archive rows remain individually available for analysis. Sections group the
+same decisions from different perspectives. If a tournament aborts or settles a pot incorrectly, the
+runner marks both partners' rows `included: false` and lists the pair under `excludedPairs`. The summary
+counts valid pairs. Observed chip value is a clue for pattern discovery. A replay can then assess the
+value of an alternative action from the same spot.
 
-## Varianten und Gegnerfelder
+## Variants and Opponent Fields
 
-Eine Experimentdatei exportiert die Konfiguration als JavaScript-Objekt. Der
-[A/A-Audit](../matchupAudit.js) ist eine ausführbare Vorlage für die Struktur.
+An experiment file exports configuration as a JavaScript object. The [A/A audit](../matchupAudit.js)
+is an executable structural template.
 
-| Feld | Inhalt |
+| Field | Contents |
 | --- | --- |
-| `name`, `stage` | Name und Stufe `diagnosis`, `validation`, `holdout` oder `rollout`. |
-| `seed`, `runs` | Fester Seed und Anzahl Turniere je Feld und Variante. |
-| `fields` | Gegnerfelder. Jedes benennt dieselben Rollen und weist ihnen feste Strategien zu. |
-| `strategies`, `strategyVersions` | Strategiefunktionen und ihre Versionen. Verwende für Vergleiche feste Source-Snapshots oder Commit-IDs im Versionsfeld. |
-| `variants` | Zu überschreibende Rollen pro Variante. Eine leere Variante übernimmt das gesamte Feld. |
-| `comparisons` | Vergleichs-ID, Feld, Basisvariante und Kandidat. `role` gibt den gemessenen Sitz an. Voreinstellung ist `test`. |
-| `classifySpot`, `spot` | Optionaler Name eines vor der Aktion erfassten Zielspots. |
+| `name`, `stage` | Name and stage `diagnosis`, `validation`, `holdout` or `rollout`. |
+| `seed`, `runs` | Fixed seed and number of tournaments per field and variant. |
+| `fields` | Opponent fields. Each names the same roles and assigns fixed strategies to them. |
+| `strategies`, `strategyVersions` | Strategy functions and their versions. For comparisons use fixed source snapshots or commit IDs in the version field. |
+| `variants` | Roles to override per variant. An empty variant inherits the entire field. |
+| `comparisons` | Comparison ID, field, baseline variant and candidate. `role` identifies the measured seat; default `test`. |
+| `classifySpot`, `spot` | Optional name of a target spot captured before the action. |
 
-Für einen üblichen A/B-Vergleich überschreiben Baseline und Kandidat nur den Testsitz. Ein
-Kreuzvergleich kann zusätzlich einen festen Testsitz des anderen Hebels im Gegnerfeld führen.
-Für einen Rollout überschreiben die Varianten die fünf Bot-Sitze. Der menschliche Testgegner
-bleibt im Feld konstant. Der Runner führt jede verwendete Kombination aus Feld und Variante
-einmal aus. Eine Konfiguration für die Freigabe verwendet feste Versionen in allen Armen.
-Der Report protokolliert die angegebenen Versions-IDs und den SHA-256 der Konfigurationsdatei.
+In a typical A/B comparison, baseline and candidate override only the test seat. A cross-comparison can
+also include a fixed test seat for the other lever in the opponent field. For rollout, the variants
+override the five bot seats. The human test opponent remains fixed in the field. The runner executes
+each used field and variant combination once. An acceptance configuration uses fixed versions in all
+arms. The report records the specified version IDs and the configuration file's SHA-256.
 
-Der A/A-Audit sollte bei gültigen Turnierpaaren exakt null Unterschied zeigen. Er verwendet die
-aktuelle Strategie in beiden Armen. Im Audit dient das Ergebnis allein der Prüfung der Infrastruktur.
+The A/A audit should show exactly zero difference for valid tournament pairs. It uses the current strategy
+in both arms. In this audit the result is used only to check infrastructure.
 
 ```powershell
 deno task engine:experiment scripts/matchupAudit.js tmp/matchup-audit.json
 ```
 
-## Replay mit identischem Ausgangsspot
+## Replay from the Same Starting Spot
 
-Das Replay sammelt Entscheidungen aus Händen der Baseline. `select(state, player, role, action)`
-liefert nach der Aktionswahl und vor ihrer Ausführung den Namen des Zielspots oder `null`.
-Die Konfiguration legt ein Gegnerfeld `field` und die zu prüfenden `alternatives` fest. Jede
-Alternative benennt eine Strategie aus `strategies`. Sie übernimmt den ausgewählten Sitz ab dem
-Zielspot für den Rest der Hand. Alle anderen Sitze behalten ihre Strategie und reagieren auf
-die veränderte Line.
+Replay collects decisions from baseline hands. `select(state, player, role, action)` returns the target
+spot name or `null` after action selection and before execution. The configuration specifies an opponent
+`field` and the `alternatives` to examine. Each alternative names a strategy from `strategies`; it takes
+over the selected seat from the target spot for the rest of the hand. All other seats keep their strategy
+and respond to the changed line.
 
-Für jede Alternative setzt der Runner die Hand mit demselben Kartenstapel und demselben
-Spielerzustand neu auf. Er prüft die Aktionen bis zur Abzweigung und den Zustand am Zielspot.
-Dann spielt die Engine bis zur Auszahlung. So lassen sich auch ein Turn-Call und seine
-Folgekosten am River vergleichen. Strategien verwenden nur die Spielinformationen des
-handelnden Sitzes und ihr jeweiliges zustandsinternes Gedächtnis.
+For each alternative, the runner resets the hand with the same deck and player state. It checks actions
+up to the branch and the state at the target spot, then the engine plays through payout. This allows a
+turn call and its subsequent river costs to be compared. Strategies use only the acting seat's game
+information and their respective in-state memory.
 
-Der Bericht enthält Karten und Pot am Entscheidungspunkt, die ausgeführte Aktion und die
-Netto-BB bis zum Handende. Das 95-%-Intervall zieht ganze Turniere wiederholt als Stichprobe,
-damit mehrere Spots aus derselben Hand oder demselben Turnier zusammenbleiben. Der Replay-Befund
-gilt für die Ausgangssituationen der Baseline. Der nachfolgende Matchup-Batch zeigt, welche
-Situationen mit dem Kandidaten im Turnier tatsächlich entstehen.
+The report includes cards and pot at the decision, the action taken and net BB through the end of the
+hand. The 95% interval resamples whole tournaments, keeping multiple spots from the same hand or
+tournament together. Replay findings apply to the baseline's starting situations. The subsequent matchup
+batch shows which situations actually arise with the candidate in tournaments.
 
 ```powershell
 deno task engine:replay scripts/matchupReplayAudit.js tmp/matchup-replay-audit.json
 ```
 
-## Kennzahlen und Freigabekriterien
+## Metrics and Acceptance Criteria
 
-Der Delta-Wert ist jeweils Kandidat minus Baseline. `bbPerHand` bezieht sich auf die gespielten
-Hände der Rolle. `bbPerSpot` bezieht sich auf markierte Entscheidungen, deren Chipwert vom
-Entscheidungspunkt bis zum Handende gemessen wird. `winRate` ist der Anteil gewonnener
-Turniere. Die beiden ersten Kennzahlen gewichten jede Hand beziehungsweise jeden Spot gleich.
+Delta is candidate minus baseline. `bbPerHand` refers to hands played by the role. `bbPerSpot` refers to
+marked decisions, with chip value measured from the decision to the end of the hand. `winRate` is the
+share of tournaments won. The first two metrics weight each hand or spot equally.
 
-Wenn eine Variante die Zahl der markierten Spots verändert, vergleiche sowohl die Anzahl als
-auch `bbPerHand`. Der Spot-Mittelwert gilt für die tatsächlich entstandenen Entscheidungen.
-Für den direkten Wert einer konkreten Aktion brauchst du das Replay vom selben Ausgangsspot.
+If a variant changes the number of marked spots, compare both the count and `bbPerHand`. The spot average
+applies to decisions that actually occurred. To measure the direct value of a specific action, use replay
+from the same starting spot.
 
-Ein Kriterium definiert Metrik, Mindestdelta, Mindestzahl an Turnierpaaren mit Beobachtungen pro
-Arm und optional eine Mindestzahl an Beobachtungen je Arm. Für Kontrollfelder kann ein
-tolerierbarer Verlust als negatives Mindestdelta eingetragen werden. Siegquoten werden als
-Anteile angegeben. Beispielsweise entsprechen 0,02 zwei Prozentpunkten.
+A criterion defines a metric, minimum delta, minimum number of tournament pairs with observations per arm,
+and optionally a minimum number of observations per arm. For control fields, a tolerable loss can be
+entered as a negative minimum delta. Win rates are proportions: for example, 0.02 is two percentage points.
 
 ```js
 criteria: [
-	{ metric: "bbPerSpot", minDelta: 0.10, minPairs: 100, minObservations: 200 },
-	{ metric: "bbPerHand", minDelta: -0.02, minPairs: 100 },
+    { metric: "bbPerSpot", minDelta: 0.10, minPairs: 100, minObservations: 200 },
+    { metric: "bbPerHand", minDelta: -0.02, minPairs: 100 },
 ];
 ```
 
-Diese Werte dienen der Illustration. Lege die Schwellen für das konkrete Experiment vor dem
-Lauf fest. Für das 95-%-Intervall zieht der Runner 2.000 Stichproben aus ganzen Turnierpaaren.
-Kriterien werden pro Vergleich ausgewertet. Bei mehreren Vergleichen ist das Intervall ein
-Intervall je Kennzahl und Vergleich.
+These values are illustrative. Set thresholds for the specific experiment before running it. For the
+95% interval the runner draws 2,000 samples of whole tournament pairs. Criteria are evaluated per
+comparison. With multiple comparisons, the interval is per metric and comparison.
 
-| Status | Bedeutung |
+| Status | Meaning |
 | --- | --- |
-| `pass` | Das ganze Intervall liegt auf oder über der vorab definierten Grenze. |
-| `fail` | Das ganze Intervall liegt unter der Grenze. |
-| `inconclusive` | Das Intervall schneidet die Grenze. |
-| `insufficient` | Zu wenige Paare oder Beobachtungen oder kein berechenbares Intervall. |
-| `blocked` | Mindestens ein Arm hat einen ungültigen Pot oder ein Turnier am Handlimit. |
-| `descriptive` | Vergleich ohne Freigabekriterium. |
+| `pass` | The entire interval is at or above the predefined threshold. |
+| `fail` | The entire interval is below the threshold. |
+| `inconclusive` | The interval crosses the threshold. |
+| `insufficient` | Too few pairs or observations, or no calculable interval. |
+| `blocked` | At least one arm has an invalid pot or a tournament at the hand limit. |
+| `descriptive` | Comparison without an acceptance criterion. |
 
-Ein ungültiger Lauf wird zusammen mit seinen Partnerläufen aus dem Delta ausgeschlossen. Die
-Rohwerte und der Grund bleiben im JSON sichtbar. Der Vergleich erhält den Status `blocked`,
-auch wenn das Ergebnis aus den übrigen Paaren die Grenze erreicht. Der CLI schreibt den Bericht
-und quittiert einen blockierten Lauf mit Exit-Code 1. Holdout und Rollout benötigen ebenfalls
-ein `pass` für Exit-Code 0.
+An invalid run and its partners are excluded from the delta. Raw values and the reason remain visible in
+JSON. The comparison is `blocked` even if the remaining pairs reach the threshold. The CLI writes the
+report and exits with code 1 for a blocked run. Holdout and rollout also require `pass` for exit code 0.
 
-## Angriff und Defense zusammen
+## Attack and Defense Together
 
-Ein Vergleich mit `attack` und `defense` zusätzlich zu `baseline` und `candidate` verwendet
-vier Varianten. Der Kandidat ist hier die Kombination. Das ausgewiesene Delta lautet
-`(Kombination − Angriff) − (Defense − Baseline)`, jeweils im selben Feld. Es zeigt, wie sehr
-der Effekt der Defense davon abhängt, ob auch der Angriff aktiv ist. Verwende einen gewöhnlichen
-Vergleich der Kombination gegen die Baseline, um den gemeinsamen Effekt zu messen.
+A comparison with `attack` and `defense` in addition to `baseline` and `candidate` uses four variants.
+The candidate is the combination. The reported delta is `(combination − attack) − (defense − baseline)`,
+in the same field. It shows how much the defense effect depends on the attack also being active. Use a
+normal comparison of the combination against baseline to measure the joint effect.
