@@ -7,6 +7,22 @@ Add new hypotheses, remove disproven or completed topics, and record relevant fi
 
 ## High Priority
 
+### Pot Odds for Short All-in Calls
+
+The bot calculates pot odds using the full amount needed to match the bet and the total pot. A short
+stack can call less and may only be eligible for part of that pot. Determine the actual call amount and
+contestable pot, including eligible contributions from folded players, and examine how often the
+difference changes decisions. Compare affected folds and calls by hand strength, price and pot structure,
+including multiway all-ins and side pots.
+
+### Effective Stack Depth in Heads-up Play
+
+The bot tracks effective stack depth, while its preflop Harrington zone is based on its own stack. In
+heads-up play, investigate whether this leads to weaker decisions when the bot covers a short opponent.
+Compare the same hands and effective depths from both stack perspectives, including opens, limps, shoves
+and calls. Use published heads-up push/fold ranges as a reference for short stacks, and compare the chip
+value of available actions against relevant opponent responses. Preserve profitable alternatives to shoving.
+
 ### Exploitability by Above-Average Aggression
 
 Higher overfolding was accepted when adjusting weak turn calls. Whether aggressive opponents can
@@ -15,6 +31,18 @@ win above-average chips against the bots. Which streets, betting lines and bet s
 does opponent adaptation respond sufficiently, and at what aggression level do additional bluffs
 become unprofitable? Evaluate profitability including losses from failed bluffs; a high fold rate alone
 does not establish a leak.
+
+### Thin River Value Bets
+
+The bot can bet medium-strength made hands when checked to. Whether those bets earn more than checking
+against different opponents remains open. In the November 25 discovery run, the test bot bet second
+pair in position heads-up on the river in 83 of 87 free-action spots across the reference and mixed
+fields. This is a small sample from an earlier bot version and does not establish profitability.
+
+Compare betting at the existing size with checking from the same starting spots. Which worse hands call,
+which better hands fold, and what do raises cost? Examine the results by opponent profile, board texture
+and prior line, including calling stations and tighter opponents. Measure chip value and spot frequency,
+and protect profitable value bets when considering any adjustment.
 
 ### Adaptive Bluffcatching Frequency
 
@@ -57,6 +85,14 @@ the same suit. When do blockers and unblockers also help select bluff and bluffc
 Profitability and potential effects on defense must be established according to the playbook.
 
 ## Medium Priority
+
+### Squeeze Hand Selection
+
+The bot recognizes a preflop raise followed by callers and adjusts its 3-bet size. Whether it selects
+profitable squeeze hands across different opener positions, caller ranges and stack depths remains open.
+First measure spot frequency, then compare squeezing with calling or folding from the same starting spots.
+Examine folds, calls by worse hands, 4-bets and chip value across relevant opponent profiles while
+protecting value raises and playable calls.
 
 ### Strategic Knowledge Transfer from Opponent Profiles
 
